@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
     provider = "postgresql"
-    url      = env("DATABASE_URL")
 }
 
 // ─── Auth & Users ───────────────────────────────────────────────────
@@ -21,14 +20,14 @@ model User {
     createdAt    DateTime @default(now())
     updatedAt    DateTime @updatedAt
 
-    profile       Profile?
-    intentions    UserIntention[]
-    tags          UserTag[]
-    sentMatches   Match[]          @relation("MatchSender")
-    receivedMatches Match[]        @relation("MatchReceiver")
-    messages      Message[]
-    notifications Notification[]
-    conversations ConversationParticipant[]
+    profile         Profile?
+    intentions      UserIntention[]
+    tags            UserTag[]
+    sentMatches     Match[]                   @relation("MatchSender")
+    receivedMatches Match[]                   @relation("MatchReceiver")
+    messages        Message[]
+    notifications   Notification[]
+    conversations   ConversationParticipant[]
 
     @@map("users")
 }
@@ -121,7 +120,7 @@ model Match {
     id           String   @id @default(cuid())
     senderId     String
     receiverId   String
-    category     String   // IntentionCategory
+    category     String // IntentionCategory
     matchContext String   @default("")
     mutual       Boolean  @default(false)
     matchedAt    DateTime @default(now())
@@ -179,7 +178,7 @@ model Message {
 model Notification {
     id        String   @id @default(cuid())
     userId    String
-    type      String   // match, message, like, system
+    type      String // match, message, like, system
     title     String
     body      String
     read      Boolean  @default(false)

@@ -1,11 +1,14 @@
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { env } from '@/config/env';
 import { logger } from '@/config/logger';
 
 let prisma: PrismaClient | undefined;
 
 export function getDatabase(): PrismaClient {
     if (!prisma) {
-        prisma = new PrismaClient();
+        const adapter = new PrismaPg({ connectionString: env.DATABASE_URL });
+        prisma = new PrismaClient({ adapter });
     }
     return prisma;
 }

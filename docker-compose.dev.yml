@@ -1,39 +1,62 @@
 services:
-  whymeet-db-dev:
-    image: postgres:16-alpine
-    container_name: whymeet-db-dev
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_USER: whymeet
-      POSTGRES_PASSWORD: whymeet
-      POSTGRES_DB: whymeet
-    volumes:
-      - whymeet-db-dev-data:/var/lib/postgresql/data
-    restart: unless-stopped
+    whymeet-db-dev:
+        image: postgres:16-alpine
+        container_name: whymeet-db-dev
+        ports:
+            - '5432:5432'
+        environment:
+            POSTGRES_USER: whymeet
+            POSTGRES_PASSWORD: whymeet
+            POSTGRES_DB: whymeet
+        volumes:
+            - whymeet-db-dev-data:/var/lib/postgresql/data
+        healthcheck:
+            test: ['CMD-SHELL', 'pg_isready -U whymeet']
+            interval: 2s
+            timeout: 5s
+            retries: 10
+        restart: unless-stopped
 
-  whymeet-server-dev:
-    build:
-      context: ..
-      dockerfile: WhyMeet-Server/Dockerfile
-    container_name: whymeet-server-dev
-    ports:
-      - "0.0.0.0:4600:4600"
-    environment:
-      NODE_ENV: development
-      DATABASE_URL: postgresql://whymeet:whymeet@whymeet-db-dev:5432/whymeet?schema=public
-    depends_on:
-      - whymeet-db-dev
-    user: node
-    volumes:
-      - ./logs:/app/logs
-    deploy:
-      restart_policy:
-        condition: on-failure
-        delay: 10s
-        max_attempts: 5
-        window: 120s
-    restart: unless-stopped
+    whymeet-server-dev:
+        build:
+            context: ..
+            dockerfile: WhyMeet-Server/Dockerfile
+        container_name: whymeet-server-dev
+        ports:
+            - '0.0.0.0:4600:4600'
+        environment:
+            NODE_ENV: development
+            DATABASE_URL: postgresql://whymeet:whymeet@whymeet-db-dev:5432/whymeet?schema=public
+        depends_on:
+            whymeet-db-dev:
+                condition: service_healthy
+        user: node
+        volumes:
+            - ./logs:/app/logs
+        deploy:
+            restart_policy:
+                condition: on-failure
+                delay: 10s
+                max_attempts: 5
+                window: 120s
+        restart: unless-stopped
+
+    whymeet-pgadmin-dev:
+        image: dpage/pgadmin4:latest
+        container_name: whymeet-pgadmin-dev
+        ports:
+            - '5050:80'
+        environment:
+            PGADMIN_DEFAULT_EMAIL: admin@whymeet.dev
+            PGADMIN_DEFAULT_PASSWORD: admin
+            PGADMIN_CONFIG_SERVER_MODE: 'False'
+            PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+        volumes:
+            - whymeet-pgadmin-dev-data:/var/lib/pgadmin
+        depends_on:
+            - whymeet-db-dev
+        restart: unless-stopped
 
 volumes:
-  whymeet-db-dev-data:
+    whymeet-db-dev-data:
+    whymeet-pgadmin-dev-data:
