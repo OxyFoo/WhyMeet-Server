@@ -1,0 +1,33 @@
+services:
+  whymeet-server-prod:
+    build:
+      context: ..
+      dockerfile: WhyMeet-Server/Dockerfile
+    container_name: whymeet-server-prod
+    ports:
+      - "0.0.0.0:7600:7600"
+    environment:
+      NODE_ENV: production
+    networks:
+      oxyfoo-network:
+        ipv4_address: 172.16.0.10
+      network-server-web:
+        ipv4_address: 170.16.0.20
+    user: node
+    volumes:
+      - ./logs:/app/logs
+      - /etc/ssl/whymeet-certs/fullchain.pem:/etc/letsencrypt/live/whymeet/fullchain.pem:ro
+      - /etc/ssl/whymeet-certs/privkey.pem:/etc/letsencrypt/live/whymeet/privkey.pem:ro
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+        window: 120s
+    restart: unless-stopped
+
+networks:
+  oxyfoo-network:
+    external: true
+  network-server-web:
+    external: true

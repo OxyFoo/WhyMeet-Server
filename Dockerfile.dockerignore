@@ -1,0 +1,10 @@
+**/node_modules
+**/.git
+
+# Client app not needed for server build
+WhyMeet/
+
+# Build outputs that will be regenerated
+WhyMeet-Server/dist
+WhyMeet-Server/logs
+WhyMeet-Types/dist

@@ -1,0 +1,32 @@
+name: '✋ WhyMeet Server - All tests'
+
+permissions:
+  contents: read
+  actions: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to test'
+        required: true
+        type: choice
+        default: 'prod'
+        options:
+          - dev
+          - prod
+      test-npm:
+        description: 'Run npm tests'
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  tests:
+    name: '🔍 Tests'
+    uses: ./.github/workflows/step-tests.yml
+    secrets: inherit
+    with:
+      environment: ${{ github.event.inputs.environment }}
+      test-npm: ${{ github.event.inputs.test-npm == 'true' }}
+      cleanup-artifact: false

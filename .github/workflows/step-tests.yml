@@ -1,0 +1,126 @@
+name: '🧩 All tests'
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: |
+          Environment to test:
+          - `dev`
+          - `prod`
+        required: true
+        type: string
+        default: 'dev'
+      test-npm:
+        description: 'Run npm tests'
+        required: false
+        type: boolean
+        default: true
+      cleanup-artifact:
+        description: 'Clean up test artifact after completion'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    name: '🔨 Build'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v4
+
+      - name: 'Configure Environment Variables'
+        run: |
+          if [ "${{ github.event.inputs.environment }}" == "prod" ]; then
+            echo "Copying Production Environment Variables"
+            echo "${{ secrets.ENV_FILE_PROD_BASE64 }}" | base64 -d > .env
+          else
+            echo "Copying Development Environment Variables"
+            echo "${{ secrets.ENV_FILE_DEV_BASE64 }}" | base64 -d > .env
+          fi
+
+      - name: 'Mkdir logs'
+        run: |
+          mkdir -p logs
+          touch logs/.gitkeep
+
+      - name: Upload Configuration Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: project-package-tests
+          path: .
+          include-hidden-files: true
+
+  npm-tests:
+    name: '🧪 Code Tests'
+    if: ${{ inputs.test-npm }}
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v4
+
+      - name: 'Setup Node.js'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 'Configure Environment Variables'
+        run: |
+          if [ "${{ github.event.inputs.environment }}" == "prod" ]; then
+            echo "Copying Production Environment Variables"
+            echo "${{ secrets.ENV_FILE_PROD_BASE64 }}" | base64 -d > .env
+          else
+            echo "Copying Development Environment Variables"
+            echo "${{ secrets.ENV_FILE_DEV_BASE64 }}" | base64 -d > .env
+          fi
+
+      - name: 'Install Dependencies & Audit'
+        run: |
+          npm ci
+          npm audit --omit=dev
+
+      - name: 'Generate Prisma Client'
+        run: npx prisma generate
+
+      - name: 'Build'
+        run: npm run build
+
+      - name: 'Lint Code'
+        run: npm run lint
+
+      - name: 'Type Check'
+        run: npm run typecheck
+
+      - name: 'Run Tests'
+        run: npm test
+
+  cleanup:
+    name: '🧹 Cleanup Artifacts'
+    if: ${{ inputs.cleanup-artifact && always() }}
+    needs: [npm-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Delete test artifact'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const artifacts = await github.rest.actions.listWorkflowRunArtifacts({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.runId,
+            });
+
+            const testArtifact = artifacts.data.artifacts.find(artifact =>
+              artifact.name === 'project-package-tests'
+            );
+
+            if (testArtifact) {
+              console.log(`Deleting artifact: ${testArtifact.name}`);
+              await github.rest.actions.deleteArtifact({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                artifact_id: testArtifact.id,
+              });
+            }

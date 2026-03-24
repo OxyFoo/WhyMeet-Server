@@ -1,0 +1,103 @@
+name: '✋ WhyMeet Server - Continuous Deployment'
+
+permissions:
+  contents: read
+  actions: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to archive & deploy'
+        required: true
+        type: choice
+        default: 'Development'
+        options:
+          - Development
+          - Production
+      restore-on-failure:
+        description: 'Restore the last successful deployment on failure'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    name: '🔨 Build'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v4
+
+      - name: 'Mkdir logs'
+        run: |
+          mkdir -p logs
+          touch logs/.gitkeep
+
+      - name: 'Configure Environment Variables'
+        run: |
+          if [ "${{ github.event.inputs.environment }}" == "Production" ]; then
+            echo "Copying Production Environment Variables"
+            echo "${{ secrets.ENV_FILE_PROD_BASE64 }}" | base64 -d > .env
+          else
+            echo "Copying Development Environment Variables"
+            echo "${{ secrets.ENV_FILE_DEV_BASE64 }}" | base64 -d > .env
+          fi
+
+      - name: Upload Configuration Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: project-package
+          path: .
+          include-hidden-files: true
+
+  deploy:
+    name: '🚀 Deploy'
+    uses: OxyFoo/CICD/.github/workflows/deploy-docker.yml@main
+    needs: build
+    secrets: inherit
+    with:
+      author: 'oxyfoo'
+      environment: ${{ github.event.inputs.environment == 'Production' && 'production' || 'development' }}
+      artifact-name: 'project-package'
+      docker-compose-file: ${{ github.event.inputs.environment == 'Production' && 'docker-compose.prod.yml' || 'docker-compose.dev.yml' }}
+      docker-requires: 'oxyfoo-server-web.service'
+      restore-on-failure: ${{ github.event.inputs.restore-on-failure == 'true' }}
+      health-check-timeout: 600
+
+      setup-steps: |
+        node -v
+
+        npm ci
+        npx prisma generate
+        npm run build
+
+      test-steps: |
+        GL_ENV=${{ github.event.inputs.environment }}
+        GL_VERSION=$(node -p "require('./package.json').version")
+        echo "Setting up the environment for '$GL_VERSION' on '$GL_ENV'"
+
+        if [ -z "$GL_ENV" ] || [ -z "$GL_VERSION" ]; then
+          echo "Error: GL_VERSION is empty"
+          exit 1
+        fi
+
+        npm run test
+        npm run lint
+
+  notify-team:
+    name: '📣 Notify Team'
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.event.inputs.environment != 'Development'
+    steps:
+      - name: 'Send notification to Discord'
+        env:
+          GL_ENV: ${{ github.event.inputs.environment }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          curl \
+            -H "Content-Type: application/json" \
+            -X POST \
+            -d "{\"content\":\"WhyMeet Server deployed\",\"embeds\":[{\"title\":\"Workflow - Server\",\"color\":3447003,\"fields\":[{\"name\":\"Environment\",\"value\":\"$GL_ENV\",\"inline\":true}]}]}" \
+            $DISCORD_WEBHOOK_URL
