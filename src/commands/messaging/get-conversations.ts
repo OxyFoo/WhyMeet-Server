@@ -7,10 +7,6 @@ import { logger } from '@/config/logger';
 registerCommand<WSRequest_GetConversations>(
     'get-conversations',
     async (client: Client): Promise<WSResponse_GetConversations> => {
-        if (!client.authenticated || !client.userId) {
-            return { command: 'get-conversations', payload: { error: 'Not authenticated' } };
-        }
-
         const db = getDatabase();
 
         try {

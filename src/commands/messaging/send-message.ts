@@ -8,10 +8,6 @@ import { logger } from '@/config/logger';
 registerCommand<WSRequest_SendMessage>(
     'send-message',
     async (client: Client, payload): Promise<WSResponse_SendMessage> => {
-        if (!client.authenticated || !client.userId) {
-            return { command: 'send-message', payload: { error: 'Not authenticated' } };
-        }
-
         const { conversationId, text } = payload;
         const db = getDatabase();
 

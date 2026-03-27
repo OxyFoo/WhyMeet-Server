@@ -18,10 +18,11 @@ services:
         restart: unless-stopped
 
     whymeet-server-dev:
-        build:
-            context: ..
-            dockerfile: WhyMeet-Server/Dockerfile
+        image: node:22-alpine
         container_name: whymeet-server-dev
+        user: '1000:1000'
+        working_dir: /app
+        command: ['sh', '-c', 'npx prisma db push && npm start']
         ports:
             - '0.0.0.0:4600:4600'
         environment:
@@ -30,15 +31,8 @@ services:
         depends_on:
             whymeet-db-dev:
                 condition: service_healthy
-        user: node
         volumes:
-            - ./logs:/app/logs
-        deploy:
-            restart_policy:
-                condition: on-failure
-                delay: 10s
-                max_attempts: 5
-                window: 120s
+            - .:/app:z
         restart: unless-stopped
 
     whymeet-pgadmin-dev:

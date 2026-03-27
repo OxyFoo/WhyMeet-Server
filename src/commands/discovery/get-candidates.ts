@@ -6,10 +6,6 @@ import { logger } from '@/config/logger';
 registerCommand<WSRequest_GetCandidates>(
     'get-candidates',
     async (client: Client, _payload): Promise<WSResponse_GetCandidates> => {
-        if (!client.authenticated || !client.userId) {
-            return { command: 'get-candidates', payload: { error: 'Not authenticated' } };
-        }
-
         // TODO: Implement candidate discovery logic with filters
         logger.debug(`[Discovery] Get candidates for user: ${client.userId}`);
 

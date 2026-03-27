@@ -4,10 +4,6 @@ import type { WSRequest_Star, WSResponse_Star } from '@whymeet/types';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_Star>('star', async (client: Client, payload): Promise<WSResponse_Star> => {
-    if (!client.authenticated || !client.userId) {
-        return { command: 'star', payload: { error: 'Not authenticated' } };
-    }
-
     const { candidateId } = payload;
 
     // TODO: Star/super-like logic

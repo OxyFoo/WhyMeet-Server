@@ -1,0 +1,64 @@
+import type { Profile } from '@whymeet/types';
+
+/**
+ * Maps a Prisma User (with profile/tags/intentions) to the shared Profile type.
+ */
+export function mapUserToProfile(user: {
+    id: string;
+    name: string;
+    age: number;
+    avatar: string;
+    city: string;
+    verified: boolean;
+    profile?: {
+        bio: string;
+        socialVibe: string;
+        country: string;
+        region: string;
+        city: string;
+        statConnections: number;
+        statMatches: number;
+        statVibes: number;
+    } | null;
+    tags?: { type: string; tag: { id: string; label: string } }[];
+    intentions?: { intention: { id: string; category: string; label: string; description: string } }[];
+}): Profile {
+    return {
+        id: user.id,
+        name: user.name,
+        age: user.age,
+        avatar: user.avatar,
+        city: user.city,
+        verified: user.verified,
+        bio: user.profile?.bio ?? '',
+        socialVibe: (user.profile?.socialVibe ?? 'chill') as Profile['socialVibe'],
+        interests: (user.tags ?? [])
+            .filter((t) => t.type === 'interest')
+            .map((t) => ({ id: t.tag.id, label: t.tag.label })),
+        skills: (user.tags ?? []).filter((t) => t.type === 'skill').map((t) => ({ id: t.tag.id, label: t.tag.label })),
+        intentions: (user.intentions ?? []).map((ui) => ({
+            id: ui.intention.id,
+            category: ui.intention.category as Profile['intentions'][number]['category'],
+            label: ui.intention.label,
+            description: ui.intention.description,
+            tags: []
+        })),
+        location: {
+            country: user.profile?.country ?? '',
+            region: user.profile?.region ?? '',
+            city: user.profile?.city ?? ''
+        },
+        stats: {
+            connections: user.profile?.statConnections ?? 0,
+            matches: user.profile?.statMatches ?? 0,
+            vibes: user.profile?.statVibes ?? 0
+        }
+    };
+}
+
+/** Prisma include clause to fetch everything needed for mapUserToProfile */
+export const profileInclude = {
+    profile: true,
+    tags: { include: { tag: true } },
+    intentions: { include: { intention: true } }
+} as const;

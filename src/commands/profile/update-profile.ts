@@ -7,10 +7,6 @@ import { logger } from '@/config/logger';
 registerCommand<WSRequest_UpdateProfile>(
     'update-profile',
     async (client: Client, payload): Promise<WSResponse_UpdateProfile> => {
-        if (!client.authenticated || !client.userId) {
-            return { command: 'update-profile', payload: { error: 'Not authenticated' } };
-        }
-
         const { data } = payload;
         const db = getDatabase();
 

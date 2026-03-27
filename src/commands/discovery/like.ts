@@ -4,10 +4,6 @@ import type { WSRequest_Like, WSResponse_Like } from '@whymeet/types';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise<WSResponse_Like> => {
-    if (!client.authenticated || !client.userId) {
-        return { command: 'like', payload: { error: 'Not authenticated' } };
-    }
-
     const { candidateId } = payload;
 
     // TODO: Create match record, check for mutual match, create conversation if mutual

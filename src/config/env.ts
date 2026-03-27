@@ -18,7 +18,17 @@ const envSchema = z.object({
     DATABASE_URL: z.string().url(),
 
     JWT_SECRET: z.string().min(16),
-    JWT_EXPIRES_IN: z.string().default('7d')
+    JWT_EXPIRES_IN: z.string().default('7d'),
+
+    CRYPT_KEY_MAIL: z.string().min(16),
+    WS_TOKEN_EXPIRES_SECONDS: z.coerce.number().int().positive().default(60),
+    MAIL_TOKEN_TTL_MINUTES: z.coerce.number().int().positive().default(15),
+
+    SMTP_HOST: z.string().default(''),
+    SMTP_PORT: z.coerce.number().int().default(587),
+    SMTP_USER: z.string().default(''),
+    SMTP_PASS: z.string().default(''),
+    EMAIL_FROM: z.string().default('noreply@whymeet.app')
 });
 
 const parsed = envSchema.safeParse(process.env);

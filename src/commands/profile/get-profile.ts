@@ -5,10 +5,6 @@ import { getDatabase } from '@/services/database';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_GetProfile>('get-profile', async (client: Client): Promise<WSResponse_GetProfile> => {
-    if (!client.authenticated || !client.userId) {
-        return { command: 'get-profile', payload: { error: 'Not authenticated' } };
-    }
-
     const db = getDatabase();
 
     try {

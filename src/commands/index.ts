@@ -1,9 +1,5 @@
 // Register all command handlers
 import './auth/handshake';
-import './auth/sign-in';
-import './auth/sign-up';
-import './auth/sign-out';
-import './auth/forgot-password';
 import './discovery/get-candidates';
 import './discovery/like';
 import './discovery/skip';

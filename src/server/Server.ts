@@ -10,6 +10,9 @@ import { env } from '@/config/env';
 import { logger } from '@/config/logger';
 import { Client } from './Client';
 import { routeCommand } from './Router';
+import { authRouter } from './authRoutes';
+import { tokenManager } from '@/services/tokenManager';
+import { getDatabase } from '@/services/database';
 
 const clients = new Map<string, Client>();
 
@@ -20,10 +23,14 @@ function createHttpServer(): http.Server | https.Server {
     const app = express();
     app.use(helmet());
     app.use(cors());
+    app.use(express.json());
 
     app.get('/health', (_req, res) => {
         res.json({ status: 'ok', uptime: process.uptime(), clients: clients.size });
     });
+
+    // HTTP auth routes
+    app.use('/auth', authRouter);
 
     if (env.SSL_PRIVATE_KEY_PATH && env.SSL_CERTIFICATE_PATH) {
         try {
@@ -48,7 +55,12 @@ function getClientIp(req: http.IncomingMessage): string {
 function onConnection(ws: WebSocket, req: http.IncomingMessage): void {
     const id = crypto.randomUUID();
     const ip = getClientIp(req);
-    const client = new Client(id, ws, ip);
+
+    // Extract userId and deviceId from verified WS token (set during verifyClient)
+    const userId = (req as unknown as { wsUserId: string }).wsUserId;
+    const deviceId = (req as unknown as { wsDeviceId: string }).wsDeviceId;
+
+    const client = new Client(id, ws, ip, userId, deviceId);
     clients.set(id, client);
 
     logger.info(`[Server] Client connected: ${id} (${ip}) — Total: ${clients.size}`);
@@ -80,7 +92,42 @@ function onConnection(ws: WebSocket, req: http.IncomingMessage): void {
 export function startServer(port: number): Promise<void> {
     return new Promise((resolve) => {
         httpServer = createHttpServer();
-        wss = new WebSocketServer({ server: httpServer });
+        wss = new WebSocketServer({
+            server: httpServer,
+            verifyClient: async (info, callback) => {
+                try {
+                    const url = new URL(info.req.url ?? '', `http://${info.req.headers.host}`);
+                    const token = url.searchParams.get('token');
+
+                    if (!token) {
+                        callback(false, 401, 'Missing token');
+                        return;
+                    }
+
+                    const payload = tokenManager.ws.verify(token);
+                    if (!payload) {
+                        callback(false, 401, 'Invalid or expired token');
+                        return;
+                    }
+
+                    // Double-check in DB: device must be active and belong to the claimed user
+                    const db = getDatabase();
+                    const device = await db.device.findUnique({ where: { id: payload.deviceId } });
+                    if (!device || device.status !== 'active' || device.userId !== payload.userId) {
+                        callback(false, 401, 'Device revoked or invalid');
+                        return;
+                    }
+
+                    // Attach userId/deviceId to the request for onConnection
+                    (info.req as unknown as { wsUserId: string }).wsUserId = payload.userId;
+                    (info.req as unknown as { wsDeviceId: string }).wsDeviceId = payload.deviceId;
+                    callback(true);
+                } catch (error) {
+                    logger.error('[Server] verifyClient error', error);
+                    callback(false, 500, 'Internal error');
+                }
+            }
+        });
 
         wss.on('connection', onConnection);
 

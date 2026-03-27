@@ -7,10 +7,6 @@ import { logger } from '@/config/logger';
 registerCommand<WSRequest_GetMessages>(
     'get-messages',
     async (client: Client, payload): Promise<WSResponse_GetMessages> => {
-        if (!client.authenticated || !client.userId) {
-            return { command: 'get-messages', payload: { error: 'Not authenticated' } };
-        }
-
         const { conversationId } = payload;
         const db = getDatabase();
 

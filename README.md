@@ -29,18 +29,18 @@ npm run dev
 
 ## Scripts
 
-| Script | Description |
-|--------|-------------|
-| `npm start` | Start the compiled server |
-| `npm run build` | Compile TypeScript |
-| `npm run dev` | Build + Start |
-| `npm run lint` | ESLint check |
-| `npm run typecheck` | TypeScript check |
-| `npm test` | Run tests |
-| `npm run db:generate` | Generate Prisma client |
-| `npm run db:migrate` | Run Prisma migrations |
-| `npm run db:push` | Push schema to DB |
-| `npm run db:studio` | Open Prisma Studio |
+| Script                | Description               |
+| --------------------- | ------------------------- |
+| `npm start`           | Start the compiled server |
+| `npm run build`       | Compile TypeScript        |
+| `npm run dev`         | Build + Start             |
+| `npm run lint`        | ESLint check              |
+| `npm run typecheck`   | TypeScript check          |
+| `npm test`            | Run tests                 |
+| `npm run db:generate` | Generate Prisma client    |
+| `npm run db:migrate`  | Run Prisma migrations     |
+| `npm run db:push`     | Push schema to DB         |
+| `npm run db:studio`   | Open Prisma Studio        |
 
 ## Docker
 

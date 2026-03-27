@@ -6,13 +6,15 @@ export class Client {
     readonly id: string;
     readonly ws: WebSocket;
     readonly ip: string;
-    userId: string | null = null;
-    authenticated = false;
+    readonly userId: string;
+    readonly deviceId: string;
 
-    constructor(id: string, ws: WebSocket, ip: string) {
+    constructor(id: string, ws: WebSocket, ip: string, userId: string, deviceId: string) {
         this.id = id;
         this.ws = ws;
         this.ip = ip;
+        this.userId = userId;
+        this.deviceId = deviceId;
     }
 
     send(data: WSServerResponse | WSServerEvent, requestId?: string): void {

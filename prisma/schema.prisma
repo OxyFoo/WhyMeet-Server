@@ -9,18 +9,18 @@ datasource db {
 // ─── Auth & Users ───────────────────────────────────────────────────
 
 model User {
-    id           String   @id @default(cuid())
-    email        String   @unique
-    passwordHash String
-    name         String
-    age          Int
-    avatar       String   @default("")
-    city         String   @default("")
-    verified     Boolean  @default(false)
-    createdAt    DateTime @default(now())
-    updatedAt    DateTime @updatedAt
+    id        String   @id @default(cuid())
+    email     String   @unique
+    name      String   @default("")
+    age       Int      @default(0)
+    avatar    String   @default("")
+    city      String   @default("")
+    verified  Boolean  @default(false)
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
 
     profile         Profile?
+    devices         Device[]
     intentions      UserIntention[]
     tags            UserTag[]
     sentMatches     Match[]                   @relation("MatchSender")
@@ -30,6 +30,24 @@ model User {
     conversations   ConversationParticipant[]
 
     @@map("users")
+}
+
+model Device {
+    id               String   @id @default(cuid())
+    uuid             String   @unique
+    sessionTokenHash String
+    mailTokenHash    String?
+    status           String   @default("pending") // "pending" | "active"
+    name             String   @default("")
+    os               String   @default("")
+    createdAt        DateTime @default(now())
+    lastSeenAt       DateTime @default(now())
+
+    userId String?
+    user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@index([userId])
+    @@map("devices")
 }
 
 model Profile {
