@@ -2,8 +2,10 @@ import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import type {
-    HTTPResponse_SignUp,
-    HTTPResponse_SignIn,
+    HTTPResponse_Device,
+    HTTPResponse_Enter,
+    HTTPResponse_GoogleSignIn,
+    HTTPResponse_AppleSignIn,
     HTTPResponse_RefreshWSToken,
     HTTPResponse_DeviceStatus,
     HTTPResponse_ResendEmail,
@@ -14,212 +16,394 @@ import { tokenManager } from '@/services/tokenManager';
 import { mapUserToProfile, profileInclude } from '@/services/userMapper';
 import { sendConfirmationEmail } from '@/services/emailService';
 import { logger } from '@/config/logger';
+import { env } from '@/config/env';
 
 export const authRouter = Router();
 
 // ─── Rate limiters ───────────────────────────────────────────────────
 
-const signUpLimiter = rateLimit({
-    windowMs: 60 * 60 * 1000,
-    limit: 5,
+const deviceLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 30,
     standardHeaders: 'draft-8',
-    legacyHeaders: false,
-    message: { success: false, message: 'Too many sign-up attempts, try again later' }
+    legacyHeaders: false
 });
-const signInLimiter = rateLimit({
+const enterLimiter = rateLimit({
     windowMs: 60 * 1000,
     limit: 10,
     standardHeaders: 'draft-8',
-    legacyHeaders: false,
-    message: { status: 'wait-mail', message: 'Too many sign-in attempts, try again later' }
+    legacyHeaders: false
+});
+const oauthLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 10,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false
 });
 const resendLimiter = rateLimit({
     windowMs: 5 * 60 * 1000,
     limit: 3,
     standardHeaders: 'draft-8',
-    legacyHeaders: false,
-    message: { success: false, message: 'Too many resend attempts, try again later' }
+    legacyHeaders: false
 });
-const statusLimiter = rateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: 'draft-8', legacyHeaders: false });
+const statusLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 60,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false
+});
 
 // ─── Validation schemas ──────────────────────────────────────────────
 
-const signUpSchema = z.object({
-    email: z.string().email(),
-    deviceUUID: z.string().min(1)
+const deviceSchema = z.object({
+    uuid: z.string().uuid().optional(),
+    sessionToken: z.string().min(1).optional()
 });
 
-const signInSchema = z.object({
+const enterSchema = z.object({
     email: z.string().email(),
-    deviceUUID: z.string().min(1),
-    sessionToken: z.string().optional()
+    deviceUUID: z.string().uuid(),
+    username: z.string().min(2).max(32).optional()
+});
+
+const googleSignInSchema = z.object({
+    idToken: z.string().min(1),
+    deviceUUID: z.string().uuid()
+});
+
+const appleSignInSchema = z.object({
+    idToken: z.string().min(1),
+    deviceUUID: z.string().uuid()
 });
 
 const refreshSchema = z.object({
-    deviceUUID: z.string().min(1),
+    deviceUUID: z.string().uuid(),
     sessionToken: z.string().min(1)
 });
 
 const resendSchema = z.object({
-    deviceUUID: z.string().min(1)
+    deviceUUID: z.string().uuid()
 });
 
 const signOutSchema = z.object({
-    deviceUUID: z.string().min(1),
+    deviceUUID: z.string().uuid(),
     sessionToken: z.string().min(1)
 });
 
-// ─── POST /auth/sign-up ─────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────
 
-authRouter.post('/sign-up', signUpLimiter, async (req, res) => {
-    const parsed = signUpSchema.safeParse(req.body);
+async function linkDeviceAndSendMail(userId: string, deviceId: string, email: string): Promise<void> {
+    const db = getDatabase();
+    const mailToken = tokenManager.mail.generate(userId, deviceId);
+    if (mailToken) {
+        await db.device.update({
+            where: { id: deviceId },
+            data: {
+                userId,
+                status: 'pending',
+                mailTokenHash: tokenManager.hashToken(mailToken)
+            }
+        });
+        await sendConfirmationEmail(email, mailToken);
+    }
+}
+
+// ─── POST /auth/device ──────────────────────────────────────────────
+// Transparent device auth at app startup.
+// - No uuid → create new orphan device, return uuid + sessionToken
+// - uuid + sessionToken → verify, cycle session, return newSessionToken
+
+authRouter.post('/device', deviceLimiter, async (req, res) => {
+    const parsed = deviceSchema.safeParse(req.body);
     if (!parsed.success) {
-        res.status(400).json({ success: false, message: 'Invalid request' } satisfies HTTPResponse_SignUp);
+        res.status(400).json({ error: 'Invalid request' });
         return;
     }
 
-    const { email, deviceUUID } = parsed.data;
+    const { uuid, sessionToken } = parsed.data;
     const db = getDatabase();
 
     try {
-        // Check if user already exists
-        const existing = await db.user.findUnique({ where: { email } });
-        if (existing) {
-            res.status(409).json({ success: false, message: 'Email already in use' } satisfies HTTPResponse_SignUp);
+        // New device
+        if (!uuid) {
+            const newUuid = crypto.randomUUID();
+            const newSessionToken = tokenManager.session.generate();
+            await db.device.create({
+                data: {
+                    uuid: newUuid,
+                    sessionTokenHash: tokenManager.hashToken(newSessionToken),
+                    status: 'pending'
+                }
+            });
+
+            logger.info(`[Auth] New device created: uuid=${newUuid}`);
+            const response: HTTPResponse_Device = { status: 'new', uuid: newUuid, sessionToken: newSessionToken };
+            res.json(response);
             return;
         }
 
-        // Create user + profile
-        const user = await db.user.create({
-            data: {
-                email,
-                profile: { create: {} }
-            }
-        });
-
-        // Create device in pending status with mail token
-        const sessionToken = tokenManager.session.generate();
-        const mailToken = tokenManager.mail.generate(user.id, '');
-
-        const device = await db.device.create({
-            data: {
-                uuid: deviceUUID,
-                sessionTokenHash: tokenManager.hashToken(sessionToken),
-                status: 'pending',
-                userId: user.id
-            }
-        });
-
-        // Generate mail token with actual device ID and store its hash
-        const realMailToken = tokenManager.mail.generate(user.id, device.id);
-        if (realMailToken) {
-            await db.device.update({
-                where: { id: device.id },
-                data: { mailTokenHash: tokenManager.hashToken(realMailToken) }
-            });
-            await sendConfirmationEmail(email, realMailToken);
+        // Returning device
+        if (!sessionToken) {
+            res.status(400).json({ error: 'Session token required for existing device' });
+            return;
         }
 
-        logger.info(`[Auth] Sign-up: user=${user.id}, device=${device.id}, email=${email}`);
+        const device = await db.device.findUnique({ where: { uuid } });
+        if (!device) {
+            res.status(404).json({ error: 'Unknown device' });
+            return;
+        }
 
-        res.json({
-            success: true,
-            message: 'Check your email to confirm your account',
-            sessionToken
-        } satisfies HTTPResponse_SignUp);
+        if (!tokenManager.session.check(device.sessionTokenHash, sessionToken)) {
+            res.status(401).json({ error: 'Invalid session' });
+            return;
+        }
+
+        const newSessionToken = await tokenManager.session.cycle(device.id);
+
+        logger.debug(`[Auth] Device returning: uuid=${uuid}`);
+        const response: HTTPResponse_Device = { status: 'returning', newSessionToken };
+        res.json(response);
     } catch (error) {
-        logger.error('[Auth] Sign-up error', error);
-        res.status(500).json({ success: false, message: 'Internal error' } satisfies HTTPResponse_SignUp);
+        logger.error('[Auth] Device error', error);
+        res.status(500).json({ error: 'Internal error' });
     }
 });
 
-// ─── POST /auth/sign-in ─────────────────────────────────────────────
+// ─── POST /auth/enter ───────────────────────────────────────────────
+// Merged login + signup flow.
+// 1) { email, deviceUUID }            → check if account exists
+//    - No account                     → { status: 'no-account' }
+//    - Account + device active+valid  → { status: 'authenticated', ... }
+//    - Account + device new/pending   → send mail → { status: 'wait-mail' }
+// 2) { email, deviceUUID, username }  → create account + link device + send mail → { status: 'wait-mail' }
 
-authRouter.post('/sign-in', signInLimiter, async (req, res) => {
-    const parsed = signInSchema.safeParse(req.body);
+authRouter.post('/enter', enterLimiter, async (req, res) => {
+    const parsed = enterSchema.safeParse(req.body);
     if (!parsed.success) {
-        res.status(400).json({ status: 'wait-mail', message: 'Invalid request' } satisfies HTTPResponse_SignIn);
+        res.status(400).json({ error: 'Invalid request' });
         return;
     }
 
-    const { email, deviceUUID, sessionToken } = parsed.data;
+    const { email, deviceUUID, username } = parsed.data;
     const db = getDatabase();
 
     try {
-        // Find user by email
-        const user = await db.user.findUnique({
+        const device = await db.device.findUnique({ where: { uuid: deviceUUID } });
+        if (!device) {
+            res.status(404).json({ error: 'Unknown device. Call POST /auth/device first.' });
+            return;
+        }
+
+        const existingUser = await db.user.findUnique({
             where: { email },
             include: profileInclude
         });
 
-        if (!user) {
-            res.status(401).json({ status: 'wait-mail', message: 'Invalid credentials' } satisfies HTTPResponse_SignIn);
-            return;
-        }
+        // ── Account exists ───────────────────────────────────────────
+        if (existingUser) {
+            // If username was provided but account exists, ignore username (account already created)
+            const existingDevice = await db.device.findFirst({
+                where: { userId: existingUser.id, uuid: deviceUUID }
+            });
 
-        // Find device by UUID and user
-        const device = await db.device.findUnique({ where: { uuid: deviceUUID } });
+            if (existingDevice && existingDevice.status === 'active') {
+                // Device already active → authenticate directly
+                const newSessionToken = await tokenManager.session.cycle(existingDevice.id);
+                const wsToken = tokenManager.ws.generate(existingUser.id, existingDevice.id);
 
-        if (device && device.userId === user.id) {
-            // Known device
-            if (device.status === 'pending') {
-                res.json({
-                    status: 'wait-mail',
-                    message: 'Please confirm your email first'
-                } satisfies HTTPResponse_SignIn);
+                logger.info(`[Auth] Enter authenticated: user=${existingUser.id}, device=${existingDevice.id}`);
+                const response: HTTPResponse_Enter = {
+                    status: 'authenticated',
+                    wsToken,
+                    newSessionToken,
+                    user: mapUserToProfile(existingUser)
+                };
+                res.json(response);
                 return;
             }
 
-            // Active device — verify session token
-            if (!sessionToken || !tokenManager.session.check(device.sessionTokenHash, sessionToken)) {
-                res.status(401).json({ status: 'wait-mail', message: 'Invalid session' } satisfies HTTPResponse_SignIn);
-                return;
-            }
+            // Device not yet linked to this user, or pending → link & send mail
+            await linkDeviceAndSendMail(existingUser.id, device.id, existingUser.email);
 
-            // Cycle session token and generate WS token
-            const newSessionToken = await tokenManager.session.cycle(device.id);
-            const wsToken = tokenManager.ws.generate(user.id, device.id);
-
-            logger.info(`[Auth] Sign-in: user=${user.id}, device=${device.id}`);
-
-            const response: HTTPResponse_SignIn = {
-                status: 'authenticated',
-                wsToken,
-                newSessionToken,
-                user: mapUserToProfile(user)
+            logger.info(`[Auth] Enter wait-mail: user=${existingUser.id}, device=${device.id}`);
+            const response: HTTPResponse_Enter = {
+                status: 'wait-mail',
+                message: 'Check your email to confirm this device'
             };
             res.json(response);
             return;
         }
 
-        // Unknown device for this user — create pending device, send confirmation email
-        const newSessionToken = tokenManager.session.generate();
-        const newDevice = await db.device.create({
+        // ── No account ──────────────────────────────────────────────
+        if (!username) {
+            const response: HTTPResponse_Enter = { status: 'no-account' };
+            res.json(response);
+            return;
+        }
+
+        // ── Create account ──────────────────────────────────────────
+        const newUser = await db.user.create({
             data: {
-                uuid: deviceUUID,
-                sessionTokenHash: tokenManager.hashToken(newSessionToken),
-                status: 'pending',
-                userId: user.id
+                email,
+                name: username,
+                profile: { create: {} }
             }
         });
 
-        const mailToken = tokenManager.mail.generate(user.id, newDevice.id);
-        if (mailToken) {
-            await db.device.update({
-                where: { id: newDevice.id },
-                data: { mailTokenHash: tokenManager.hashToken(mailToken) }
-            });
-            await sendConfirmationEmail(user.email, mailToken);
+        await linkDeviceAndSendMail(newUser.id, device.id, email);
+
+        logger.info(`[Auth] Enter sign-up: user=${newUser.id}, device=${device.id}, email=${email}`);
+        const response: HTTPResponse_Enter = {
+            status: 'wait-mail',
+            message: 'Check your email to confirm your account'
+        };
+        res.json(response);
+    } catch (error) {
+        logger.error('[Auth] Enter error', error);
+        res.status(500).json({ error: 'Internal error' });
+    }
+});
+
+// ─── POST /auth/google-signin ────────────────────────────────────────
+
+authRouter.post('/google-signin', oauthLimiter, async (req, res) => {
+    const parsed = googleSignInSchema.safeParse(req.body);
+    if (!parsed.success) {
+        res.status(400).json({ error: 'Invalid request' });
+        return;
+    }
+
+    if (!env.GOOGLE_CLIENT_ID) {
+        res.status(503).json({ error: 'Google Sign-In not configured' });
+        return;
+    }
+
+    const { idToken, deviceUUID } = parsed.data;
+    const db = getDatabase();
+
+    try {
+        // Dynamically import to avoid hard dependency when not configured
+        const { OAuth2Client } = await import('google-auth-library');
+        const googleClient = new OAuth2Client(env.GOOGLE_CLIENT_ID);
+
+        const ticket = await googleClient.verifyIdToken({
+            idToken,
+            audience: env.GOOGLE_CLIENT_ID
+        });
+
+        const payload = ticket.getPayload();
+        if (!payload?.email || !payload.email_verified) {
+            res.status(401).json({ error: 'Invalid Google token or unverified email' });
+            return;
         }
 
-        logger.info(`[Auth] New device for user=${user.id}, device=${newDevice.id}`);
-        res.json({
-            status: 'new-device',
-            message: 'Check your email to confirm this device'
-        } satisfies HTTPResponse_SignIn);
+        const device = await db.device.findUnique({ where: { uuid: deviceUUID } });
+        if (!device) {
+            res.status(404).json({ error: 'Unknown device. Call POST /auth/device first.' });
+            return;
+        }
+
+        const user = await db.user.findUnique({
+            where: { email: payload.email },
+            include: profileInclude
+        });
+
+        if (!user) {
+            const response: HTTPResponse_GoogleSignIn = { status: 'no-account', email: payload.email };
+            res.json(response);
+            return;
+        }
+
+        // Google verified email → auto-activate device for this user
+        await db.device.update({
+            where: { id: device.id },
+            data: { userId: user.id, status: 'active', mailTokenHash: null }
+        });
+
+        const newSessionToken = await tokenManager.session.cycle(device.id);
+        const wsToken = tokenManager.ws.generate(user.id, device.id);
+
+        logger.info(`[Auth] Google sign-in: user=${user.id}, device=${device.id}`);
+        const response: HTTPResponse_GoogleSignIn = {
+            status: 'authenticated',
+            wsToken,
+            newSessionToken,
+            user: mapUserToProfile(user)
+        };
+        res.json(response);
     } catch (error) {
-        logger.error('[Auth] Sign-in error', error);
-        res.status(500).json({ status: 'wait-mail', message: 'Internal error' } satisfies HTTPResponse_SignIn);
+        logger.error('[Auth] Google sign-in error', error);
+        res.status(500).json({ error: 'Internal error' });
+    }
+});
+
+// ─── POST /auth/apple-signin ─────────────────────────────────────────
+
+authRouter.post('/apple-signin', oauthLimiter, async (req, res) => {
+    const parsed = appleSignInSchema.safeParse(req.body);
+    if (!parsed.success) {
+        res.status(400).json({ error: 'Invalid request' });
+        return;
+    }
+
+    if (!env.APPLE_CLIENT_ID) {
+        res.status(503).json({ error: 'Apple Sign-In not configured' });
+        return;
+    }
+
+    const { idToken, deviceUUID } = parsed.data;
+    const db = getDatabase();
+
+    try {
+        const appleSignin = await import('apple-signin-auth');
+        const applePayload = await appleSignin.default.verifyIdToken(idToken, {
+            audience: env.APPLE_CLIENT_ID,
+            ignoreExpiration: false
+        });
+
+        if (!applePayload.email || !applePayload.email_verified) {
+            res.status(401).json({ error: 'Invalid Apple token or unverified email' });
+            return;
+        }
+
+        const device = await db.device.findUnique({ where: { uuid: deviceUUID } });
+        if (!device) {
+            res.status(404).json({ error: 'Unknown device. Call POST /auth/device first.' });
+            return;
+        }
+
+        const user = await db.user.findUnique({
+            where: { email: applePayload.email },
+            include: profileInclude
+        });
+
+        if (!user) {
+            const response: HTTPResponse_AppleSignIn = { status: 'no-account', email: applePayload.email };
+            res.json(response);
+            return;
+        }
+
+        // Apple verified email → auto-activate device for this user
+        await db.device.update({
+            where: { id: device.id },
+            data: { userId: user.id, status: 'active', mailTokenHash: null }
+        });
+
+        const newSessionToken = await tokenManager.session.cycle(device.id);
+        const wsToken = tokenManager.ws.generate(user.id, device.id);
+
+        logger.info(`[Auth] Apple sign-in: user=${user.id}, device=${device.id}`);
+        const response: HTTPResponse_AppleSignIn = {
+            status: 'authenticated',
+            wsToken,
+            newSessionToken,
+            user: mapUserToProfile(user)
+        };
+        res.json(response);
+    } catch (error) {
+        logger.error('[Auth] Apple sign-in error', error);
+        res.status(500).json({ error: 'Internal error' });
     }
 });
 
@@ -321,7 +505,7 @@ authRouter.post('/refresh-ws-token', async (req, res) => {
 // ─── GET /auth/device-status/:deviceUUID ─────────────────────────────
 
 authRouter.get('/device-status/:deviceUUID', statusLimiter, async (req, res) => {
-    const deviceUUID = req.params.deviceUUID;
+    const { deviceUUID } = req.params;
     if (typeof deviceUUID !== 'string') {
         res.status(400).json({ status: 'pending' } satisfies HTTPResponse_DeviceStatus);
         return;
@@ -378,7 +562,6 @@ authRouter.post('/resend-email', resendLimiter, async (req, res) => {
             return;
         }
 
-        // Generate new mail token and store its hash
         const mailToken = tokenManager.mail.generate(device.userId, device.id);
         if (!mailToken) {
             res.status(500).json({

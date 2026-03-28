@@ -1,7 +1,7 @@
-import type { Profile } from '@whymeet/types';
+import type { Profile, IntentionKey } from '@whymeet/types';
 
 /**
- * Maps a Prisma User (with profile/tags/intentions) to the shared Profile type.
+ * Maps a Prisma User (with profile/tags) to the shared Profile type.
  */
 export function mapUserToProfile(user: {
     id: string;
@@ -19,9 +19,9 @@ export function mapUserToProfile(user: {
         statConnections: number;
         statMatches: number;
         statVibes: number;
+        intentions: string[];
     } | null;
     tags?: { type: string; tag: { id: string; label: string } }[];
-    intentions?: { intention: { id: string; category: string; label: string; description: string } }[];
 }): Profile {
     return {
         id: user.id,
@@ -36,13 +36,7 @@ export function mapUserToProfile(user: {
             .filter((t) => t.type === 'interest')
             .map((t) => ({ id: t.tag.id, label: t.tag.label })),
         skills: (user.tags ?? []).filter((t) => t.type === 'skill').map((t) => ({ id: t.tag.id, label: t.tag.label })),
-        intentions: (user.intentions ?? []).map((ui) => ({
-            id: ui.intention.id,
-            category: ui.intention.category as Profile['intentions'][number]['category'],
-            label: ui.intention.label,
-            description: ui.intention.description,
-            tags: []
-        })),
+        intentions: (user.profile?.intentions ?? []) as IntentionKey[],
         location: {
             country: user.profile?.country ?? '',
             region: user.profile?.region ?? '',
@@ -59,6 +53,5 @@ export function mapUserToProfile(user: {
 /** Prisma include clause to fetch everything needed for mapUserToProfile */
 export const profileInclude = {
     profile: true,
-    tags: { include: { tag: true } },
-    intentions: { include: { intention: true } }
+    tags: { include: { tag: true } }
 } as const;

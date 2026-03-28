@@ -41,8 +41,17 @@ registerCommand<WSRequest_UpdateProfile>(
             logger.info(`[Profile] Updated profile for user: ${client.userId}`);
 
             // Re-fetch and return updated profile
-            // For now, return a minimal response
-            return { command: 'update-profile', payload: { error: 'TODO: Return updated profile' } };
+            const { mapUserToProfile, profileInclude } = await import('@/services/userMapper');
+            const updated = await db.user.findUnique({
+                where: { id: client.userId },
+                include: profileInclude
+            });
+
+            if (!updated) {
+                return { command: 'update-profile', payload: { error: 'User not found' } };
+            }
+
+            return { command: 'update-profile', payload: { user: mapUserToProfile(updated) } };
         } catch (error) {
             logger.error('[Profile] Update profile error', error);
             return { command: 'update-profile', payload: { error: 'Internal error' } };

@@ -1,19 +1,15 @@
 import { env } from '@/config/env';
 import { logger } from '@/config/logger';
+import { APP_VERSION } from '@/config/version';
 import { connectDatabase, disconnectDatabase } from '@/services/database';
 import { startServer, stopServer } from '@/server/Server';
 import { getRegisteredCommands } from '@/server/Router';
 
-import { readFileSync } from 'fs';
-import { resolve } from 'path';
-
 // Register all commands
 import '@/commands';
 
-const pkg = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf-8'));
-
 async function main(): Promise<void> {
-    logger.info(`[WhyMeet Server] v${pkg.version} (${env.ENVIRONMENT})`);
+    logger.info(`[WhyMeet Server] v${APP_VERSION} (${env.ENVIRONMENT})`);
 
     // Connect to database
     const dbConnected = await connectDatabase();

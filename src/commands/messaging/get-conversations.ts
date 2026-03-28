@@ -43,8 +43,6 @@ registerCommand<WSRequest_GetConversations>(
                               verified: other.verified
                           }
                         : { id: '', name: 'Unknown', age: 0, avatar: '', city: '', verified: false },
-                    intentionCategory: p.conversation.intentionCategory as 'dating',
-                    intentionLabel: p.conversation.intentionLabel,
                     lastMessage: lastMsg?.text,
                     lastMessageTime: lastMsg?.timestamp.toISOString(),
                     unreadCount: p.unreadCount

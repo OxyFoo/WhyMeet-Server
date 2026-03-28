@@ -21,7 +21,6 @@ model User {
 
     profile         Profile?
     devices         Device[]
-    intentions      UserIntention[]
     tags            UserTag[]
     sentMatches     Match[]                   @relation("MatchSender")
     receivedMatches Match[]                   @relation("MatchReceiver")
@@ -64,35 +63,12 @@ model Profile {
     statMatches     Int @default(0)
     statVibes       Int @default(0)
 
+    // Intentions (static keys from @whymeet/types IntentionKey)
+    intentions String[] @default([])
+
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
     @@map("profiles")
-}
-
-// ─── Intentions ─────────────────────────────────────────────────────
-
-model Intention {
-    id          String @id @default(cuid())
-    category    String // dating, friendship, sports, music, nightlife, gaming, activities
-    label       String
-    description String @default("")
-
-    tags  IntentionTag[]
-    users UserIntention[]
-
-    @@map("intentions")
-}
-
-model UserIntention {
-    id          String @id @default(cuid())
-    userId      String
-    intentionId String
-
-    user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-    intention Intention @relation(fields: [intentionId], references: [id], onDelete: Cascade)
-
-    @@unique([userId, intentionId])
-    @@map("user_intentions")
 }
 
 // ─── Tags ───────────────────────────────────────────────────────────
@@ -101,22 +77,9 @@ model Tag {
     id    String @id @default(cuid())
     label String @unique
 
-    intentionTags IntentionTag[]
-    userTags      UserTag[]
+    userTags UserTag[]
 
     @@map("tags")
-}
-
-model IntentionTag {
-    id          String @id @default(cuid())
-    intentionId String
-    tagId       String
-
-    intention Intention @relation(fields: [intentionId], references: [id], onDelete: Cascade)
-    tag       Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
-
-    @@unique([intentionId, tagId])
-    @@map("intention_tags")
 }
 
 model UserTag {
@@ -129,6 +92,7 @@ model UserTag {
     tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
     @@unique([userId, tagId, type])
+    @@index([tagId])
     @@map("user_tags")
 }
 
@@ -138,7 +102,7 @@ model Match {
     id           String   @id @default(cuid())
     senderId     String
     receiverId   String
-    category     String // IntentionCategory
+    category     String // IntentionKey
     matchContext String   @default("")
     mutual       Boolean  @default(false)
     matchedAt    DateTime @default(now())
@@ -147,16 +111,15 @@ model Match {
     receiver User @relation("MatchReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
 
     @@unique([senderId, receiverId, category])
+    @@index([receiverId])
     @@map("matches")
 }
 
 // ─── Conversations & Messages ───────────────────────────────────────
 
 model Conversation {
-    id                String   @id @default(cuid())
-    intentionCategory String
-    intentionLabel    String   @default("")
-    createdAt         DateTime @default(now())
+    id        String   @id @default(cuid())
+    createdAt DateTime @default(now())
 
     participants ConversationParticipant[]
     messages     Message[]
@@ -174,6 +137,7 @@ model ConversationParticipant {
     user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
     @@unique([conversationId, userId])
+    @@index([userId])
     @@map("conversation_participants")
 }
 
@@ -188,6 +152,7 @@ model Message {
     sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
 
     @@index([conversationId, timestamp])
+    @@index([senderId])
     @@map("messages")
 }
 
