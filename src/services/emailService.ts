@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { env } from '@/config/env';
 import { logger } from '@/config/logger';
+import { renderTemplate } from '@/services/templateService';
 
 const transporter = env.SMTP_HOST
     ? nodemailer.createTransport({
@@ -25,22 +26,10 @@ export async function sendConfirmationEmail(to: string, mailToken: string): Prom
         return;
     }
 
-    const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="font-family:system-ui,sans-serif;max-width:480px;margin:40px auto;padding:0 16px;color:#1a1a1a;">
-  <h2 style="color:#6366f1;">WhyMeet</h2>
-  <p>Click the button below to confirm your device:</p>
-  <a href="${link}" style="display:inline-block;padding:12px 28px;background:#6366f1;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">
-    Confirm my device
-  </a>
-  <p style="margin-top:24px;font-size:13px;color:#888;">
-    If you didn't request this, you can safely ignore this email.<br>
-    This link expires in ${env.MAIL_TOKEN_TTL_MINUTES} minutes.
-  </p>
-</body>
-</html>`.trim();
+    const html = renderTemplate('confirmation-email.html', {
+        link,
+        ttlMinutes: String(env.MAIL_TOKEN_TTL_MINUTES)
+    });
 
     try {
         await transporter.sendMail({

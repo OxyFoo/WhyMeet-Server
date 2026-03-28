@@ -15,6 +15,7 @@ import { getDatabase } from '@/services/database';
 import { tokenManager } from '@/services/tokenManager';
 import { mapUserToProfile, profileInclude } from '@/services/userMapper';
 import { sendConfirmationEmail } from '@/services/emailService';
+import { renderTemplate } from '@/services/templateService';
 import { logger } from '@/config/logger';
 import { env } from '@/config/env';
 
@@ -409,28 +410,15 @@ authRouter.post('/apple-signin', oauthLimiter, async (req, res) => {
 
 // ─── GET /auth/validate-email/:token ─────────────────────────────────
 
-const htmlPage = (title: string, message: string, success: boolean) => `
-<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${title}</title>
-<style>body{font-family:system-ui,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#f8f9fa;color:#1a1a1a;}
-.card{text-align:center;padding:48px 32px;background:#fff;border-radius:16px;box-shadow:0 2px 12px rgba(0,0,0,.08);max-width:400px;}
-.icon{font-size:48px;margin-bottom:16px;}
-h1{font-size:22px;margin:0 0 12px;}
-p{color:#666;margin:0;line-height:1.5;}</style></head>
-<body><div class="card">
-<div class="icon">${success ? '✅' : '❌'}</div>
-<h1>${title}</h1>
-<p>${message}</p>
-</div></body></html>`;
+const statusPage = (title: string, message: string, success: boolean) =>
+    renderTemplate('status-page.html', { title, message, icon: success ? '✅' : '❌' });
 
 authRouter.get('/validate-email/:token', async (req, res) => {
     const token = req.params.token;
     if (typeof token !== 'string') {
         res.status(400)
             .type('html')
-            .send(htmlPage('Invalid Link', 'Missing token.', false));
+            .send(statusPage('Invalid Link', 'Missing token.', false));
         return;
     }
 
@@ -440,7 +428,7 @@ authRouter.get('/validate-email/:token', async (req, res) => {
             res.status(400)
                 .type('html')
                 .send(
-                    htmlPage(
+                    statusPage(
                         'Invalid Link',
                         'This confirmation link is invalid or has expired. Please request a new one from the app.',
                         false
@@ -451,7 +439,7 @@ authRouter.get('/validate-email/:token', async (req, res) => {
 
         logger.info(`[Auth] Email validated: user=${result.userId}, device=${result.deviceId}`);
         res.type('html').send(
-            htmlPage(
+            statusPage(
                 'Device Confirmed',
                 'Your device has been confirmed successfully. You can now return to the app.',
                 true
@@ -461,7 +449,7 @@ authRouter.get('/validate-email/:token', async (req, res) => {
         logger.error('[Auth] Validate email error', error);
         res.status(500)
             .type('html')
-            .send(htmlPage('Error', 'An unexpected error occurred. Please try again later.', false));
+            .send(statusPage('Error', 'An unexpected error occurred. Please try again later.', false));
     }
 });
 
