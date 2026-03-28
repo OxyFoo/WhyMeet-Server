@@ -53,6 +53,12 @@ const statusLimiter = rateLimit({
     standardHeaders: 'draft-8',
     legacyHeaders: false
 });
+const refreshLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 20,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false
+});
 
 // ─── Validation schemas ──────────────────────────────────────────────
 
@@ -64,6 +70,7 @@ const deviceSchema = z.object({
 const enterSchema = z.object({
     email: z.string().email(),
     deviceUUID: z.string().uuid(),
+    sessionToken: z.string().min(1),
     username: z.string().min(2).max(32).optional()
 });
 
@@ -83,7 +90,8 @@ const refreshSchema = z.object({
 });
 
 const resendSchema = z.object({
-    deviceUUID: z.string().uuid()
+    deviceUUID: z.string().uuid(),
+    sessionToken: z.string().min(1)
 });
 
 const signOutSchema = z.object({
@@ -186,13 +194,18 @@ authRouter.post('/enter', enterLimiter, async (req, res) => {
         return;
     }
 
-    const { email, deviceUUID, username } = parsed.data;
+    const { email, deviceUUID, sessionToken, username } = parsed.data;
     const db = getDatabase();
 
     try {
         const device = await db.device.findUnique({ where: { uuid: deviceUUID } });
         if (!device) {
             res.status(404).json({ error: 'Unknown device. Call POST /auth/device first.' });
+            return;
+        }
+
+        if (!tokenManager.session.check(device.sessionTokenHash, sessionToken)) {
+            res.status(401).json({ error: 'Invalid session' });
             return;
         }
 
@@ -455,7 +468,7 @@ authRouter.get('/validate-email/:token', async (req, res) => {
 
 // ─── POST /auth/refresh-ws-token ─────────────────────────────────────
 
-authRouter.post('/refresh-ws-token', async (req, res) => {
+authRouter.post('/refresh-ws-token', refreshLimiter, async (req, res) => {
     const parsed = refreshSchema.safeParse(req.body);
     if (!parsed.success) {
         res.status(400).json({ error: 'Invalid request' });
@@ -477,12 +490,21 @@ authRouter.post('/refresh-ws-token', async (req, res) => {
             return;
         }
 
+        const user = await db.user.findUnique({
+            where: { id: device.userId },
+            include: profileInclude
+        });
+        if (!user) {
+            res.status(401).json({ error: 'User not found' });
+            return;
+        }
+
         const newSessionToken = await tokenManager.session.cycle(device.id);
         const wsToken = tokenManager.ws.generate(device.userId, device.id);
 
         logger.info(`[Auth] WS token refreshed: device=${device.id}`);
 
-        const response: HTTPResponse_RefreshWSToken = { wsToken, newSessionToken };
+        const response: HTTPResponse_RefreshWSToken = { wsToken, newSessionToken, user: mapUserToProfile(user) };
         res.json(response);
     } catch (error) {
         logger.error('[Auth] Refresh WS token error', error);
@@ -523,7 +545,7 @@ authRouter.post('/resend-email', resendLimiter, async (req, res) => {
         return;
     }
 
-    const { deviceUUID } = parsed.data;
+    const { deviceUUID, sessionToken } = parsed.data;
     const db = getDatabase();
 
     try {
@@ -537,6 +559,11 @@ authRouter.post('/resend-email', resendLimiter, async (req, res) => {
                 success: false,
                 message: 'No pending confirmation for this device'
             } satisfies HTTPResponse_ResendEmail);
+            return;
+        }
+
+        if (!tokenManager.session.check(device.sessionTokenHash, sessionToken)) {
+            res.status(401).json({ success: false, message: 'Invalid session' } satisfies HTTPResponse_ResendEmail);
             return;
         }
 
