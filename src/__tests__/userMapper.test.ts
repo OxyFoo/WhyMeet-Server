@@ -1,0 +1,178 @@
+import { mapUserToProfile, mapUserToCandidate } from '@/services/userMapper';
+
+// ─── Fixtures ───────────────────────────────────────────────────────
+
+function makePrismaUser(overrides: Record<string, unknown> = {}) {
+    return { ...baseUser(), ...overrides };
+}
+
+function baseUser() {
+    return {
+        id: 'user-1',
+        name: 'Alice',
+        age: 25,
+        avatar: 'https://example.com/alice.png',
+        city: 'Paris',
+        verified: true,
+        profile: {
+            bio: 'Hello world',
+            socialVibe: 'chill',
+            country: 'France',
+            region: 'Île-de-France',
+            city: 'Paris',
+            statConnections: 10,
+            statMatches: 5,
+            statVibes: 42,
+            intentions: ['dating', 'friendship']
+        },
+        tags: [
+            { type: 'interest', tag: { id: 'tag-1', label: 'Photographie' } },
+            { type: 'interest', tag: { id: 'tag-2', label: 'Randonnée' } },
+            { type: 'skill', tag: { id: 'tag-3', label: 'JavaScript' } }
+        ]
+    };
+}
+
+// ─── mapUserToProfile ───────────────────────────────────────────────
+
+describe('mapUserToProfile', () => {
+    it('maps a full Prisma user to a Profile', () => {
+        const user = makePrismaUser();
+        const profile = mapUserToProfile(user);
+
+        expect(profile).toEqual({
+            id: 'user-1',
+            name: 'Alice',
+            age: 25,
+            avatar: 'https://example.com/alice.png',
+            city: 'Paris',
+            verified: true,
+            bio: 'Hello world',
+            socialVibe: 'chill',
+            interests: [
+                { id: 'tag-1', label: 'Photographie' },
+                { id: 'tag-2', label: 'Randonnée' }
+            ],
+            skills: [{ id: 'tag-3', label: 'JavaScript' }],
+            intentions: ['dating', 'friendship'],
+            location: { country: 'France', region: 'Île-de-France', city: 'Paris' },
+            stats: { connections: 10, matches: 5, vibes: 42 }
+        });
+    });
+
+    it('handles null profile gracefully', () => {
+        const user = makePrismaUser({ profile: null });
+        const profile = mapUserToProfile(user);
+
+        expect(profile.bio).toBe('');
+        expect(profile.socialVibe).toBe('chill');
+        expect(profile.intentions).toEqual([]);
+        expect(profile.location).toEqual({ country: '', region: '', city: '' });
+        expect(profile.stats).toEqual({ connections: 0, matches: 0, vibes: 0 });
+    });
+
+    it('handles undefined tags gracefully', () => {
+        const user = makePrismaUser({ tags: undefined });
+        const profile = mapUserToProfile(user);
+
+        expect(profile.interests).toEqual([]);
+        expect(profile.skills).toEqual([]);
+    });
+
+    it('separates interests from skills correctly', () => {
+        const user = makePrismaUser({
+            tags: [
+                { type: 'skill', tag: { id: 's1', label: 'Python' } },
+                { type: 'interest', tag: { id: 'i1', label: 'Yoga' } },
+                { type: 'skill', tag: { id: 's2', label: 'DevOps' } },
+                { type: 'interest', tag: { id: 'i2', label: 'Café' } }
+            ]
+        });
+        const profile = mapUserToProfile(user);
+
+        expect(profile.interests).toEqual([
+            { id: 'i1', label: 'Yoga' },
+            { id: 'i2', label: 'Café' }
+        ]);
+        expect(profile.skills).toEqual([
+            { id: 's1', label: 'Python' },
+            { id: 's2', label: 'DevOps' }
+        ]);
+    });
+});
+
+// ─── mapUserToCandidate ─────────────────────────────────────────────
+
+describe('mapUserToCandidate', () => {
+    it('maps to MatchCandidate with correct shape', () => {
+        const user = makePrismaUser();
+        const candidate = mapUserToCandidate(user);
+
+        expect(candidate).toEqual({
+            id: 'user-1',
+            user: {
+                id: 'user-1',
+                name: 'Alice',
+                age: 25,
+                avatar: 'https://example.com/alice.png',
+                city: 'Paris',
+                verified: true
+            },
+            intentionKey: 'dating', // first intention
+            bio: 'Hello world',
+            tags: ['Photographie', 'Randonnée', 'JavaScript'],
+            distance: '',
+            mutualFriends: 0
+        });
+    });
+
+    it('uses targetIntention when user has it', () => {
+        const user = makePrismaUser();
+        const candidate = mapUserToCandidate(user, 'friendship');
+
+        expect(candidate.intentionKey).toBe('friendship');
+    });
+
+    it('falls back to first intention when targetIntention not in user list', () => {
+        const user = makePrismaUser();
+        const candidate = mapUserToCandidate(user, 'networking');
+
+        expect(candidate.intentionKey).toBe('dating'); // first in user's list
+    });
+
+    it('defaults to casual_chat when user has no intentions', () => {
+        const user = makePrismaUser({
+            profile: {
+                bio: 'No intentions',
+                socialVibe: 'chill',
+                country: '',
+                region: '',
+                city: '',
+                statConnections: 0,
+                statMatches: 0,
+                statVibes: 0,
+                intentions: []
+            }
+        });
+        const candidate = mapUserToCandidate(user);
+
+        expect(candidate.intentionKey).toBe('casual_chat');
+    });
+
+    it('flattens all tag labels (interests + skills) into tags[]', () => {
+        const user = makePrismaUser();
+        const candidate = mapUserToCandidate(user);
+
+        expect(candidate.tags).toContain('Photographie');
+        expect(candidate.tags).toContain('JavaScript');
+        expect(candidate.tags).toHaveLength(3);
+    });
+
+    it('handles null profile', () => {
+        const user = makePrismaUser({ profile: null });
+        const candidate = mapUserToCandidate(user);
+
+        expect(candidate.bio).toBe('');
+        expect(candidate.intentionKey).toBe('casual_chat');
+    });
+});
