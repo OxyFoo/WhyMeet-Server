@@ -55,3 +55,39 @@ export const profileInclude = {
     profile: true,
     tags: { include: { tag: true } }
 } as const;
+
+// ─── MatchCandidate mapping ─────────────────────────────────────────
+
+import type { MatchCandidate } from '@whymeet/types';
+
+type PrismaUserWithProfile = Parameters<typeof mapUserToProfile>[0];
+
+/**
+ * Maps a Prisma User (with profile/tags) to a MatchCandidate.
+ * @param targetIntention — specific intention to display (defaults to user's first intention)
+ */
+export function mapUserToCandidate(user: PrismaUserWithProfile, targetIntention?: IntentionKey): MatchCandidate {
+    const intentions = (user.profile?.intentions ?? []) as IntentionKey[];
+    const intentionKey =
+        targetIntention && intentions.includes(targetIntention) ? targetIntention : (intentions[0] ?? 'casual_chat');
+
+    return {
+        id: user.id,
+        user: {
+            id: user.id,
+            name: user.name,
+            age: user.age,
+            avatar: user.avatar,
+            city: user.city,
+            verified: user.verified
+        },
+        intentionKey,
+        bio: user.profile?.bio ?? '',
+        tags: (user.tags ?? []).map((t) => t.tag.label),
+        distance: '',
+        mutualFriends: 0
+    };
+}
+
+/** Prisma include for candidate queries (same as profile for now) */
+export const candidateInclude = profileInclude;

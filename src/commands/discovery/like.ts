@@ -1,13 +1,75 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_Like, WSResponse_Like } from '@whymeet/types';
+import { getDatabase } from '@/services/database';
+import { getConnectedClients } from '@/server/Server';
+import { mapUserToProfile, profileInclude } from '@/services/userMapper';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise<WSResponse_Like> => {
     const { candidateId } = payload;
+    const db = getDatabase();
 
-    // TODO: Create match record, check for mutual match, create conversation if mutual
-    logger.debug(`[Discovery] User ${client.userId} liked ${candidateId}`);
+    try {
+        // Create or update the match record
+        const match = await db.match.upsert({
+            where: {
+                senderId_receiverId_category: { senderId: client.userId, receiverId: candidateId, category: 'like' }
+            },
+            update: {},
+            create: { senderId: client.userId, receiverId: candidateId, category: 'like' }
+        });
 
-    return { command: 'like', payload: { matched: false } };
+        // Check for mutual match (did the other person also like us?)
+        const reverse = await db.match.findFirst({
+            where: { senderId: candidateId, receiverId: client.userId, category: 'like' }
+        });
+
+        if (reverse) {
+            // Mark both as mutual
+            await db.match.updateMany({
+                where: { id: { in: [match.id, reverse.id] } },
+                data: { mutual: true }
+            });
+
+            // Create a conversation
+            const conversation = await db.conversation.create({
+                data: {
+                    participants: {
+                        create: [{ userId: client.userId }, { userId: candidateId }]
+                    }
+                }
+            });
+
+            // Notify the other user if connected
+            const connectedClients = getConnectedClients();
+            const currentUser = await db.user.findUnique({
+                where: { id: client.userId },
+                include: profileInclude
+            });
+
+            if (currentUser) {
+                for (const c of connectedClients.values()) {
+                    if (c.userId === candidateId) {
+                        c.send({
+                            event: 'new-match',
+                            payload: {
+                                conversationId: conversation.id,
+                                participant: mapUserToProfile(currentUser)
+                            }
+                        });
+                    }
+                }
+            }
+
+            logger.info(`[Discovery] Mutual match: ${client.userId} <-> ${candidateId}`);
+            return { command: 'like', payload: { matched: true } };
+        }
+
+        logger.debug(`[Discovery] User ${client.userId} liked ${candidateId}`);
+        return { command: 'like', payload: { matched: false } };
+    } catch (error) {
+        logger.error('[Discovery] Like error', error);
+        return { command: 'like', payload: { error: 'Internal error' } };
+    }
 });

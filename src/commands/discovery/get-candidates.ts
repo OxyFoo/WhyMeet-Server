@@ -1,14 +1,77 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_GetCandidates, WSResponse_GetCandidates } from '@whymeet/types';
+import type { WSRequest_GetCandidates, WSResponse_GetCandidates, IntentionKey } from '@whymeet/types';
+import { getDatabase } from '@/services/database';
+import { mapUserToCandidate, candidateInclude } from '@/services/userMapper';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_GetCandidates>(
     'get-candidates',
-    async (client: Client, _payload): Promise<WSResponse_GetCandidates> => {
-        // TODO: Implement candidate discovery logic with filters
-        logger.debug(`[Discovery] Get candidates for user: ${client.userId}`);
+    async (client: Client, payload): Promise<WSResponse_GetCandidates> => {
+        const db = getDatabase();
+        const filters = payload.filters;
 
-        return { command: 'get-candidates', payload: { candidates: [] } };
+        try {
+            // Get current user's profile for scoring
+            const currentUser = await db.user.findUnique({
+                where: { id: client.userId },
+                include: { profile: true, tags: { include: { tag: true } } }
+            });
+
+            const myIntentions = (currentUser?.profile?.intentions ?? []) as IntentionKey[];
+            const myTagLabels = new Set((currentUser?.tags ?? []).map((t) => t.tag.label));
+
+            // Get IDs already seen (liked/skipped/starred)
+            const seenMatches = await db.match.findMany({
+                where: { senderId: client.userId },
+                select: { receiverId: true }
+            });
+            const seenIds = seenMatches.map((m) => m.receiverId);
+
+            // Build query
+            const where: Record<string, unknown> = {
+                id: { notIn: [client.userId, ...seenIds] }
+            };
+
+            // Filter by specific intention if provided
+            if (filters?.intention) {
+                where.profile = { intentions: { has: filters.intention } };
+            } else if (myIntentions.length > 0) {
+                where.profile = { intentions: { hasSome: myIntentions } };
+            }
+
+            const users = await db.user.findMany({
+                where,
+                include: candidateInclude,
+                take: 50
+            });
+
+            // Score and sort by relevance
+            const targetIntention = filters?.intention;
+            const scored = users.map((u) => {
+                const theirIntentions = (u.profile?.intentions ?? []) as IntentionKey[];
+                const theirTags = new Set((u.tags ?? []).map((t) => t.tag.label));
+
+                let score = 0;
+                for (const i of theirIntentions) {
+                    if (myIntentions.includes(i)) score += 2;
+                }
+                for (const t of theirTags) {
+                    if (myTagLabels.has(t)) score += 1;
+                }
+
+                return { user: u, score };
+            });
+
+            scored.sort((a, b) => b.score - a.score);
+
+            const candidates = scored.slice(0, 20).map((s) => mapUserToCandidate(s.user, targetIntention));
+
+            logger.debug(`[Discovery] ${candidates.length} candidates for user: ${client.userId}`);
+            return { command: 'get-candidates', payload: { candidates } };
+        } catch (error) {
+            logger.error('[Discovery] Get candidates error', error);
+            return { command: 'get-candidates', payload: { error: 'Internal error' } };
+        }
     }
 );
