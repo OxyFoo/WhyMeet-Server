@@ -102,18 +102,18 @@ describe('search command', () => {
         ]);
     });
 
-    it('passes intention filter as profile.intentions.has', async () => {
+    it('passes intentions filter as profile.intentions.hasSome', async () => {
         mockFindMany.mockResolvedValue([]);
 
         await routeCommand(fakeClient(), {
             command: 'search',
-            payload: { filters: { intention: 'friendship' } }
+            payload: { filters: { intentions: ['friendship', 'dating'] } }
         } as never);
 
         const where = mockFindMany.mock.calls[0][0].where;
         expect(where.profile).toEqual(
             expect.objectContaining({
-                intentions: { has: 'friendship' }
+                intentions: { hasSome: ['friendship', 'dating'] }
             })
         );
     });

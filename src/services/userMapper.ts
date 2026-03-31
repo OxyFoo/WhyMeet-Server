@@ -64,12 +64,16 @@ type PrismaUserWithProfile = Parameters<typeof mapUserToProfile>[0];
 
 /**
  * Maps a Prisma User (with profile/tags) to a MatchCandidate.
- * @param targetIntention — specific intention to display (defaults to user's first intention)
+ * @param priorityIntentions — intentions to sort first in the list
  */
-export function mapUserToCandidate(user: PrismaUserWithProfile, targetIntention?: IntentionKey): MatchCandidate {
-    const intentions = (user.profile?.intentions ?? []) as IntentionKey[];
-    const intentionKey =
-        targetIntention && intentions.includes(targetIntention) ? targetIntention : (intentions[0] ?? 'casual_chat');
+export function mapUserToCandidate(user: PrismaUserWithProfile, priorityIntentions?: IntentionKey[]): MatchCandidate {
+    const userIntentions = (user.profile?.intentions ?? []) as IntentionKey[];
+    const sorted = priorityIntentions?.length
+        ? [
+              ...userIntentions.filter((i) => priorityIntentions.includes(i)),
+              ...userIntentions.filter((i) => !priorityIntentions.includes(i))
+          ]
+        : userIntentions;
 
     return {
         id: user.id,
@@ -81,7 +85,7 @@ export function mapUserToCandidate(user: PrismaUserWithProfile, targetIntention?
             city: user.city,
             verified: user.verified
         },
-        intentionKey,
+        intentions: sorted,
         bio: user.profile?.bio ?? '',
         tags: (user.tags ?? []).map((t) => t.tag.label),
         distance: '',

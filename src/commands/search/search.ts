@@ -27,10 +27,10 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
             ];
         }
 
-        if (filters.intention) {
+        if (filters.intentions && filters.intentions.length > 0) {
             where.profile = {
                 ...((where.profile as Record<string, unknown>) ?? {}),
-                intentions: { has: filters.intention }
+                intentions: { hasSome: filters.intentions }
             };
         }
 
@@ -46,7 +46,17 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
             take: 50
         });
 
-        const results = users.map((u) => mapUserToCandidate(u, filters.intention));
+        const targetIntentions = filters.intentions ?? [];
+        const results = users
+            .map((u) => {
+                const candidate = mapUserToCandidate(u, targetIntentions);
+                const matchCount = targetIntentions.length
+                    ? candidate.intentions.filter((i) => targetIntentions.includes(i)).length
+                    : 0;
+                return { candidate, matchCount };
+            })
+            .sort((a, b) => b.matchCount - a.matchCount)
+            .map((r) => r.candidate);
 
         logger.debug(`[Search] ${results.length} results for user: ${client.userId}`);
         return { command: 'search', payload: { results } };

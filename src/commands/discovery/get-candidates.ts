@@ -33,9 +33,9 @@ registerCommand<WSRequest_GetCandidates>(
                 id: { notIn: [client.userId, ...seenIds] }
             };
 
-            // Filter by specific intention if provided
-            if (filters?.intention) {
-                where.profile = { intentions: { has: filters.intention } };
+            // Filter by specific intentions if provided
+            if (filters?.intentions && filters.intentions.length > 0) {
+                where.profile = { intentions: { hasSome: filters.intentions } };
             } else if (myIntentions.length > 0) {
                 where.profile = { intentions: { hasSome: myIntentions } };
             }
@@ -47,7 +47,7 @@ registerCommand<WSRequest_GetCandidates>(
             });
 
             // Score and sort by relevance
-            const targetIntention = filters?.intention;
+            const targetIntentions = filters?.intentions;
             const scored = users.map((u) => {
                 const theirIntentions = (u.profile?.intentions ?? []) as IntentionKey[];
                 const theirTags = new Set((u.tags ?? []).map((t) => t.tag.label));
@@ -65,7 +65,7 @@ registerCommand<WSRequest_GetCandidates>(
 
             scored.sort((a, b) => b.score - a.score);
 
-            const candidates = scored.slice(0, 20).map((s) => mapUserToCandidate(s.user, targetIntention));
+            const candidates = scored.slice(0, 20).map((s) => mapUserToCandidate(s.user, targetIntentions));
 
             logger.debug(`[Discovery] ${candidates.length} candidates for user: ${client.userId}`);
             return { command: 'get-candidates', payload: { candidates } };

@@ -118,7 +118,7 @@ describe('mapUserToCandidate', () => {
                 city: 'Paris',
                 verified: true
             },
-            intentionKey: 'dating', // first intention
+            intentions: ['dating', 'friendship'],
             bio: 'Hello world',
             tags: ['Photographie', 'Randonnée', 'JavaScript'],
             distance: '',
@@ -126,21 +126,21 @@ describe('mapUserToCandidate', () => {
         });
     });
 
-    it('uses targetIntention when user has it', () => {
+    it('sorts priority intentions first', () => {
         const user = makePrismaUser();
-        const candidate = mapUserToCandidate(user, 'friendship');
+        const candidate = mapUserToCandidate(user, ['friendship']);
 
-        expect(candidate.intentionKey).toBe('friendship');
+        expect(candidate.intentions).toEqual(['friendship', 'dating']);
     });
 
-    it('falls back to first intention when targetIntention not in user list', () => {
+    it('keeps original order when no priority intentions match', () => {
         const user = makePrismaUser();
-        const candidate = mapUserToCandidate(user, 'networking');
+        const candidate = mapUserToCandidate(user, ['networking']);
 
-        expect(candidate.intentionKey).toBe('dating'); // first in user's list
+        expect(candidate.intentions).toEqual(['dating', 'friendship']);
     });
 
-    it('defaults to casual_chat when user has no intentions', () => {
+    it('returns empty intentions when user has no intentions', () => {
         const user = makePrismaUser({
             profile: {
                 bio: 'No intentions',
@@ -156,7 +156,7 @@ describe('mapUserToCandidate', () => {
         });
         const candidate = mapUserToCandidate(user);
 
-        expect(candidate.intentionKey).toBe('casual_chat');
+        expect(candidate.intentions).toEqual([]);
     });
 
     it('flattens all tag labels (interests + skills) into tags[]', () => {
@@ -173,6 +173,6 @@ describe('mapUserToCandidate', () => {
         const candidate = mapUserToCandidate(user);
 
         expect(candidate.bio).toBe('');
-        expect(candidate.intentionKey).toBe('casual_chat');
+        expect(candidate.intentions).toEqual([]);
     });
 });
