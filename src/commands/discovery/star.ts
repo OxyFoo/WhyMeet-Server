@@ -31,6 +31,12 @@ registerCommand<WSRequest_Star>('star', async (client: Client, payload): Promise
                 data: { mutual: true }
             });
 
+            // Increment match stats for both users
+            await db.profile.updateMany({
+                where: { userId: { in: [client.userId, candidateId] } },
+                data: { statMatches: { increment: 1 } }
+            });
+
             const conversation = await db.conversation.create({
                 data: {
                     participants: {
@@ -62,6 +68,12 @@ registerCommand<WSRequest_Star>('star', async (client: Client, payload): Promise
             logger.info(`[Discovery] Star mutual match: ${client.userId} <-> ${candidateId}`);
             return { command: 'star', payload: { success: true } };
         }
+
+        // Increment vibes count for the receiver (they received a star)
+        await db.profile.updateMany({
+            where: { userId: candidateId },
+            data: { statVibes: { increment: 1 } }
+        });
 
         logger.debug(`[Discovery] User ${client.userId} starred ${candidateId}`);
         return { command: 'star', payload: { success: true } };

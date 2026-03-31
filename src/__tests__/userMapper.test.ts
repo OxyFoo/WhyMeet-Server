@@ -20,6 +20,8 @@ function baseUser() {
             country: 'France',
             region: 'Île-de-France',
             city: 'Paris',
+            latitude: 48.8566,
+            longitude: 2.3522,
             statConnections: 10,
             statMatches: 5,
             statVibes: 42,
@@ -55,7 +57,13 @@ describe('mapUserToProfile', () => {
             ],
             skills: [{ id: 'tag-3', label: 'JavaScript' }],
             intentions: ['dating', 'friendship'],
-            location: { country: 'France', region: 'Île-de-France', city: 'Paris' },
+            location: {
+                country: 'France',
+                region: 'Île-de-France',
+                city: 'Paris',
+                latitude: 48.8566,
+                longitude: 2.3522
+            },
             stats: { connections: 10, matches: 5, vibes: 42 }
         });
     });
@@ -67,7 +75,7 @@ describe('mapUserToProfile', () => {
         expect(profile.bio).toBe('');
         expect(profile.socialVibe).toBe('chill');
         expect(profile.intentions).toEqual([]);
-        expect(profile.location).toEqual({ country: '', region: '', city: '' });
+        expect(profile.location).toEqual({ country: '', region: '', city: '', latitude: null, longitude: null });
         expect(profile.stats).toEqual({ connections: 0, matches: 0, vibes: 0 });
     });
 

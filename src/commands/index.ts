@@ -1,6 +1,9 @@
 // Register all command handlers
 import './auth/handshake';
 import './discovery/get-candidates';
+import './discovery/get-requests';
+import './discovery/accept-request';
+import './discovery/decline-request';
 import './discovery/like';
 import './discovery/skip';
 import './discovery/star';
@@ -10,3 +13,8 @@ import './profile/update-profile';
 import './messaging/get-conversations';
 import './messaging/get-messages';
 import './messaging/send-message';
+import './notifications/get-notifications';
+import './notifications/mark-notification-read';
+import './moderation/block-user';
+import './moderation/report-user';
+import './moderation/unmatch';

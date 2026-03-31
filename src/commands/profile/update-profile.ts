@@ -55,6 +55,8 @@ registerCommand<WSRequest_UpdateProfile>(
                 if (data.location?.country !== undefined) profileData.country = data.location.country;
                 if (data.location?.region !== undefined) profileData.region = data.location.region;
                 if (data.location?.city !== undefined) profileData.city = data.location.city;
+                if (data.location?.latitude !== undefined) profileData.latitude = data.location.latitude;
+                if (data.location?.longitude !== undefined) profileData.longitude = data.location.longitude;
                 if (data.intentions !== undefined) profileData.intentions = data.intentions;
 
                 if (Object.keys(profileData).length > 0) {

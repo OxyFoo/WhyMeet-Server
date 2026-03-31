@@ -10,7 +10,27 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
     const db = getDatabase();
 
     try {
+        // Get current user's location for distance
+        const currentUser = await db.user.findUnique({
+            where: { id: client.userId },
+            include: { profile: { select: { latitude: true, longitude: true } } }
+        });
+        const myLatLng = {
+            latitude: currentUser?.profile?.latitude ?? null,
+            longitude: currentUser?.profile?.longitude ?? null
+        };
+
         const where: Record<string, unknown> = { id: { not: client.userId } };
+
+        // Exclude blocked users
+        const blocks = await db.block.findMany({
+            where: { OR: [{ blockerId: client.userId }, { blockedId: client.userId }] },
+            select: { blockerId: true, blockedId: true }
+        });
+        const blockedIds = blocks.map((b) => (b.blockerId === client.userId ? b.blockedId : b.blockerId));
+        if (blockedIds.length > 0) {
+            where.id = { notIn: [client.userId, ...blockedIds] };
+        }
 
         if (filters.verified) {
             where.verified = true;
@@ -49,7 +69,7 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
         const targetIntentions = filters.intentions ?? [];
         const results = users
             .map((u) => {
-                const candidate = mapUserToCandidate(u, targetIntentions);
+                const candidate = mapUserToCandidate(u, targetIntentions, myLatLng);
                 const matchCount = targetIntentions.length
                     ? candidate.intentions.filter((i) => targetIntentions.includes(i)).length
                     : 0;

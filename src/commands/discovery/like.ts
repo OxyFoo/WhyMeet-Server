@@ -32,6 +32,12 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
                 data: { mutual: true }
             });
 
+            // Increment match stats for both users
+            await db.profile.updateMany({
+                where: { userId: { in: [client.userId, candidateId] } },
+                data: { statMatches: { increment: 1 } }
+            });
+
             // Create a conversation
             const conversation = await db.conversation.create({
                 data: {
@@ -49,6 +55,16 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
             });
 
             if (currentUser) {
+                // Create persistent notification for the matched user
+                const notification = await db.notification.create({
+                    data: {
+                        userId: candidateId,
+                        type: 'match',
+                        title: 'New Match!',
+                        body: `You matched with ${currentUser.name}`
+                    }
+                });
+
                 for (const c of connectedClients.values()) {
                     if (c.userId === candidateId) {
                         c.send({
@@ -58,12 +74,63 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
                                 participant: mapUserToProfile(currentUser)
                             }
                         });
+                        c.send({
+                            event: 'notification',
+                            payload: {
+                                notification: {
+                                    id: notification.id,
+                                    type: 'match' as const,
+                                    title: notification.title,
+                                    body: notification.body,
+                                    read: false,
+                                    createdAt: notification.createdAt.toISOString()
+                                }
+                            }
+                        });
                     }
                 }
             }
 
             logger.info(`[Discovery] Mutual match: ${client.userId} <-> ${candidateId}`);
             return { command: 'like', payload: { matched: true } };
+        }
+
+        // Increment vibes count for the receiver (they received a like)
+        await db.profile.updateMany({
+            where: { userId: candidateId },
+            data: { statVibes: { increment: 1 } }
+        });
+
+        // Create a "like received" notification
+        const likerName =
+            (await db.user.findUnique({ where: { id: client.userId }, select: { name: true } }))?.name ?? 'Someone';
+        const likeNotif = await db.notification.create({
+            data: {
+                userId: candidateId,
+                type: 'like',
+                title: 'Someone likes you!',
+                body: `${likerName} liked your profile`
+            }
+        });
+
+        // Push notification to connected client
+        const onlineClients = getConnectedClients();
+        for (const c of onlineClients.values()) {
+            if (c.userId === candidateId) {
+                c.send({
+                    event: 'notification',
+                    payload: {
+                        notification: {
+                            id: likeNotif.id,
+                            type: 'like' as const,
+                            title: likeNotif.title,
+                            body: likeNotif.body,
+                            read: false,
+                            createdAt: likeNotif.createdAt.toISOString()
+                        }
+                    }
+                });
+            }
         }
 
         logger.debug(`[Discovery] User ${client.userId} liked ${candidateId}`);

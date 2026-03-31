@@ -7,8 +7,9 @@ import { logger } from '@/config/logger';
 registerCommand<WSRequest_GetMessages>(
     'get-messages',
     async (client: Client, payload): Promise<WSResponse_GetMessages> => {
-        const { conversationId } = payload;
+        const { conversationId, cursor, limit = 50 } = payload;
         const db = getDatabase();
+        const take = Math.min(limit, 100);
 
         try {
             // Verify user is participant
@@ -21,15 +22,25 @@ registerCommand<WSRequest_GetMessages>(
             }
 
             const messages = await db.message.findMany({
-                where: { conversationId },
-                orderBy: { timestamp: 'asc' }
+                where: {
+                    conversationId,
+                    ...(cursor ? { timestamp: { lt: new Date(cursor) } } : {})
+                },
+                orderBy: { timestamp: 'desc' },
+                take: take + 1
             });
 
-            // Mark as read
-            await db.conversationParticipant.update({
-                where: { conversationId_userId: { conversationId, userId: client.userId } },
-                data: { unreadCount: 0 }
-            });
+            const hasMore = messages.length > take;
+            if (hasMore) messages.pop();
+            messages.reverse();
+
+            // Mark as read only on first page
+            if (!cursor) {
+                await db.conversationParticipant.update({
+                    where: { conversationId_userId: { conversationId, userId: client.userId } },
+                    data: { unreadCount: 0 }
+                });
+            }
 
             return {
                 command: 'get-messages',
@@ -39,7 +50,8 @@ registerCommand<WSRequest_GetMessages>(
                         text: m.text,
                         senderId: m.senderId,
                         timestamp: m.timestamp.toISOString()
-                    }))
+                    })),
+                    hasMore
                 }
             };
         } catch (error) {

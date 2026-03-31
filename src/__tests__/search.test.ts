@@ -5,9 +5,12 @@ jest.mock('@/config/logger', () => ({
 }));
 
 const mockFindMany = jest.fn();
+const mockFindUnique = jest.fn();
+const mockBlockFindMany = jest.fn();
 jest.mock('@/services/database', () => ({
     getDatabase: () => ({
-        user: { findMany: mockFindMany }
+        user: { findMany: mockFindMany, findUnique: mockFindUnique },
+        block: { findMany: mockBlockFindMany }
     })
 }));
 
@@ -34,6 +37,8 @@ function prismaUser(id: string, overrides: Record<string, unknown> = {}) {
             country: 'FR',
             region: 'IDF',
             city: 'Paris',
+            latitude: null,
+            longitude: null,
             statConnections: 0,
             statMatches: 0,
             statVibes: 0,
@@ -49,6 +54,10 @@ function prismaUser(id: string, overrides: Record<string, unknown> = {}) {
 describe('search command', () => {
     beforeEach(() => {
         mockFindMany.mockReset();
+        mockFindUnique.mockReset();
+        mockBlockFindMany.mockReset();
+        mockFindUnique.mockResolvedValue({ profile: { latitude: null, longitude: null } });
+        mockBlockFindMany.mockResolvedValue([]);
     });
 
     it('excludes the current user from results', async () => {

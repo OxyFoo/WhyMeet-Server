@@ -11,6 +11,9 @@ const mockMatchUpsert = jest.fn();
 const mockMatchFindFirst = jest.fn();
 const mockMatchUpdateMany = jest.fn();
 const mockConversationCreate = jest.fn();
+const mockBlockFindMany = jest.fn();
+const mockProfileUpdateMany = jest.fn();
+const mockNotificationCreate = jest.fn();
 
 jest.mock('@/services/database', () => ({
     getDatabase: () => ({
@@ -21,7 +24,10 @@ jest.mock('@/services/database', () => ({
             findFirst: mockMatchFindFirst,
             updateMany: mockMatchUpdateMany
         },
-        conversation: { create: mockConversationCreate }
+        conversation: { create: mockConversationCreate },
+        block: { findMany: mockBlockFindMany },
+        profile: { updateMany: mockProfileUpdateMany },
+        notification: { create: mockNotificationCreate }
     })
 }));
 
@@ -56,6 +62,8 @@ function prismaUser(id: string, intentions: string[] = ['dating'], tagLabels: st
             country: 'FR',
             region: 'IDF',
             city: 'Paris',
+            latitude: null,
+            longitude: null,
             statConnections: 0,
             statMatches: 0,
             statVibes: 0,
@@ -70,6 +78,7 @@ function prismaUser(id: string, intentions: string[] = ['dating'], tagLabels: st
 describe('get-candidates command', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        mockBlockFindMany.mockResolvedValue([]);
     });
 
     it('excludes current user and already-seen users', async () => {
@@ -144,6 +153,9 @@ describe('get-candidates command', () => {
 describe('like command', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        mockProfileUpdateMany.mockResolvedValue({});
+        mockNotificationCreate.mockResolvedValue({ id: 'n1', title: 'test', body: 'test', createdAt: new Date() });
+        mockUserFindUnique.mockResolvedValue(prismaUser('me'));
     });
 
     it('creates a match record and returns matched:false when no reverse', async () => {
@@ -254,6 +266,8 @@ describe('skip command', () => {
 describe('star command', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        mockProfileUpdateMany.mockResolvedValue({});
+        mockUserFindUnique.mockResolvedValue(prismaUser('me'));
     });
 
     it('creates a like match with matchContext=star', async () => {

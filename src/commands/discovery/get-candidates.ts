@@ -20,6 +20,10 @@ registerCommand<WSRequest_GetCandidates>(
 
             const myIntentions = (currentUser?.profile?.intentions ?? []) as IntentionKey[];
             const myTagLabels = new Set((currentUser?.tags ?? []).map((t) => t.tag.label));
+            const myLatLng = {
+                latitude: currentUser?.profile?.latitude ?? null,
+                longitude: currentUser?.profile?.longitude ?? null
+            };
 
             // Get IDs already seen (liked/skipped/starred)
             const seenMatches = await db.match.findMany({
@@ -28,9 +32,16 @@ registerCommand<WSRequest_GetCandidates>(
             });
             const seenIds = seenMatches.map((m) => m.receiverId);
 
+            // Get blocked users (in both directions)
+            const blocks = await db.block.findMany({
+                where: { OR: [{ blockerId: client.userId }, { blockedId: client.userId }] },
+                select: { blockerId: true, blockedId: true }
+            });
+            const blockedIds = blocks.map((b) => (b.blockerId === client.userId ? b.blockedId : b.blockerId));
+
             // Build query
             const where: Record<string, unknown> = {
-                id: { notIn: [client.userId, ...seenIds] }
+                id: { notIn: [client.userId, ...seenIds, ...blockedIds] }
             };
 
             // Filter by specific intentions if provided
@@ -65,7 +76,7 @@ registerCommand<WSRequest_GetCandidates>(
 
             scored.sort((a, b) => b.score - a.score);
 
-            const candidates = scored.slice(0, 20).map((s) => mapUserToCandidate(s.user, targetIntentions));
+            const candidates = scored.slice(0, 20).map((s) => mapUserToCandidate(s.user, targetIntentions, myLatLng));
 
             logger.debug(`[Discovery] ${candidates.length} candidates for user: ${client.userId}`);
             return { command: 'get-candidates', payload: { candidates } };

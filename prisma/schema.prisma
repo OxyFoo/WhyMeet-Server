@@ -27,6 +27,10 @@ model User {
     messages        Message[]
     notifications   Notification[]
     conversations   ConversationParticipant[]
+    blockedUsers    Block[]                   @relation("Blocker")
+    blockedBy       Block[]                   @relation("Blocked")
+    sentReports     Report[]                  @relation("Reporter")
+    receivedReports Report[]                  @relation("Reported")
 
     @@map("users")
 }
@@ -57,6 +61,8 @@ model Profile {
     country    String @default("")
     region     String @default("")
     city       String @default("")
+    latitude   Float?
+    longitude  Float?
 
     // Stats (denormalized for performance)
     statConnections Int @default(0)
@@ -171,4 +177,37 @@ model Notification {
 
     @@index([userId, read])
     @@map("notifications")
+}
+
+// ─── Moderation ─────────────────────────────────────────────────────
+
+model Block {
+    id        String   @id @default(cuid())
+    blockerId String
+    blockedId String
+    createdAt DateTime @default(now())
+
+    blocker User @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+    blocked User @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+    @@unique([blockerId, blockedId])
+    @@index([blockedId])
+    @@map("blocks")
+}
+
+model Report {
+    id         String   @id @default(cuid())
+    reporterId String
+    reportedId String
+    reason     String // "inappropriate" | "spam" | "harassment" | "fake" | "other"
+    details    String   @default("")
+    status     String   @default("pending") // "pending" | "reviewed" | "resolved"
+    createdAt  DateTime @default(now())
+
+    reporter User @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+    reported User @relation("Reported", fields: [reportedId], references: [id], onDelete: Cascade)
+
+    @@index([reportedId])
+    @@index([status])
+    @@map("reports")
 }

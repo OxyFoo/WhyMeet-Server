@@ -1,6 +1,27 @@
 import type { Profile, IntentionKey } from '@whymeet/types';
 
 /**
+ * Haversine distance between two lat/lng points, returned as a human-readable string.
+ */
+function formatDistance(
+    lat1: number | null | undefined,
+    lng1: number | null | undefined,
+    lat2: number | null | undefined,
+    lng2: number | null | undefined
+): string {
+    if (lat1 == null || lng1 == null || lat2 == null || lng2 == null) return '';
+    const R = 6371; // km
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+    const km = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    if (km < 1) return '< 1 km';
+    return `${Math.round(km)} km`;
+}
+
+/**
  * Maps a Prisma User (with profile/tags) to the shared Profile type.
  */
 export function mapUserToProfile(user: {
@@ -16,6 +37,8 @@ export function mapUserToProfile(user: {
         country: string;
         region: string;
         city: string;
+        latitude: number | null;
+        longitude: number | null;
         statConnections: number;
         statMatches: number;
         statVibes: number;
@@ -40,7 +63,9 @@ export function mapUserToProfile(user: {
         location: {
             country: user.profile?.country ?? '',
             region: user.profile?.region ?? '',
-            city: user.profile?.city ?? ''
+            city: user.profile?.city ?? '',
+            latitude: user.profile?.latitude ?? null,
+            longitude: user.profile?.longitude ?? null
         },
         stats: {
             connections: user.profile?.statConnections ?? 0,
@@ -65,8 +90,13 @@ type PrismaUserWithProfile = Parameters<typeof mapUserToProfile>[0];
 /**
  * Maps a Prisma User (with profile/tags) to a MatchCandidate.
  * @param priorityIntentions — intentions to sort first in the list
+ * @param refLatLng — reference user's coordinates for distance calculation
  */
-export function mapUserToCandidate(user: PrismaUserWithProfile, priorityIntentions?: IntentionKey[]): MatchCandidate {
+export function mapUserToCandidate(
+    user: PrismaUserWithProfile,
+    priorityIntentions?: IntentionKey[],
+    refLatLng?: { latitude: number | null; longitude: number | null }
+): MatchCandidate {
     const userIntentions = (user.profile?.intentions ?? []) as IntentionKey[];
     const sorted = priorityIntentions?.length
         ? [
@@ -88,7 +118,12 @@ export function mapUserToCandidate(user: PrismaUserWithProfile, priorityIntentio
         intentions: sorted,
         bio: user.profile?.bio ?? '',
         tags: (user.tags ?? []).map((t) => t.tag.label),
-        distance: '',
+        distance: formatDistance(
+            refLatLng?.latitude,
+            refLatLng?.longitude,
+            user.profile?.latitude,
+            user.profile?.longitude
+        ),
         mutualFriends: 0
     };
 }
