@@ -20,6 +20,7 @@ model User {
     updatedAt DateTime @updatedAt
 
     profile         Profile?
+    settings        Settings?
     devices         Device[]
     tags            UserTag[]
     sentMatches     Match[]                   @relation("MatchSender")
@@ -75,6 +76,17 @@ model Profile {
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
     @@map("profiles")
+}
+
+model Settings {
+    id       String @id @default(cuid())
+    userId   String @unique
+    language String @default("fr") // Language: "fr" | "en"
+    theme    String @default("light") // Theme: "light" | "dark"
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@map("settings")
 }
 
 // ─── Tags ───────────────────────────────────────────────────────────
