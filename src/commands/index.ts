@@ -18,3 +18,5 @@ import './notifications/mark-notification-read';
 import './moderation/block-user';
 import './moderation/report-user';
 import './moderation/unmatch';
+import './settings/get-settings';
+import './settings/update-settings';
