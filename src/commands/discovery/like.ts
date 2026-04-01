@@ -92,7 +92,7 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
             }
 
             logger.info(`[Discovery] Mutual match: ${client.userId} <-> ${candidateId}`);
-            return { command: 'like', payload: { matched: true } };
+            return { command: 'like', payload: { matched: true, conversationId: conversation.id } };
         }
 
         // Increment vibes count for the receiver (they received a like)

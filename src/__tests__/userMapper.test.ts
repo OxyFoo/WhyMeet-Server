@@ -25,7 +25,8 @@ function baseUser() {
             statConnections: 10,
             statMatches: 5,
             statVibes: 42,
-            intentions: ['dating', 'friendship']
+            intentions: ['dating', 'friendship'],
+            spokenLanguages: ['fr', 'en']
         },
         tags: [
             { type: 'interest', tag: { id: 'tag-1', label: 'Photographie' } },
@@ -57,6 +58,7 @@ describe('mapUserToProfile', () => {
             ],
             skills: [{ id: 'tag-3', label: 'JavaScript' }],
             intentions: ['dating', 'friendship'],
+            spokenLanguages: ['fr', 'en'],
             location: {
                 country: 'France',
                 region: 'Île-de-France',
@@ -130,6 +132,7 @@ describe('mapUserToCandidate', () => {
             bio: 'Hello world',
             tags: ['Photographie', 'Randonnée', 'JavaScript'],
             distance: '',
+            distanceKm: undefined,
             mutualFriends: 0
         });
     });
@@ -159,7 +162,8 @@ describe('mapUserToCandidate', () => {
                 statConnections: 0,
                 statMatches: 0,
                 statVibes: 0,
-                intentions: []
+                intentions: [],
+                spokenLanguages: []
             }
         });
         const candidate = mapUserToCandidate(user);

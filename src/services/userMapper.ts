@@ -1,7 +1,26 @@
 import type { Profile, IntentionKey } from '@whymeet/types';
 
 /**
- * Haversine distance between two lat/lng points, returned as a human-readable string.
+ * Haversine distance between two lat/lng points in km.
+ */
+export function getDistanceKm(
+    lat1: number | null | undefined,
+    lng1: number | null | undefined,
+    lat2: number | null | undefined,
+    lng2: number | null | undefined
+): number | null {
+    if (lat1 == null || lng1 == null || lat2 == null || lng2 == null) return null;
+    const R = 6371; // km
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
+ * Format a numeric distance as a human-readable string.
  */
 function formatDistance(
     lat1: number | null | undefined,
@@ -9,14 +28,8 @@ function formatDistance(
     lat2: number | null | undefined,
     lng2: number | null | undefined
 ): string {
-    if (lat1 == null || lng1 == null || lat2 == null || lng2 == null) return '';
-    const R = 6371; // km
-    const dLat = ((lat2 - lat1) * Math.PI) / 180;
-    const dLng = ((lng2 - lng1) * Math.PI) / 180;
-    const a =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-    const km = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const km = getDistanceKm(lat1, lng1, lat2, lng2);
+    if (km == null) return '';
     if (km < 1) return '< 1 km';
     return `${Math.round(km)} km`;
 }
@@ -43,6 +56,7 @@ export function mapUserToProfile(user: {
         statMatches: number;
         statVibes: number;
         intentions: string[];
+        spokenLanguages: string[];
     } | null;
     tags?: { type: string; tag: { id: string; label: string } }[];
 }): Profile {
@@ -60,6 +74,7 @@ export function mapUserToProfile(user: {
             .map((t) => ({ id: t.tag.id, label: t.tag.label })),
         skills: (user.tags ?? []).filter((t) => t.type === 'skill').map((t) => ({ id: t.tag.id, label: t.tag.label })),
         intentions: (user.profile?.intentions ?? []) as IntentionKey[],
+        spokenLanguages: user.profile?.spokenLanguages ?? [],
         location: {
             country: user.profile?.country ?? '',
             region: user.profile?.region ?? '',
@@ -124,6 +139,9 @@ export function mapUserToCandidate(
             user.profile?.latitude,
             user.profile?.longitude
         ),
+        distanceKm:
+            getDistanceKm(refLatLng?.latitude, refLatLng?.longitude, user.profile?.latitude, user.profile?.longitude) ??
+            undefined,
         mutualFriends: 0
     };
 }

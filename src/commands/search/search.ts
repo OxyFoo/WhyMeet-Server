@@ -2,8 +2,10 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_Search, WSResponse_Search } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
-import { mapUserToCandidate, candidateInclude } from '@/services/userMapper';
+import { mapUserToCandidate, candidateInclude, getDistanceKm } from '@/services/userMapper';
 import { logger } from '@/config/logger';
+
+const DEFAULT_MAX_DISTANCE = 50; // km
 
 registerCommand<WSRequest_Search>('search', async (client: Client, payload): Promise<WSResponse_Search> => {
     const { filters } = payload;
@@ -60,20 +62,43 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
             };
         }
 
+        // Remote mode: filter by spoken languages
+        if (filters.remote && filters.languages && filters.languages.length > 0) {
+            where.profile = {
+                ...((where.profile as Record<string, unknown>) ?? {}),
+                spokenLanguages: { hasSome: filters.languages }
+            };
+        }
+
         const users = await db.user.findMany({
             where,
             include: candidateInclude,
-            take: 50
+            take: 100 // fetch more for post-filtering by distance
         });
 
+        const isRemote = filters.remote === true;
+        const maxDistance = isRemote ? Infinity : (filters.maxDistance ?? DEFAULT_MAX_DISTANCE);
         const targetIntentions = filters.intentions ?? [];
+
         const results = users
             .map((u) => {
                 const candidate = mapUserToCandidate(u, targetIntentions, myLatLng);
+                const distKm = getDistanceKm(
+                    myLatLng.latitude,
+                    myLatLng.longitude,
+                    u.profile?.latitude,
+                    u.profile?.longitude
+                );
                 const matchCount = targetIntentions.length
                     ? candidate.intentions.filter((i) => targetIntentions.includes(i)).length
                     : 0;
-                return { candidate, matchCount };
+                return { candidate, matchCount, distKm };
+            })
+            // Filter by distance (skip if location unknown)
+            .filter((r) => {
+                if (isRemote) return true;
+                if (r.distKm == null) return true;
+                return r.distKm <= maxDistance;
             })
             .sort((a, b) => b.matchCount - a.matchCount)
             .map((r) => r.candidate);

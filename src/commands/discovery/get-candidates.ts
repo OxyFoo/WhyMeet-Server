@@ -2,8 +2,10 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_GetCandidates, WSResponse_GetCandidates, IntentionKey } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
-import { mapUserToCandidate, candidateInclude } from '@/services/userMapper';
+import { mapUserToCandidate, candidateInclude, getDistanceKm } from '@/services/userMapper';
 import { logger } from '@/config/logger';
+
+const DEFAULT_MAX_DISTANCE = 50; // km
 
 registerCommand<WSRequest_GetCandidates>(
     'get-candidates',
@@ -51,28 +53,52 @@ registerCommand<WSRequest_GetCandidates>(
                 where.profile = { intentions: { hasSome: myIntentions } };
             }
 
+            // Remote mode: filter by spoken languages
+            if (filters?.remote && filters?.languages && filters.languages.length > 0) {
+                where.profile = {
+                    ...((where.profile as Record<string, unknown>) ?? {}),
+                    spokenLanguages: { hasSome: filters.languages }
+                };
+            }
+
             const users = await db.user.findMany({
                 where,
                 include: candidateInclude,
-                take: 50
+                take: 100 // fetch more to allow post-filtering by distance
             });
 
             // Score and sort by relevance
             const targetIntentions = filters?.intentions;
-            const scored = users.map((u) => {
-                const theirIntentions = (u.profile?.intentions ?? []) as IntentionKey[];
-                const theirTags = new Set((u.tags ?? []).map((t) => t.tag.label));
+            const isRemote = filters?.remote === true;
+            const maxDistance = isRemote ? Infinity : (filters?.maxDistance ?? DEFAULT_MAX_DISTANCE);
 
-                let score = 0;
-                for (const i of theirIntentions) {
-                    if (myIntentions.includes(i)) score += 2;
-                }
-                for (const t of theirTags) {
-                    if (myTagLabels.has(t)) score += 1;
-                }
+            const scored = users
+                .map((u) => {
+                    const theirIntentions = (u.profile?.intentions ?? []) as IntentionKey[];
+                    const theirTags = new Set((u.tags ?? []).map((t) => t.tag.label));
+                    const distKm = getDistanceKm(
+                        myLatLng.latitude,
+                        myLatLng.longitude,
+                        u.profile?.latitude,
+                        u.profile?.longitude
+                    );
 
-                return { user: u, score };
-            });
+                    let score = 0;
+                    for (const i of theirIntentions) {
+                        if (myIntentions.includes(i)) score += 2;
+                    }
+                    for (const t of theirTags) {
+                        if (myTagLabels.has(t)) score += 1;
+                    }
+
+                    return { user: u, score, distKm };
+                })
+                // Filter by distance (skip if location unknown)
+                .filter((s) => {
+                    if (isRemote) return true;
+                    if (s.distKm == null) return true; // include users without location
+                    return s.distKm <= maxDistance;
+                });
 
             scored.sort((a, b) => b.score - a.score);
 

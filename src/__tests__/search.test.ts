@@ -42,7 +42,8 @@ function prismaUser(id: string, overrides: Record<string, unknown> = {}) {
             statConnections: 0,
             statMatches: 0,
             statVibes: 0,
-            intentions: ['dating']
+            intentions: ['dating'],
+            spokenLanguages: ['fr']
         },
         tags: [{ type: 'interest', tag: { id: 't1', label: 'Hiking' } }],
         ...overrides
@@ -141,7 +142,7 @@ describe('search command', () => {
         });
     });
 
-    it('limits results to 50', async () => {
+    it('limits results to 100 (pre-filtering pool)', async () => {
         mockFindMany.mockResolvedValue([]);
 
         await routeCommand(fakeClient(), {
@@ -149,7 +150,7 @@ describe('search command', () => {
             payload: { filters: {} }
         } as never);
 
-        expect(mockFindMany.mock.calls[0][0].take).toBe(50);
+        expect(mockFindMany.mock.calls[0][0].take).toBe(100);
     });
 
     it('maps users to MatchCandidate format', async () => {
