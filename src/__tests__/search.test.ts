@@ -169,7 +169,8 @@ describe('search command', () => {
                 id: 'u1',
                 user: expect.objectContaining({ name: 'User' }),
                 bio: 'bio',
-                tags: ['Hiking']
+                interests: ['Hiking'],
+                skills: []
             })
         );
     });

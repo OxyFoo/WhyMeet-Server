@@ -167,6 +167,99 @@ const SKILL_LABELS = [
     'Menuiserie'
 ];
 
+// Alias → canonical tag label
+const TAG_ALIASES: Record<string, string> = {
+    // Interests aliases
+    photo: 'Photographie',
+    photos: 'Photographie',
+    rando: 'Randonnée',
+    randonnées: 'Randonnée',
+    trek: 'Randonnée',
+    trekking: 'Randonnée',
+    musique: 'Musique',
+    zik: 'Musique',
+    cuisine: 'Cuisine',
+    cuisinier: 'Cuisine',
+    gastronomie: 'Cuisine',
+    films: 'Cinéma',
+    cinéma: 'Cinéma',
+    cinoche: 'Cinéma',
+    film: 'Cinéma',
+    voyage: 'Voyages',
+    voyager: 'Voyages',
+    gaming: 'Jeux vidéo',
+    'jeux video': 'Jeux vidéo',
+    'jeux-vidéo': 'Jeux vidéo',
+    gamer: 'Jeux vidéo',
+    bouquins: 'Lecture',
+    livres: 'Lecture',
+    lire: 'Lecture',
+    escalade: 'Escalade',
+    grimpe: 'Escalade',
+    bloc: 'Escalade',
+    nage: 'Natation',
+    piscine: 'Natation',
+    natation: 'Natation',
+    skate: 'Skateboard',
+    garden: 'Jardinage',
+    jardin: 'Jardinage',
+    astro: 'Astronomie',
+    étoiles: 'Astronomie',
+    courir: 'Running',
+    'course à pied': 'Running',
+    jogging: 'Running',
+    cyclisme: 'Vélo',
+    bicyclette: 'Vélo',
+    'plongée sous-marine': 'Plongée',
+    podcasts: 'Podcast',
+    karaoké: 'Karaoké',
+    karaoke: 'Karaoké',
+    bénévole: 'Bénévolat',
+    volontariat: 'Bénévolat',
+    vin: 'Œnologie',
+    vins: 'Œnologie',
+    méditer: 'Méditation',
+    mindfulness: 'Méditation',
+    // Skills aliases
+    js: 'JavaScript',
+    node: 'JavaScript',
+    nodejs: 'JavaScript',
+    typescript: 'JavaScript',
+    ts: 'JavaScript',
+    py: 'Python',
+    'ui design': 'Design UI',
+    'ux design': 'Design UI',
+    design: 'Design UI',
+    webdesign: 'Design UI',
+    'gestion projet': 'Gestion de projet',
+    'project management': 'Gestion de projet',
+    management: 'Gestion de projet',
+    data: 'Data Science',
+    datascience: 'Data Science',
+    ml: 'Machine Learning',
+    ia: 'Machine Learning',
+    'intelligence artificielle': 'Machine Learning',
+    'deep learning': 'Machine Learning',
+    'retouche photo': 'Photo retouche',
+    photoshop: 'Photo retouche',
+    montage: 'Montage vidéo',
+    'video editing': 'Montage vidéo',
+    piano: 'Musique (piano)',
+    couture: 'Couture',
+    coudre: 'Couture',
+    menuisier: 'Menuiserie',
+    bois: 'Menuiserie',
+    'community manager': 'Community management',
+    cm: 'Community management',
+    référencement: 'SEO',
+    compta: 'Comptabilité',
+    informatique: 'JavaScript',
+    ordinateurs: 'JavaScript',
+    code: 'JavaScript',
+    programmation: 'JavaScript',
+    développement: 'JavaScript'
+};
+
 // ─── Helpers ────────────────────────────────────────────────────────
 
 function pick<T>(arr: readonly T[]): T {
@@ -203,6 +296,23 @@ async function main() {
         tagMap.set(label, tag.id);
     }
     console.log(`  ✅ ${tagMap.size} tags created`);
+
+    // 1b. Create tag aliases
+    let aliasCount = 0;
+    for (const [alias, canonicalLabel] of Object.entries(TAG_ALIASES)) {
+        const tagId = tagMap.get(canonicalLabel);
+        if (!tagId) {
+            console.warn(`  ⚠️  Alias "${alias}" → "${canonicalLabel}" skipped (tag not found)`);
+            continue;
+        }
+        await prisma.tagAlias.upsert({
+            where: { alias },
+            update: { tagId },
+            create: { alias, tagId }
+        });
+        aliasCount++;
+    }
+    console.log(`  ✅ ${aliasCount} tag aliases created`);
 
     // 2. Create users with profiles and tags
     let created = 0;

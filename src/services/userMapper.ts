@@ -132,7 +132,8 @@ export function mapUserToCandidate(
         },
         intentions: sorted,
         bio: user.profile?.bio ?? '',
-        tags: (user.tags ?? []).map((t) => t.tag.label),
+        interests: (user.tags ?? []).filter((t) => t.type === 'interest').map((t) => t.tag.label),
+        skills: (user.tags ?? []).filter((t) => t.type === 'skill').map((t) => t.tag.label),
         distance: formatDistance(
             refLatLng?.latitude,
             refLatLng?.longitude,

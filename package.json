@@ -21,7 +21,7 @@
         "db:migrate": "prisma migrate dev",
         "db:push": "prisma db push",
         "db:studio": "prisma studio",
-        "db:seed": "npx tsx prisma/seed.ts"
+        "db:seed": "tsx prisma/seed.ts"
     },
     "dependencies": {
         "@prisma/adapter-pg": "^7.5.0",
@@ -37,6 +37,7 @@
         "jsonwebtoken": "^9.0.3",
         "morgan": "^1.10.0",
         "nodemailer": "^8.0.4",
+        "openai": "^6.34.0",
         "pg": "^8.20.0",
         "ws": "^8.18.2",
         "zod": "^3.25.20"
@@ -59,6 +60,7 @@
         "prisma": "^7.5.0",
         "ts-jest": "^29.3.4",
         "tsc-alias": "^1.8.16",
+        "tsx": "^4.21.0",
         "typescript": "^5.8.3",
         "typescript-eslint": "^8.32.1"
     },

@@ -20,3 +20,4 @@ import './moderation/report-user';
 import './moderation/unmatch';
 import './settings/get-settings';
 import './settings/update-settings';
+import './tags/tag-suggest';

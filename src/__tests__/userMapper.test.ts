@@ -130,7 +130,8 @@ describe('mapUserToCandidate', () => {
             },
             intentions: ['dating', 'friendship'],
             bio: 'Hello world',
-            tags: ['Photographie', 'Randonnée', 'JavaScript'],
+            interests: ['Photographie', 'Randonnée'],
+            skills: ['JavaScript'],
             distance: '',
             distanceKm: undefined,
             mutualFriends: 0
@@ -171,13 +172,12 @@ describe('mapUserToCandidate', () => {
         expect(candidate.intentions).toEqual([]);
     });
 
-    it('flattens all tag labels (interests + skills) into tags[]', () => {
+    it('splits tag labels into interests and skills', () => {
         const user = makePrismaUser();
         const candidate = mapUserToCandidate(user);
 
-        expect(candidate.tags).toContain('Photographie');
-        expect(candidate.tags).toContain('JavaScript');
-        expect(candidate.tags).toHaveLength(3);
+        expect(candidate.interests).toContain('Photographie');
+        expect(candidate.skills).toContain('JavaScript');
     });
 
     it('handles null profile', () => {

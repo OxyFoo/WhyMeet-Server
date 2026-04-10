@@ -3,7 +3,53 @@ import type { Client } from '@/server/Client';
 import type { WSRequest_UpdateProfile, WSResponse_UpdateProfile } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
 import { mapUserToProfile, profileInclude } from '@/services/userMapper';
+import { ensureTagEmbedding } from '@/services/embedding';
 import { logger } from '@/config/logger';
+
+const TAG_MAX_LENGTH = 40;
+
+/**
+ * Sanitize a tag label:
+ * - Strip invisible/control characters
+ * - Collapse whitespace
+ * - Trim
+ * - Title-case first letter
+ * - Max length
+ */
+function sanitizeTagLabel(raw: string): string {
+    const s = raw
+        .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u2028-\u202F\uFEFF]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, TAG_MAX_LENGTH);
+    if (s.length === 0) return '';
+    return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * Resolve a user-submitted label to a canonical tag.
+ * 1. Exact match on Tag.label
+ * 2. Alias match on TagAlias.alias → canonical Tag
+ * 3. Create new tag + generate embedding
+ */
+async function resolveTag(db: ReturnType<typeof getDatabase>, label: string): Promise<{ id: string; label: string }> {
+    // 1. Exact match
+    const exact = await db.tag.findUnique({ where: { label } });
+    if (exact) return { id: exact.id, label: exact.label };
+
+    // 2. Alias match (case-insensitive)
+    const alias = await db.tagAlias.findFirst({
+        where: { alias: { equals: label, mode: 'insensitive' } },
+        include: { tag: { select: { id: true, label: true } } }
+    });
+    if (alias) return { id: alias.tag.id, label: alias.tag.label };
+
+    // 3. Create new tag + embedding
+    const newTag = await db.tag.create({ data: { label } });
+    // Fire-and-forget embedding generation (non-blocking)
+    ensureTagEmbedding(newTag.id, label).catch(() => {});
+    return { id: newTag.id, label: newTag.label };
+}
 
 async function syncTags(
     db: ReturnType<typeof getDatabase>,
@@ -16,13 +62,15 @@ async function syncTags(
 
     if (labels.length === 0) return;
 
-    // Find-or-create each tag, then create UserTag links
-    for (const label of labels) {
-        const tag = await db.tag.upsert({
-            where: { label },
-            update: {},
-            create: { label }
-        });
+    // Resolve each label to a canonical tag, then create UserTag links
+    const resolved = new Set<string>();
+    for (const raw of labels) {
+        const label = sanitizeTagLabel(raw);
+        if (!label) continue;
+        const tag = await resolveTag(db, label);
+        // Avoid duplicates (different labels resolving to same canonical tag)
+        if (resolved.has(tag.id)) continue;
+        resolved.add(tag.id);
         await db.userTag.create({
             data: { userId, tagId: tag.id, type }
         });

@@ -95,12 +95,25 @@ model Settings {
 // ─── Tags ───────────────────────────────────────────────────────────
 
 model Tag {
-    id    String @id @default(cuid())
-    label String @unique
+    id        String  @id @default(cuid())
+    label     String  @unique
+    embedding Float[] @default([])
 
     userTags UserTag[]
+    aliases  TagAlias[]
 
     @@map("tags")
+}
+
+model TagAlias {
+    id    String @id @default(cuid())
+    alias String @unique
+    tagId String
+
+    tag Tag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+    @@index([tagId])
+    @@map("tag_aliases")
 }
 
 model UserTag {

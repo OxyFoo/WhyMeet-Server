@@ -34,7 +34,9 @@ const envSchema = z.object({
     APPLE_CLIENT_ID: z.string().default(''),
     APPLE_TEAM_ID: z.string().default(''),
     APPLE_KEY_ID: z.string().default(''),
-    APPLE_PRIVATE_KEY: z.string().default('')
+    APPLE_PRIVATE_KEY: z.string().default(''),
+
+    OPENAI_API_KEY: z.string().default('')
 });
 
 const parsed = envSchema.safeParse(process.env);
