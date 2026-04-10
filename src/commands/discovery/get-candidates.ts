@@ -14,11 +14,14 @@ registerCommand<WSRequest_GetCandidates>(
         const filters = payload.filters;
 
         try {
-            // Get current user's profile for scoring
-            const currentUser = await db.user.findUnique({
-                where: { id: client.userId },
-                include: { profile: true, tags: { include: { tag: true } } }
-            });
+            // Get current user's profile + stored discovery preferences
+            const [currentUser, settings] = await Promise.all([
+                db.user.findUnique({
+                    where: { id: client.userId },
+                    include: { profile: true, tags: { include: { tag: true } } }
+                }),
+                db.settings.findUnique({ where: { userId: client.userId } })
+            ]);
 
             const myIntentions = (currentUser?.profile?.intentions ?? []) as IntentionKey[];
             const myTagLabels = new Set((currentUser?.tags ?? []).map((t) => t.tag.label));
@@ -26,6 +29,15 @@ registerCommand<WSRequest_GetCandidates>(
                 latitude: currentUser?.profile?.latitude ?? null,
                 longitude: currentUser?.profile?.longitude ?? null
             };
+
+            // Use stored preferences, fall back to payload filters, then defaults
+            const prefAgeMin = settings?.discoveryAgeMin ?? 18;
+            const prefAgeMax = settings?.discoveryAgeMax ?? 99;
+            const prefMaxDistance = filters?.maxDistance ?? settings?.discoveryMaxDistance ?? DEFAULT_MAX_DISTANCE;
+            const prefRemote = filters?.remote ?? settings?.discoveryRemoteMode ?? false;
+            const prefIntentions = filters?.intentions ?? (settings?.discoveryIntentions as IntentionKey[] | undefined);
+            const prefVerified = settings?.discoveryVerified ?? false;
+            const prefPhotosOnly = settings?.discoveryPhotosOnly ?? false;
 
             // Get IDs already seen (liked/skipped/starred)
             const seenMatches = await db.match.findMany({
@@ -46,15 +58,25 @@ registerCommand<WSRequest_GetCandidates>(
                 id: { notIn: [client.userId, ...seenIds, ...blockedIds] }
             };
 
-            // Filter by specific intentions if provided
-            if (filters?.intentions && filters.intentions.length > 0) {
-                where.profile = { intentions: { hasSome: filters.intentions } };
+            // Age range filter
+            if (prefAgeMin > 18 || prefAgeMax < 99) {
+                where.age = { gte: prefAgeMin, lte: prefAgeMax };
+            }
+
+            // Verified filter
+            if (prefVerified) {
+                where.verified = true;
+            }
+
+            // Filter by intentions (stored preferences or payload)
+            if (prefIntentions && prefIntentions.length > 0) {
+                where.profile = { intentions: { hasSome: prefIntentions } };
             } else if (myIntentions.length > 0) {
                 where.profile = { intentions: { hasSome: myIntentions } };
             }
 
             // Remote mode: filter by spoken languages
-            if (filters?.remote && filters?.languages && filters.languages.length > 0) {
+            if (prefRemote && filters?.languages && filters.languages.length > 0) {
                 where.profile = {
                     ...((where.profile as Record<string, unknown>) ?? {}),
                     spokenLanguages: { hasSome: filters.languages }
@@ -68,9 +90,9 @@ registerCommand<WSRequest_GetCandidates>(
             });
 
             // Score and sort by relevance
-            const targetIntentions = filters?.intentions;
-            const isRemote = filters?.remote === true;
-            const maxDistance = isRemote ? Infinity : (filters?.maxDistance ?? DEFAULT_MAX_DISTANCE);
+            const targetIntentions = prefIntentions;
+            const isRemote = prefRemote;
+            const maxDistance = isRemote ? Infinity : prefMaxDistance;
 
             const scored = users
                 .map((u) => {
@@ -98,6 +120,11 @@ registerCommand<WSRequest_GetCandidates>(
                     if (isRemote) return true;
                     if (s.distKm == null) return true; // include users without location
                     return s.distKm <= maxDistance;
+                })
+                // Filter photos-only (avatar required)
+                .filter((s) => {
+                    if (!prefPhotosOnly) return true;
+                    return s.user.avatar !== '';
                 });
 
             scored.sort((a, b) => b.score - a.score);

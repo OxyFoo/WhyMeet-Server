@@ -87,6 +87,25 @@ model Settings {
     language String @default("fr") // Language: "fr" | "en"
     theme    String @default("light") // Theme: "light" | "dark"
 
+    // Discovery preferences (who I want to see)
+    discoveryAgeMin      Int      @default(18)
+    discoveryAgeMax      Int      @default(99)
+    discoveryGenders     String[] @default(["male", "female", "non_binary"])
+    discoveryIntentions  String[] @default([])
+    discoveryMaxDistance Int      @default(50)
+    discoveryRemoteMode  Boolean  @default(false)
+    discoveryVerified    Boolean  @default(false)
+    discoveryPhotosOnly  Boolean  @default(false)
+
+    // Visibility preferences (who can see me)
+    syncVisibility        Boolean  @default(true)
+    visibilityAgeMin      Int      @default(18)
+    visibilityAgeMax      Int      @default(99)
+    visibilityGenders     String[] @default(["male", "female", "non_binary"])
+    visibilityIntentions  String[] @default([])
+    visibilityMaxDistance Int      @default(50)
+    visibilityRemoteMode  Boolean  @default(false)
+
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
     @@map("settings")

@@ -14,6 +14,7 @@ const mockConversationCreate = jest.fn();
 const mockBlockFindMany = jest.fn();
 const mockProfileUpdateMany = jest.fn();
 const mockNotificationCreate = jest.fn();
+const mockSettingsFindUnique = jest.fn();
 
 jest.mock('@/services/database', () => ({
     getDatabase: () => ({
@@ -27,7 +28,8 @@ jest.mock('@/services/database', () => ({
         conversation: { create: mockConversationCreate },
         block: { findMany: mockBlockFindMany },
         profile: { updateMany: mockProfileUpdateMany },
-        notification: { create: mockNotificationCreate }
+        notification: { create: mockNotificationCreate },
+        settings: { findUnique: mockSettingsFindUnique }
     })
 }));
 
@@ -79,6 +81,7 @@ describe('get-candidates command', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         mockBlockFindMany.mockResolvedValue([]);
+        mockSettingsFindUnique.mockResolvedValue(null);
     });
 
     it('excludes current user and already-seen users', async () => {
