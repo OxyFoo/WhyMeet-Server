@@ -4,6 +4,7 @@ import type { WSRequest_UpdateProfile, WSResponse_UpdateProfile } from '@whymeet
 import { getDatabase } from '@/services/database';
 import { mapUserToProfile, profileInclude } from '@/services/userMapper';
 import { ensureTagEmbedding } from '@/services/embedding';
+import { discretizePosition } from '@/services/geoUtils';
 import { logger } from '@/config/logger';
 
 const TAG_MAX_LENGTH = 40;
@@ -103,8 +104,11 @@ registerCommand<WSRequest_UpdateProfile>(
                 if (data.location?.country !== undefined) profileData.country = data.location.country;
                 if (data.location?.region !== undefined) profileData.region = data.location.region;
                 if (data.location?.city !== undefined) profileData.city = data.location.city;
-                if (data.location?.latitude !== undefined) profileData.latitude = data.location.latitude;
-                if (data.location?.longitude !== undefined) profileData.longitude = data.location.longitude;
+                if (!!data.location?.latitude && !!data.location?.longitude) {
+                    const discretized = discretizePosition(data.location.latitude, data.location.longitude);
+                    profileData.latitude = discretized.latitude;
+                    profileData.longitude = discretized.longitude;
+                }
                 if (data.intentions !== undefined) profileData.intentions = data.intentions;
 
                 if (Object.keys(profileData).length > 0) {
