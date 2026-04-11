@@ -9,9 +9,10 @@ import type {
     IntentionKey
 } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
+import { GENDERS } from '@whymeet/types';
 import { logger } from '@/config/logger';
 
-const VALID_GENDERS = new Set<string>(['male', 'female', 'non_binary']);
+const VALID_GENDERS = new Set<string>(GENDERS);
 
 function validateGenders(arr: unknown): arr is Gender[] {
     return Array.isArray(arr) && arr.every((g) => typeof g === 'string' && VALID_GENDERS.has(g));

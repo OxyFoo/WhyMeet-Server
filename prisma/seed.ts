@@ -260,7 +260,7 @@ const TAG_ALIASES: Record<string, string> = {
     développement: 'JavaScript'
 };
 
-const GENDERS = ['male', 'female', 'non_binary'] as const;
+const GENDERS = ['male', 'female', 'non_binary', 'other', 'prefer_not_to_say'] as const;
 const PERIODS = ['morning', 'noon', 'evening', 'any'] as const;
 
 // ─── Helpers ────────────────────────────────────────────────────────
