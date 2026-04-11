@@ -35,6 +35,7 @@ RUN addgroup -g 1002 whymeet \
  && adduser node whymeet
 
 COPY --from=builder /build/WhyMeet-Server ./
+COPY --from=types-builder /build/WhyMeet-Types/dist ./node_modules/@whymeet/types/
 
 USER node
 

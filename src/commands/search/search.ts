@@ -22,16 +22,24 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
             longitude: currentUser?.profile?.longitude ?? null
         };
 
-        const where: Record<string, unknown> = { id: { not: client.userId } };
+        const where: Record<string, unknown> = { id: { not: client.userId }, banned: false };
 
-        // Exclude blocked users
-        const blocks = await db.block.findMany({
-            where: { OR: [{ blockerId: client.userId }, { blockedId: client.userId }] },
-            select: { blockerId: true, blockedId: true }
-        });
+        // Exclude blocked + reported users
+        const [blocks, reports] = await Promise.all([
+            db.block.findMany({
+                where: { OR: [{ blockerId: client.userId }, { blockedId: client.userId }] },
+                select: { blockerId: true, blockedId: true }
+            }),
+            db.report.findMany({
+                where: { reporterId: client.userId },
+                select: { reportedId: true }
+            })
+        ]);
         const blockedIds = blocks.map((b) => (b.blockerId === client.userId ? b.blockedId : b.blockerId));
-        if (blockedIds.length > 0) {
-            where.id = { notIn: [client.userId, ...blockedIds] };
+        const reportedIds = reports.map((r) => r.reportedId);
+        const excludeIds = [...new Set([client.userId, ...blockedIds, ...reportedIds])];
+        if (excludeIds.length > 0) {
+            where.id = { notIn: excludeIds };
         }
 
         if (filters.verified) {

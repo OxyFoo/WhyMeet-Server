@@ -1,6 +1,12 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_GetRequests, WSResponse_GetRequests, IntentionKey } from '@whymeet/types';
+import type {
+    WSRequest_GetRequests,
+    WSResponse_GetRequests,
+    IntentionKey,
+    Gender,
+    PreferredPeriod
+} from '@whymeet/types';
 import { getDatabase } from '@/services/database';
 import { logger } from '@/config/logger';
 
@@ -32,15 +38,18 @@ registerCommand<WSRequest_GetRequests>('get-requests', async (client: Client): P
 
         const requests = receivedMatches
             .filter((m) => !actedOnIds.has(m.senderId))
+            .filter((m) => !m.sender.banned)
             .map((m) => ({
                 id: m.id,
                 sender: {
                     id: m.sender.id,
                     name: m.sender.name,
                     age: m.sender.age,
+                    gender: (m.sender.gender || 'male') as Gender,
                     avatar: m.sender.avatar,
                     city: m.sender.city,
-                    verified: m.sender.verified
+                    verified: m.sender.verified,
+                    preferredPeriod: (m.sender.preferredPeriod ?? 'any') as PreferredPeriod
                 },
                 intentions: (m.sender.profile?.intentions ?? []) as IntentionKey[],
                 matchContext: m.matchContext,

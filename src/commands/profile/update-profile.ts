@@ -1,6 +1,7 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_UpdateProfile, WSResponse_UpdateProfile } from '@whymeet/types';
+import { GENDERS, PREFERRED_PERIODS } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
 import { mapUserToProfile, profileInclude } from '@/services/userMapper';
 import { ensureTagEmbedding } from '@/services/embedding';
@@ -92,6 +93,12 @@ registerCommand<WSRequest_UpdateProfile>(
                     data: {
                         ...(data.name !== undefined && { name: data.name }),
                         ...(data.age !== undefined && { age: data.age }),
+                        ...(data.gender !== undefined &&
+                            (GENDERS as readonly string[]).includes(data.gender) && { gender: data.gender }),
+                        ...(data.preferredPeriod !== undefined &&
+                            (PREFERRED_PERIODS as readonly string[]).includes(data.preferredPeriod) && {
+                                preferredPeriod: data.preferredPeriod
+                            }),
                         ...(data.avatar !== undefined && { avatar: data.avatar }),
                         ...(data.city !== undefined && { city: data.city })
                     }

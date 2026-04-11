@@ -9,15 +9,18 @@ datasource db {
 // ─── Auth & Users ───────────────────────────────────────────────────
 
 model User {
-    id        String   @id @default(cuid())
-    email     String   @unique
-    name      String   @default("")
-    age       Int      @default(0)
-    avatar    String   @default("")
-    city      String   @default("")
-    verified  Boolean  @default(false)
-    createdAt DateTime @default(now())
-    updatedAt DateTime @updatedAt
+    id              String   @id @default(cuid())
+    email           String   @unique
+    name            String   @default("")
+    age             Int      @default(0)
+    gender          String   @default("")
+    avatar          String   @default("")
+    city            String   @default("")
+    verified        Boolean  @default(false)
+    banned          Boolean  @default(false)
+    preferredPeriod String   @default("any")
+    createdAt       DateTime @default(now())
+    updatedAt       DateTime @updatedAt
 
     profile         Profile?
     settings        Settings?

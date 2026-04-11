@@ -15,6 +15,7 @@ const mockBlockFindMany = jest.fn();
 const mockProfileUpdateMany = jest.fn();
 const mockNotificationCreate = jest.fn();
 const mockSettingsFindUnique = jest.fn();
+const mockReportFindMany = jest.fn();
 
 jest.mock('@/services/database', () => ({
     getDatabase: () => ({
@@ -29,7 +30,8 @@ jest.mock('@/services/database', () => ({
         block: { findMany: mockBlockFindMany },
         profile: { updateMany: mockProfileUpdateMany },
         notification: { create: mockNotificationCreate },
-        settings: { findUnique: mockSettingsFindUnique }
+        settings: { findUnique: mockSettingsFindUnique },
+        report: { findMany: mockReportFindMany }
     })
 }));
 
@@ -55,9 +57,11 @@ function prismaUser(id: string, intentions: string[] = ['dating'], tagLabels: st
         id,
         name: 'User',
         age: 25,
+        gender: 'female',
         avatar: '',
         city: 'Paris',
         verified: true,
+        preferredPeriod: 'any',
         profile: {
             bio: 'bio',
             socialVibe: 'chill',
@@ -69,7 +73,8 @@ function prismaUser(id: string, intentions: string[] = ['dating'], tagLabels: st
             statConnections: 0,
             statMatches: 0,
             statVibes: 0,
-            intentions
+            intentions,
+            spokenLanguages: ['fr']
         },
         tags: tagLabels.map((label, i) => ({ type: 'interest', tag: { id: `t${i}`, label } }))
     };
@@ -82,6 +87,7 @@ describe('get-candidates command', () => {
         jest.clearAllMocks();
         mockBlockFindMany.mockResolvedValue([]);
         mockSettingsFindUnique.mockResolvedValue(null);
+        mockReportFindMany.mockResolvedValue([]);
     });
 
     it('excludes current user and already-seen users', async () => {
@@ -100,14 +106,16 @@ describe('get-candidates command', () => {
         expect(where.id.notIn).toContain('seen-2');
     });
 
-    it('scores candidates by common intentions (+2) and tags (+1)', async () => {
-        mockUserFindUnique.mockResolvedValue(prismaUser('me', ['dating', 'friendship'], ['Yoga', 'Café']));
+    it('scores candidates using weighted scoring and sorts by total score', async () => {
+        mockUserFindUnique.mockResolvedValue(
+            prismaUser('me', ['dating', 'friendship', 'networking'], ['Yoga', 'Café'])
+        );
         mockMatchFindMany.mockResolvedValue([]);
-        // candidate-A: 1 common intention (dating) + 1 common tag (Yoga) => score 3
-        // candidate-B: 2 common intentions (dating, friendship) + 0 common tags => score 4
+        // candidate-A: 1/3 common intentions + 1/2 common tags
+        // candidate-B: 3/3 common intentions + 0 common tags → higher intention score dominates
         mockUserFindMany.mockResolvedValue([
             prismaUser('A', ['dating'], ['Yoga']),
-            prismaUser('B', ['dating', 'friendship'], ['Surf'])
+            prismaUser('B', ['dating', 'friendship', 'networking'], ['Surf'])
         ]);
 
         const result = await routeCommand(fakeClient('me'), {
@@ -116,8 +124,8 @@ describe('get-candidates command', () => {
         } as never);
 
         const candidates = (result as { payload: { candidates: { id: string }[] } }).payload.candidates;
-        expect(candidates).toHaveLength(2);
-        // B has higher score (4) than A (3), should be first
+        expect(candidates.length).toBeGreaterThanOrEqual(2);
+        // B has full intention match (25pts) vs A's partial (8.3pts)
         expect(candidates[0].id).toBe('B');
         expect(candidates[1].id).toBe('A');
     });

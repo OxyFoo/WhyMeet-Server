@@ -11,9 +11,11 @@ function baseUser() {
         id: 'user-1',
         name: 'Alice',
         age: 25,
+        gender: 'female',
         avatar: 'https://example.com/alice.png',
         city: 'Paris',
         verified: true,
+        preferredPeriod: 'any',
         profile: {
             bio: 'Hello world',
             socialVibe: 'chill',
@@ -47,9 +49,11 @@ describe('mapUserToProfile', () => {
             id: 'user-1',
             name: 'Alice',
             age: 25,
+            gender: 'female',
             avatar: 'https://example.com/alice.png',
             city: 'Paris',
             verified: true,
+            preferredPeriod: 'any',
             bio: 'Hello world',
             socialVibe: 'chill',
             interests: [
@@ -124,9 +128,11 @@ describe('mapUserToCandidate', () => {
                 id: 'user-1',
                 name: 'Alice',
                 age: 25,
+                gender: 'female',
                 avatar: 'https://example.com/alice.png',
                 city: 'Paris',
-                verified: true
+                verified: true,
+                preferredPeriod: 'any'
             },
             intentions: ['dating', 'friendship'],
             bio: 'Hello world',

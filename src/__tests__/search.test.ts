@@ -7,10 +7,12 @@ jest.mock('@/config/logger', () => ({
 const mockFindMany = jest.fn();
 const mockFindUnique = jest.fn();
 const mockBlockFindMany = jest.fn();
+const mockReportFindMany = jest.fn();
 jest.mock('@/services/database', () => ({
     getDatabase: () => ({
         user: { findMany: mockFindMany, findUnique: mockFindUnique },
-        block: { findMany: mockBlockFindMany }
+        block: { findMany: mockBlockFindMany },
+        report: { findMany: mockReportFindMany }
     })
 }));
 
@@ -28,6 +30,7 @@ function prismaUser(id: string, overrides: Record<string, unknown> = {}) {
         id,
         name: 'User',
         age: 25,
+        gender: 'female',
         avatar: '',
         city: 'Paris',
         verified: true,
@@ -57,8 +60,10 @@ describe('search command', () => {
         mockFindMany.mockReset();
         mockFindUnique.mockReset();
         mockBlockFindMany.mockReset();
+        mockReportFindMany.mockReset();
         mockFindUnique.mockResolvedValue({ profile: { latitude: null, longitude: null } });
         mockBlockFindMany.mockResolvedValue([]);
+        mockReportFindMany.mockResolvedValue([]);
     });
 
     it('excludes the current user from results', async () => {
@@ -70,7 +75,8 @@ describe('search command', () => {
         } as never);
 
         const where = mockFindMany.mock.calls[0][0].where;
-        expect(where.id).toEqual({ not: 'me' });
+        expect(where.id).toEqual({ notIn: ['me'] });
+        expect(where.banned).toBe(false);
     });
 
     it('passes verified filter to query', async () => {

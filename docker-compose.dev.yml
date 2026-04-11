@@ -33,6 +33,7 @@ services:
                 condition: service_healthy
         volumes:
             - .:/app:z
+            - ../WhyMeet-Types/dist:/WhyMeet-Types/dist:ro,z
         restart: unless-stopped
 
 volumes:

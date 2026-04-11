@@ -1,4 +1,4 @@
-import type { Profile, IntentionKey } from '@whymeet/types';
+import type { Profile, IntentionKey, Gender, PreferredPeriod } from '@whymeet/types';
 
 /**
  * Haversine distance between two lat/lng points in km.
@@ -41,9 +41,11 @@ export function mapUserToProfile(user: {
     id: string;
     name: string;
     age: number;
+    gender: string;
     avatar: string;
     city: string;
     verified: boolean;
+    preferredPeriod?: string;
     profile?: {
         bio: string;
         socialVibe: string;
@@ -64,9 +66,11 @@ export function mapUserToProfile(user: {
         id: user.id,
         name: user.name,
         age: user.age,
+        gender: (user.gender || 'male') as Gender,
         avatar: user.avatar,
         city: user.city,
         verified: user.verified,
+        preferredPeriod: (user.preferredPeriod ?? 'any') as PreferredPeriod,
         bio: user.profile?.bio ?? '',
         socialVibe: (user.profile?.socialVibe ?? 'chill') as Profile['socialVibe'],
         interests: (user.tags ?? [])
@@ -126,9 +130,11 @@ export function mapUserToCandidate(
             id: user.id,
             name: user.name,
             age: user.age,
+            gender: (user.gender || 'male') as Gender,
             avatar: user.avatar,
             city: user.city,
-            verified: user.verified
+            verified: user.verified,
+            preferredPeriod: (user.preferredPeriod ?? 'any') as PreferredPeriod
         },
         intentions: sorted,
         bio: user.profile?.bio ?? '',

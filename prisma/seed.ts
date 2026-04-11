@@ -260,6 +260,9 @@ const TAG_ALIASES: Record<string, string> = {
     développement: 'JavaScript'
 };
 
+const GENDERS = ['male', 'female', 'non_binary'] as const;
+const PERIODS = ['morning', 'noon', 'evening', 'any'] as const;
+
 // ─── Helpers ────────────────────────────────────────────────────────
 
 function pick<T>(arr: readonly T[]): T {
@@ -340,6 +343,8 @@ async function main() {
                 age: randomAge(),
                 avatar: `https://api.dicebear.com/9.x/avataaars/png?seed=${firstName}${suffix}`,
                 city,
+                gender: pick(GENDERS),
+                preferredPeriod: pick(PERIODS),
                 verified: Math.random() > 0.3, // 70% verified
 
                 profile: {

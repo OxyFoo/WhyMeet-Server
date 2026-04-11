@@ -1,8 +1,10 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_GetCandidates, WSResponse_GetCandidates, IntentionKey } from '@whymeet/types';
+import type { WSRequest_GetCandidates, WSResponse_GetCandidates, IntentionKey, PreferredPeriod } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
 import { mapUserToCandidate, candidateInclude, getDistanceKm } from '@/services/userMapper';
+import { computeMatchScore, MIN_SCORE_THRESHOLD } from '@/services/scoring';
+import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
 import { logger } from '@/config/logger';
 
 const DEFAULT_MAX_DISTANCE = 50; // km
@@ -14,7 +16,7 @@ registerCommand<WSRequest_GetCandidates>(
         const filters = payload.filters;
 
         try {
-            // Get current user's profile + stored discovery preferences
+            // Get current user's profile and preferences in parallel
             const [currentUser, settings] = await Promise.all([
                 db.user.findUnique({
                     where: { id: client.userId },
@@ -29,33 +31,47 @@ registerCommand<WSRequest_GetCandidates>(
                 latitude: currentUser?.profile?.latitude ?? null,
                 longitude: currentUser?.profile?.longitude ?? null
             };
+            const myGender = currentUser?.gender ?? '';
+            const myAge = currentUser?.age ?? 25;
+            const myLanguages = currentUser?.profile?.spokenLanguages ?? [];
+            const myPreferredPeriod = (currentUser?.preferredPeriod ?? 'any') as PreferredPeriod;
 
             // Use stored preferences, fall back to payload filters, then defaults
             const prefAgeMin = settings?.discoveryAgeMin ?? 18;
             const prefAgeMax = settings?.discoveryAgeMax ?? 99;
+            const prefGenders = settings?.discoveryGenders ?? [];
             const prefMaxDistance = filters?.maxDistance ?? settings?.discoveryMaxDistance ?? DEFAULT_MAX_DISTANCE;
             const prefRemote = filters?.remote ?? settings?.discoveryRemoteMode ?? false;
             const prefIntentions = filters?.intentions ?? (settings?.discoveryIntentions as IntentionKey[] | undefined);
             const prefVerified = settings?.discoveryVerified ?? false;
             const prefPhotosOnly = settings?.discoveryPhotosOnly ?? false;
 
-            // Get IDs already seen (liked/skipped/starred)
-            const seenMatches = await db.match.findMany({
-                where: { senderId: client.userId },
-                select: { receiverId: true }
-            });
+            // Get IDs to exclude: self, seen, blocked, reported
+            const [seenMatches, blocks, reports] = await Promise.all([
+                db.match.findMany({
+                    where: { senderId: client.userId },
+                    select: { receiverId: true }
+                }),
+                db.block.findMany({
+                    where: { OR: [{ blockerId: client.userId }, { blockedId: client.userId }] },
+                    select: { blockerId: true, blockedId: true }
+                }),
+                db.report.findMany({
+                    where: { reporterId: client.userId },
+                    select: { reportedId: true }
+                })
+            ]);
+
             const seenIds = seenMatches.map((m) => m.receiverId);
-
-            // Get blocked users (in both directions)
-            const blocks = await db.block.findMany({
-                where: { OR: [{ blockerId: client.userId }, { blockedId: client.userId }] },
-                select: { blockerId: true, blockedId: true }
-            });
             const blockedIds = blocks.map((b) => (b.blockerId === client.userId ? b.blockedId : b.blockerId));
+            const reportedIds = reports.map((r) => r.reportedId);
+            const excludeIds = [...new Set([client.userId, ...seenIds, ...blockedIds, ...reportedIds])];
 
-            // Build query
+            // ── Hard filters (SQL pre-filter) ───────────────────────────
+
             const where: Record<string, unknown> = {
-                id: { notIn: [client.userId, ...seenIds, ...blockedIds] }
+                id: { notIn: excludeIds },
+                banned: false
             };
 
             // Age range filter
@@ -63,36 +79,82 @@ registerCommand<WSRequest_GetCandidates>(
                 where.age = { gte: prefAgeMin, lte: prefAgeMax };
             }
 
+            // Gender filter
+            if (prefGenders.length > 0) {
+                where.gender = { in: prefGenders };
+            }
+
             // Verified filter
             if (prefVerified) {
                 where.verified = true;
             }
 
-            // Filter by intentions (stored preferences or payload)
+            // Photos-only filter (avatar required)
+            if (prefPhotosOnly) {
+                where.avatar = { not: '' };
+            }
+
+            // Filter by intentions (stored preferences or user's own)
+            const profileWhere: Record<string, unknown> = {};
             if (prefIntentions && prefIntentions.length > 0) {
-                where.profile = { intentions: { hasSome: prefIntentions } };
+                profileWhere.intentions = { hasSome: prefIntentions };
             } else if (myIntentions.length > 0) {
-                where.profile = { intentions: { hasSome: myIntentions } };
+                profileWhere.intentions = { hasSome: myIntentions };
             }
 
             // Remote mode: filter by spoken languages
             if (prefRemote && filters?.languages && filters.languages.length > 0) {
-                where.profile = {
-                    ...((where.profile as Record<string, unknown>) ?? {}),
-                    spokenLanguages: { hasSome: filters.languages }
-                };
+                profileWhere.spokenLanguages = { hasSome: filters.languages };
             }
 
+            if (Object.keys(profileWhere).length > 0) {
+                where.profile = profileWhere;
+            }
+
+            // ── Visibility pre-filter (candidate's settings must accept me) ──
+            const visibilityFilter: Record<string, unknown>[] = [];
+
+            // Candidate must accept my age
+            visibilityFilter.push({ visibilityAgeMin: { lte: myAge } });
+            visibilityFilter.push({ visibilityAgeMax: { gte: myAge } });
+
+            // Candidate must accept my gender (if I have one set)
+            if (myGender !== '') {
+                visibilityFilter.push({ visibilityGenders: { hasSome: [myGender] } });
+            }
+
+            // Candidate must accept at least one of my intentions (or have no restriction)
+            if (myIntentions.length > 0) {
+                visibilityFilter.push({
+                    OR: [
+                        { visibilityIntentions: { isEmpty: true } },
+                        { visibilityIntentions: { hasSome: myIntentions } }
+                    ]
+                });
+            }
+
+            where.settings = { AND: visibilityFilter };
+
+            // ── Fetch candidates ─────────────────────────────────────
             const users = await db.user.findMany({
                 where,
-                include: candidateInclude,
-                take: 100 // fetch more to allow post-filtering by distance
+                include: {
+                    ...candidateInclude
+                },
+                take: 100
             });
 
-            // Score and sort by relevance
-            const targetIntentions = prefIntentions;
-            const isRemote = prefRemote;
-            const maxDistance = isRemote ? Infinity : prefMaxDistance;
+            // ── Score and rank ──────────────────────────────────────────
+            const scoringCtx: ScoringContext = {
+                myIntentions,
+                myTagLabels,
+                myLanguages,
+                myLatitude: myLatLng.latitude,
+                myLongitude: myLatLng.longitude,
+                myPreferredPeriod,
+                maxDistance: prefMaxDistance,
+                isRemote: prefRemote
+            };
 
             const scored = users
                 .map((u) => {
@@ -105,31 +167,44 @@ registerCommand<WSRequest_GetCandidates>(
                         u.profile?.longitude
                     );
 
-                    let score = 0;
-                    for (const i of theirIntentions) {
-                        if (myIntentions.includes(i)) score += 2;
-                    }
-                    for (const t of theirTags) {
-                        if (myTagLabels.has(t)) score += 1;
-                    }
+                    const candidate: ScoringCandidate = {
+                        intentions: theirIntentions,
+                        tagLabels: theirTags,
+                        spokenLanguages: u.profile?.spokenLanguages ?? [],
+                        latitude: u.profile?.latitude ?? null,
+                        longitude: u.profile?.longitude ?? null,
+                        bio: u.profile?.bio ?? '',
+                        avatar: u.avatar,
+                        verified: u.verified,
+                        tagCount: (u.tags ?? []).length,
+                        preferredPeriod: (u.preferredPeriod ?? 'any') as PreferredPeriod
+                    };
 
-                    return { user: u, score, distKm };
+                    const breakdown = computeMatchScore(scoringCtx, candidate);
+
+                    return { user: u, score: breakdown.total, distKm };
                 })
-                // Filter by distance (skip if location unknown)
+                // Post-filter: distance (Prisma can't do geo math)
                 .filter((s) => {
-                    if (isRemote) return true;
-                    if (s.distKm == null) return true; // include users without location
-                    return s.distKm <= maxDistance;
+                    if (prefRemote) return true;
+                    if (s.distKm == null) return true;
+                    return s.distKm <= prefMaxDistance;
                 })
-                // Filter photos-only (avatar required)
+                // Post-filter: visibility distance (candidate's max distance towards me)
                 .filter((s) => {
-                    if (!prefPhotosOnly) return true;
-                    return s.user.avatar !== '';
-                });
+                    if (prefRemote) return true;
+                    const candidateMaxDist = (s.user as { settings?: { visibilityMaxDistance?: number } }).settings
+                        ?.visibilityMaxDistance;
+                    if (candidateMaxDist == null) return true;
+                    if (s.distKm == null) return true;
+                    return s.distKm <= candidateMaxDist;
+                })
+                // Score threshold
+                .filter((s) => s.score >= MIN_SCORE_THRESHOLD);
 
             scored.sort((a, b) => b.score - a.score);
 
-            const candidates = scored.slice(0, 20).map((s) => mapUserToCandidate(s.user, targetIntentions, myLatLng));
+            const candidates = scored.slice(0, 20).map((s) => mapUserToCandidate(s.user, prefIntentions, myLatLng));
 
             logger.debug(`[Discovery] ${candidates.length} candidates for user: ${client.userId}`);
             return { command: 'get-candidates', payload: { candidates } };

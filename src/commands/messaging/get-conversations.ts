@@ -1,6 +1,6 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_GetConversations, WSResponse_GetConversations } from '@whymeet/types';
+import type { WSRequest_GetConversations, WSResponse_GetConversations, Gender, PreferredPeriod } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
 import { logger } from '@/config/logger';
 
@@ -38,11 +38,22 @@ registerCommand<WSRequest_GetConversations>(
                               id: other.id,
                               name: other.name,
                               age: other.age,
+                              gender: (other.gender || 'male') as Gender,
                               avatar: other.avatar,
                               city: other.city,
-                              verified: other.verified
+                              verified: other.verified,
+                              preferredPeriod: (other.preferredPeriod ?? 'any') as PreferredPeriod
                           }
-                        : { id: '', name: 'Unknown', age: 0, avatar: '', city: '', verified: false },
+                        : {
+                              id: '',
+                              name: 'Unknown',
+                              age: 0,
+                              gender: 'male' as Gender,
+                              avatar: '',
+                              city: '',
+                              verified: false,
+                              preferredPeriod: 'any' as PreferredPeriod
+                          },
                     lastMessage: lastMsg?.text,
                     lastMessageTime: lastMsg?.timestamp.toISOString(),
                     unreadCount: p.unreadCount
