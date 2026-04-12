@@ -36,7 +36,19 @@ const envSchema = z.object({
     APPLE_KEY_ID: z.string().default(''),
     APPLE_PRIVATE_KEY: z.string().default(''),
 
-    OPENAI_API_KEY: z.string().default('')
+    OPENAI_API_KEY: z.string().default(''),
+
+    // S3 / Minio Storage
+    S3_ENDPOINT: z.string().default(''),
+    S3_BUCKET: z.string().default('whymeet-uploads'),
+    S3_ACCESS_KEY: z.string().default(''),
+    S3_SECRET_KEY: z.string().default(''),
+    S3_REGION: z.string().default('us-east-1'),
+    S3_PUBLIC_URL: z.string().default(''),
+    UPLOAD_MAX_SIZE: z.coerce.number().int().positive().default(5_242_880),
+
+    // Firebase Cloud Messaging
+    FIREBASE_SERVICE_ACCOUNT: z.string().default('')
 });
 
 const parsed = envSchema.safeParse(process.env);

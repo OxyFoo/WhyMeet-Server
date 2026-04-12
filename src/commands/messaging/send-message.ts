@@ -3,6 +3,7 @@ import type { Client } from '@/server/Client';
 import type { WSRequest_SendMessage, WSResponse_SendMessage } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
 import { getConnectedClients } from '@/server/Server';
+import { pushToUser } from '@/services/pushService';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_SendMessage>(
@@ -50,13 +51,31 @@ registerCommand<WSRequest_SendMessage>(
 
             const connectedClients = getConnectedClients();
             for (const p of otherParticipants) {
+                let isOnline = false;
                 for (const c of connectedClients.values()) {
                     if (c.userId === p.userId) {
                         c.send({
                             event: 'new-message',
                             payload: { conversationId, message: messagePayload }
                         });
+                        isOnline = true;
                     }
+                }
+
+                if (!isOnline) {
+                    const senderName =
+                        (
+                            await db.user.findUnique({
+                                where: { id: client.userId },
+                                select: { name: true }
+                            })
+                        )?.name ?? 'Someone';
+
+                    pushToUser(p.userId, {
+                        title: senderName,
+                        body: text.length > 100 ? text.slice(0, 100) + '…' : text,
+                        data: { type: 'message', conversationId }
+                    });
                 }
             }
 

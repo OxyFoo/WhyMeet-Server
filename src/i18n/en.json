@@ -1,0 +1,6 @@
+{
+    "match_title": "New Match!",
+    "match_body": "You matched with {name}",
+    "like_title": "Someone likes you!",
+    "like_body": "{name} liked your profile"
+}

@@ -45,10 +45,10 @@ npm run dev
 ## Docker
 
 ```bash
-# Development (app + database)
+# Development (app + database + Minio)
 docker compose -f docker-compose.dev.yml up --build
 
-# Production (app only, external DB)
+# Production (app only, external DB & S3)
 docker compose -f docker-compose.prod.yml up --build
 ```
 

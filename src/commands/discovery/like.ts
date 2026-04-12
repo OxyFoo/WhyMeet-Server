@@ -3,6 +3,8 @@ import type { Client } from '@/server/Client';
 import type { WSRequest_Like, WSResponse_Like } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
 import { getConnectedClients } from '@/server/Server';
+import { pushToUser } from '@/services/pushService';
+import { t, getUserLanguage } from '@/services/notifI18n';
 import { mapUserToProfile, profileInclude } from '@/services/userMapper';
 import { logger } from '@/config/logger';
 
@@ -56,17 +58,20 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
 
             if (currentUser) {
                 // Create persistent notification for the matched user
+                const lang = await getUserLanguage(candidateId);
                 const notification = await db.notification.create({
                     data: {
                         userId: candidateId,
                         type: 'match',
-                        title: 'New Match!',
-                        body: `You matched with ${currentUser.name}`
+                        title: t(lang, 'match_title'),
+                        body: t(lang, 'match_body', { name: currentUser.name })
                     }
                 });
 
+                let matchedUserOnline = false;
                 for (const c of connectedClients.values()) {
                     if (c.userId === candidateId) {
+                        matchedUserOnline = true;
                         c.send({
                             event: 'new-match',
                             payload: {
@@ -89,6 +94,14 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
                         });
                     }
                 }
+
+                if (!matchedUserOnline) {
+                    pushToUser(candidateId, {
+                        title: notification.title,
+                        body: notification.body,
+                        data: { type: 'match', conversationId: conversation.id }
+                    });
+                }
             }
 
             logger.info(`[Discovery] Mutual match: ${client.userId} <-> ${candidateId}`);
@@ -104,19 +117,22 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
         // Create a "like received" notification
         const likerName =
             (await db.user.findUnique({ where: { id: client.userId }, select: { name: true } }))?.name ?? 'Someone';
+        const likeLang = await getUserLanguage(candidateId);
         const likeNotif = await db.notification.create({
             data: {
                 userId: candidateId,
                 type: 'like',
-                title: 'Someone likes you!',
-                body: `${likerName} liked your profile`
+                title: t(likeLang, 'like_title'),
+                body: t(likeLang, 'like_body', { name: likerName })
             }
         });
 
         // Push notification to connected client
         const onlineClients = getConnectedClients();
+        let likedUserOnline = false;
         for (const c of onlineClients.values()) {
             if (c.userId === candidateId) {
+                likedUserOnline = true;
                 c.send({
                     event: 'notification',
                     payload: {
@@ -131,6 +147,14 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
                     }
                 });
             }
+        }
+
+        if (!likedUserOnline) {
+            pushToUser(candidateId, {
+                title: likeNotif.title,
+                body: likeNotif.body,
+                data: { type: 'like' }
+            });
         }
 
         logger.debug(`[Discovery] User ${client.userId} liked ${candidateId}`);

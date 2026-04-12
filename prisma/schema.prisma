@@ -47,6 +47,8 @@ model Device {
     status           String   @default("pending") // "pending" | "active"
     name             String   @default("")
     os               String   @default("")
+    pushToken        String?
+    pushProvider     String? // "fcm"
     createdAt        DateTime @default(now())
     lastSeenAt       DateTime @default(now())
 

@@ -11,6 +11,7 @@ import { logger } from '@/config/logger';
 import { Client } from './Client';
 import { routeCommand } from './Router';
 import { authRouter } from './authRoutes';
+import { uploadRouter } from './uploadRoutes';
 import { tokenManager } from '@/services/tokenManager';
 import { getDatabase } from '@/services/database';
 
@@ -31,6 +32,9 @@ function createHttpServer(): http.Server | https.Server {
 
     // HTTP auth routes
     app.use('/auth', authRouter);
+
+    // HTTP upload routes
+    app.use('/upload', uploadRouter);
 
     if (env.SSL_PRIVATE_KEY_PATH && env.SSL_CERTIFICATE_PATH) {
         try {

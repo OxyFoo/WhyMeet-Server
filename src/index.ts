@@ -2,6 +2,7 @@ import { env } from '@/config/env';
 import { logger } from '@/config/logger';
 import { APP_VERSION } from '@/config/version';
 import { connectDatabase, disconnectDatabase } from '@/services/database';
+import { initStorage } from '@/services/storageService';
 import { startServer, stopServer } from '@/server/Server';
 import { getRegisteredCommands } from '@/server/Router';
 
@@ -21,6 +22,9 @@ async function main(): Promise<void> {
     // Log registered commands
     const commands = getRegisteredCommands();
     logger.info(`[Main] Registered ${commands.length} commands: ${commands.join(', ')}`);
+
+    // Initialize S3 storage
+    await initStorage();
 
     // Start WebSocket server
     await startServer(env.LISTEN_PORT_WS);

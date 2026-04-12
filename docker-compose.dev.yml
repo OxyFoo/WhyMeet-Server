@@ -17,17 +17,41 @@ services:
             retries: 10
         restart: unless-stopped
 
+    whymeet-minio-dev:
+        image: minio/minio:latest
+        container_name: whymeet-minio-dev
+        ports:
+            - '9000:9000'
+            - '9001:9001'
+        environment:
+            MINIO_ROOT_USER: whymeet
+            MINIO_ROOT_PASSWORD: whymeet123
+        command: server /data --console-address ":9001"
+        volumes:
+            - whymeet-minio-dev-data:/data
+        healthcheck:
+            test: ['CMD', 'mc', 'ready', 'local']
+            interval: 5s
+            timeout: 5s
+            retries: 5
+        restart: unless-stopped
+
     whymeet-server-dev:
         image: node:22-alpine
         container_name: whymeet-server-dev
         user: '1000:1000'
         working_dir: /app
-        command: ['sh', '-c', 'npx prisma db push && npm start']
+        command: ['sh', '-c', 'npm install && npm run dev']
         ports:
             - '0.0.0.0:4600:4600'
         environment:
             NODE_ENV: development
             DATABASE_URL: postgresql://whymeet:whymeet@whymeet-db-dev:5432/whymeet?schema=public
+            S3_ENDPOINT: http://whymeet-minio-dev:9000
+            S3_BUCKET: whymeet-uploads
+            S3_ACCESS_KEY: whymeet
+            S3_SECRET_KEY: whymeet123
+            S3_PUBLIC_URL: http://10.0.2.2:9000/whymeet-uploads
         depends_on:
             whymeet-db-dev:
                 condition: service_healthy
@@ -38,3 +62,4 @@ services:
 
 volumes:
     whymeet-db-dev-data:
+    whymeet-minio-dev-data:

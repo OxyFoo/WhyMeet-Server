@@ -3,6 +3,8 @@ import type { Client } from '@/server/Client';
 import type { WSRequest_Star, WSResponse_Star } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
 import { getConnectedClients } from '@/server/Server';
+import { pushToUser } from '@/services/pushService';
+import { t, getUserLanguage } from '@/services/notifI18n';
 import { mapUserToProfile, profileInclude } from '@/services/userMapper';
 import { logger } from '@/config/logger';
 
@@ -52,8 +54,10 @@ registerCommand<WSRequest_Star>('star', async (client: Client, payload): Promise
             });
 
             if (currentUser) {
+                let candidateOnline = false;
                 for (const c of connectedClients.values()) {
                     if (c.userId === candidateId) {
+                        candidateOnline = true;
                         c.send({
                             event: 'new-match',
                             payload: {
@@ -62,6 +66,15 @@ registerCommand<WSRequest_Star>('star', async (client: Client, payload): Promise
                             }
                         });
                     }
+                }
+
+                if (!candidateOnline) {
+                    const lang = await getUserLanguage(candidateId);
+                    pushToUser(candidateId, {
+                        title: t(lang, 'match_title'),
+                        body: t(lang, 'match_body', { name: currentUser.name }),
+                        data: { type: 'match', conversationId: conversation.id }
+                    });
                 }
             }
 
