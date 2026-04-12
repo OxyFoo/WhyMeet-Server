@@ -5,7 +5,8 @@ import type {
     WSResponse_GetRequests,
     IntentionKey,
     Gender,
-    PreferredPeriod
+    PreferredPeriod,
+    ProfilePhoto
 } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
 import { logger } from '@/config/logger';
@@ -23,7 +24,7 @@ registerCommand<WSRequest_GetRequests>('get-requests', async (client: Client): P
             },
             include: {
                 sender: {
-                    include: { profile: true }
+                    include: { profile: true, photos: { orderBy: { position: 'asc' } } }
                 }
             },
             orderBy: { matchedAt: 'desc' }
@@ -46,7 +47,12 @@ registerCommand<WSRequest_GetRequests>('get-requests', async (client: Client): P
                     name: m.sender.name,
                     age: m.sender.age,
                     gender: (m.sender.gender || 'male') as Gender,
-                    avatar: m.sender.avatar,
+                    photos: (m.sender.photos ?? []).map((p) => ({
+                        id: p.id,
+                        key: p.key,
+                        description: p.description,
+                        position: p.position
+                    })) as ProfilePhoto[],
                     city: m.sender.city,
                     verified: m.sender.verified,
                     preferredPeriod: (m.sender.preferredPeriod ?? 'any') as PreferredPeriod

@@ -1,4 +1,4 @@
-import type { Profile, IntentionKey, Gender, PreferredPeriod } from '@whymeet/types';
+import type { Profile, ProfilePhoto, IntentionKey, Gender, PreferredPeriod } from '@whymeet/types';
 
 /**
  * Haversine distance between two lat/lng points in km.
@@ -42,10 +42,10 @@ export function mapUserToProfile(user: {
     name: string;
     age: number;
     gender: string;
-    avatar: string;
     city: string;
     verified: boolean;
     preferredPeriod?: string;
+    photos?: { id: string; key: string; description: string; position: number }[];
     profile?: {
         bio: string;
         socialVibe: string;
@@ -67,7 +67,12 @@ export function mapUserToProfile(user: {
         name: user.name,
         age: user.age,
         gender: (user.gender || 'male') as Gender,
-        avatar: user.avatar,
+        photos: (user.photos ?? []).map((p) => ({
+            id: p.id,
+            key: p.key,
+            description: p.description,
+            position: p.position
+        })) as ProfilePhoto[],
         city: user.city,
         verified: user.verified,
         preferredPeriod: (user.preferredPeriod ?? 'any') as PreferredPeriod,
@@ -97,6 +102,7 @@ export function mapUserToProfile(user: {
 /** Prisma include clause to fetch everything needed for mapUserToProfile */
 export const profileInclude = {
     profile: true,
+    photos: { orderBy: { position: 'asc' as const } },
     tags: { include: { tag: true } }
 } as const;
 
@@ -131,7 +137,12 @@ export function mapUserToCandidate(
             name: user.name,
             age: user.age,
             gender: (user.gender || 'male') as Gender,
-            avatar: user.avatar,
+            photos: (user.photos ?? []).map((p) => ({
+                id: p.id,
+                key: p.key,
+                description: p.description,
+                position: p.position
+            })) as ProfilePhoto[],
             city: user.city,
             verified: user.verified,
             preferredPeriod: (user.preferredPeriod ?? 'any') as PreferredPeriod

@@ -1,6 +1,12 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_GetConversations, WSResponse_GetConversations, Gender, PreferredPeriod } from '@whymeet/types';
+import type {
+    WSRequest_GetConversations,
+    WSResponse_GetConversations,
+    Gender,
+    PreferredPeriod,
+    ProfilePhoto
+} from '@whymeet/types';
 import { getDatabase } from '@/services/database';
 import { logger } from '@/config/logger';
 
@@ -17,7 +23,7 @@ registerCommand<WSRequest_GetConversations>(
                         include: {
                             participants: {
                                 where: { userId: { not: client.userId } },
-                                include: { user: true }
+                                include: { user: { include: { photos: { orderBy: { position: 'asc' } } } } }
                             },
                             messages: {
                                 orderBy: { timestamp: 'desc' },
@@ -39,7 +45,12 @@ registerCommand<WSRequest_GetConversations>(
                               name: other.name,
                               age: other.age,
                               gender: (other.gender || 'male') as Gender,
-                              avatar: other.avatar,
+                              photos: (other.photos ?? []).map((p) => ({
+                                  id: p.id,
+                                  key: p.key,
+                                  description: p.description,
+                                  position: p.position
+                              })) as ProfilePhoto[],
                               city: other.city,
                               verified: other.verified,
                               preferredPeriod: (other.preferredPeriod ?? 'any') as PreferredPeriod
@@ -49,7 +60,7 @@ registerCommand<WSRequest_GetConversations>(
                               name: 'Unknown',
                               age: 0,
                               gender: 'male' as Gender,
-                              avatar: '',
+                              photos: [] as ProfilePhoto[],
                               city: '',
                               verified: false,
                               preferredPeriod: 'any' as PreferredPeriod

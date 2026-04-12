@@ -31,7 +31,7 @@ function prismaUser(id: string, overrides: Record<string, unknown> = {}) {
         name: 'User',
         age: 25,
         gender: 'female',
-        avatar: '',
+        photos: [],
         city: 'Paris',
         verified: true,
         profile: {

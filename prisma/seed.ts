@@ -341,7 +341,7 @@ async function main() {
                 email,
                 name: `${firstName}${suffix}`,
                 age: randomAge(),
-                avatar: `https://api.dicebear.com/9.x/avataaars/png?seed=${firstName}${suffix}`,
+
                 city,
                 gender: pick(GENDERS),
                 preferredPeriod: pick(PERIODS),
@@ -355,6 +355,14 @@ async function main() {
                         country: 'France',
                         region: city,
                         intentions
+                    }
+                },
+
+                photos: {
+                    create: {
+                        key: `photos/seed/${firstName}${suffix}.webp`,
+                        description: '',
+                        position: 0
                     }
                 },
 

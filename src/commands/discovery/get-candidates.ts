@@ -89,9 +89,9 @@ registerCommand<WSRequest_GetCandidates>(
                 where.verified = true;
             }
 
-            // Photos-only filter (avatar required)
+            // Photos-only filter
             if (prefPhotosOnly) {
-                where.avatar = { not: '' };
+                where.photos = { some: {} };
             }
 
             // Filter by intentions (stored preferences or user's own)
@@ -174,7 +174,7 @@ registerCommand<WSRequest_GetCandidates>(
                         latitude: u.profile?.latitude ?? null,
                         longitude: u.profile?.longitude ?? null,
                         bio: u.profile?.bio ?? '',
-                        avatar: u.avatar,
+                        photoCount: (u.photos ?? []).length,
                         verified: u.verified,
                         tagCount: (u.tags ?? []).length,
                         preferredPeriod: (u.preferredPeriod ?? 'any') as PreferredPeriod

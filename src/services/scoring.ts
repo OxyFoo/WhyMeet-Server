@@ -9,7 +9,7 @@ export interface ScoringCandidate {
     latitude: number | null;
     longitude: number | null;
     bio: string;
-    avatar: string;
+    photoCount: number;
     verified: boolean;
     tagCount: number;
     preferredPeriod: PreferredPeriod;
@@ -102,7 +102,7 @@ function scoreAvailability(mine: PreferredPeriod, theirs: PreferredPeriod): numb
 function scoreProfileQuality(candidate: ScoringCandidate): number {
     let parts = 0; // out of 10
     if (candidate.bio.length >= 30) parts += 2;
-    if (candidate.avatar !== '') parts += 2;
+    if (candidate.photoCount > 0) parts += 2;
     if (candidate.verified) parts += 2;
     if (candidate.tagCount >= 3) parts += 2;
     if (candidate.intentions.length >= 1) parts += 1;

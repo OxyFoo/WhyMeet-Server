@@ -58,7 +58,7 @@ function prismaUser(id: string, intentions: string[] = ['dating'], tagLabels: st
         name: 'User',
         age: 25,
         gender: 'female',
-        avatar: '',
+        photos: [],
         city: 'Paris',
         verified: true,
         preferredPeriod: 'any',

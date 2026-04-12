@@ -2,7 +2,7 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_DeleteAccount, WSResponse_DeleteAccount } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
-import { deleteFile, extractKeyFromUrl } from '@/services/storageService';
+import { deleteFile } from '@/services/storageService';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_DeleteAccount>(
@@ -13,7 +13,10 @@ registerCommand<WSRequest_DeleteAccount>(
 
         try {
             // Fetch the user's email for confirmation check
-            const user = await db.user.findUnique({ where: { id: client.userId } });
+            const user = await db.user.findUnique({
+                where: { id: client.userId },
+                include: { photos: true }
+            });
             if (!user) {
                 return { command: 'delete-account', payload: { error: 'User not found' } };
             }
@@ -23,12 +26,9 @@ registerCommand<WSRequest_DeleteAccount>(
                 return { command: 'delete-account', payload: { error: 'Confirmation does not match' } };
             }
 
-            // Delete avatar from S3 if exists
-            if (user.avatar) {
-                const key = extractKeyFromUrl(user.avatar);
-                if (key) {
-                    deleteFile(key).catch(() => {});
-                }
+            // Delete all photos from S3
+            for (const photo of user.photos) {
+                deleteFile(photo.key).catch(() => {});
             }
 
             // Cascade delete: Prisma onDelete: Cascade handles all relations

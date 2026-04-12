@@ -99,7 +99,6 @@ registerCommand<WSRequest_UpdateProfile>(
                             (PREFERRED_PERIODS as readonly string[]).includes(data.preferredPeriod) && {
                                 preferredPeriod: data.preferredPeriod
                             }),
-                        ...(data.avatar !== undefined && { avatar: data.avatar }),
                         ...(data.city !== undefined && { city: data.city })
                     }
                 });

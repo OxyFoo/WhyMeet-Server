@@ -14,7 +14,6 @@ model User {
     name            String   @default("")
     age             Int      @default(0)
     gender          String   @default("")
-    avatar          String   @default("")
     city            String   @default("")
     verified        Boolean  @default(false)
     banned          Boolean  @default(false)
@@ -25,6 +24,7 @@ model User {
     profile         Profile?
     settings        Settings?
     devices         Device[]
+    photos          ProfilePhoto[]
     tags            UserTag[]
     sentMatches     Match[]                   @relation("MatchSender")
     receivedMatches Match[]                   @relation("MatchReceiver")
@@ -117,6 +117,20 @@ model Settings {
 }
 
 // ─── Tags ───────────────────────────────────────────────────────────
+
+model ProfilePhoto {
+    id          String   @id @default(cuid())
+    userId      String
+    key         String // S3 object key
+    description String   @default("")
+    position    Int      @default(0)
+    createdAt   DateTime @default(now())
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@index([userId])
+    @@map("profile_photos")
+}
 
 model Tag {
     id        String  @id @default(cuid())
