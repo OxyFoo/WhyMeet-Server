@@ -10,21 +10,11 @@ Backend WebSocket server for the WhyMeet app, using Prisma with PostgreSQL.
 ## Quick Start
 
 ```bash
-# 1. Install dependencies
-npm install
+# Development (app + database + Minio)
+docker compose -f docker-compose.dev.yml up --build
 
-# 2. Copy environment template
-cp .env.template .env
-
-# 3. Start database (Docker)
-docker compose -f docker-compose.dev.yml up -d whymeet-db-dev
-
-# 4. Generate Prisma client & run migrations
-npx prisma generate
-npx prisma migrate dev
-
-# 5. Build & run
-npm run dev
+# Production (app only, external DB & S3)
+docker compose -f docker-compose.prod.yml up --build
 ```
 
 ## Scripts
@@ -42,14 +32,24 @@ npm run dev
 | `npm run db:push`     | Push schema to DB         |
 | `npm run db:studio`   | Open Prisma Studio        |
 
-## Docker
+## Lancer le projet manuellement
 
 ```bash
-# Development (app + database + Minio)
-docker compose -f docker-compose.dev.yml up --build
+# 1. Install dependencies
+npm install
 
-# Production (app only, external DB & S3)
-docker compose -f docker-compose.prod.yml up --build
+# 2. Copy environment template
+cp .env.template .env
+
+# 3. Start database (Docker)
+docker compose -f docker-compose.dev.yml up -d whymeet-db-dev
+
+# 4. Generate Prisma client & run migrations
+npx prisma generate
+npx prisma migrate dev
+
+# 5. Build & run
+npm run dev
 ```
 
 ## Structure
