@@ -91,7 +91,7 @@ describe('search command', () => {
         expect(where.verified).toBe(true);
     });
 
-    it('passes ageRange filter as gte/lte', async () => {
+    it('passes ageRange filter as birthDate range', async () => {
         mockFindMany.mockResolvedValue([]);
 
         await routeCommand(fakeClient(), {
@@ -100,7 +100,9 @@ describe('search command', () => {
         } as never);
 
         const where = mockFindMany.mock.calls[0][0].where;
-        expect(where.age).toEqual({ gte: 20, lte: 30 });
+        expect(where.birthDate).toBeDefined();
+        expect(where.birthDate.gte).toBeInstanceOf(Date);
+        expect(where.birthDate.lt).toBeInstanceOf(Date);
     });
 
     it('passes query as name OR bio insensitive contains', async () => {

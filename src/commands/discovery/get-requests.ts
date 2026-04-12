@@ -9,6 +9,7 @@ import type {
     ProfilePhoto
 } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
+import { computeAge } from '@/services/userMapper';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_GetRequests>('get-requests', async (client: Client): Promise<WSResponse_GetRequests> => {
@@ -45,7 +46,8 @@ registerCommand<WSRequest_GetRequests>('get-requests', async (client: Client): P
                 sender: {
                     id: m.sender.id,
                     name: m.sender.name,
-                    age: m.sender.age,
+                    age: computeAge(m.sender.birthDate),
+                    birthDate: m.sender.birthDate?.toISOString() ?? null,
                     gender: (m.sender.gender || 'male') as Gender,
                     photos: (m.sender.photos ?? []).map((p) => ({
                         id: p.id,

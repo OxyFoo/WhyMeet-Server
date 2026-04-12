@@ -1,6 +1,32 @@
 import type { Profile, ProfilePhoto, IntentionKey, Gender, PreferredPeriod } from '@whymeet/types';
 
 /**
+ * Compute age from a birth date. Returns 0 if null.
+ */
+export function computeAge(birthDate: Date | null | undefined): number {
+    if (!birthDate) return 0;
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+    }
+    return Math.max(0, age);
+}
+
+/**
+ * Convert age boundaries to a birthDate range (inverted: older age = earlier date).
+ */
+export function ageToBirthDateRange(minAge: number, maxAge: number): { after: Date; before: Date } {
+    const today = new Date();
+    // Born BEFORE this date → age >= minAge
+    const before = new Date(today.getFullYear() - minAge, today.getMonth(), today.getDate() + 1);
+    // Born AFTER this date → age <= maxAge
+    const after = new Date(today.getFullYear() - maxAge - 1, today.getMonth(), today.getDate());
+    return { after, before };
+}
+
+/**
  * Haversine distance between two lat/lng points in km.
  */
 export function getDistanceKm(
@@ -40,7 +66,7 @@ function formatDistance(
 export function mapUserToProfile(user: {
     id: string;
     name: string;
-    age: number;
+    birthDate: Date | null;
     gender: string;
     city: string;
     verified: boolean;
@@ -65,7 +91,8 @@ export function mapUserToProfile(user: {
     return {
         id: user.id,
         name: user.name,
-        age: user.age,
+        age: computeAge(user.birthDate),
+        birthDate: user.birthDate?.toISOString() ?? null,
         gender: (user.gender || 'male') as Gender,
         photos: (user.photos ?? []).map((p) => ({
             id: p.id,
@@ -135,7 +162,8 @@ export function mapUserToCandidate(
         user: {
             id: user.id,
             name: user.name,
-            age: user.age,
+            age: computeAge(user.birthDate),
+            birthDate: user.birthDate?.toISOString() ?? null,
             gender: (user.gender || 'male') as Gender,
             photos: (user.photos ?? []).map((p) => ({
                 id: p.id,

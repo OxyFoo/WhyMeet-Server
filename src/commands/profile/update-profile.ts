@@ -3,7 +3,7 @@ import type { Client } from '@/server/Client';
 import type { WSRequest_UpdateProfile, WSResponse_UpdateProfile } from '@whymeet/types';
 import { GENDERS, PREFERRED_PERIODS } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
-import { mapUserToProfile, profileInclude } from '@/services/userMapper';
+import { mapUserToProfile, profileInclude, computeAge } from '@/services/userMapper';
 import { ensureTagEmbedding } from '@/services/embedding';
 import { discretizePosition } from '@/services/geoUtils';
 import { logger } from '@/config/logger';
@@ -88,19 +88,32 @@ registerCommand<WSRequest_UpdateProfile>(
         try {
             await db.$transaction(async (tx) => {
                 // Update user base fields
+                const userData: Record<string, unknown> = {};
+                if (data.name !== undefined) userData.name = data.name;
+                if (data.birthDate !== undefined) {
+                    if (data.birthDate === null) {
+                        userData.birthDate = null;
+                    } else {
+                        const parsed = new Date(data.birthDate);
+                        if (!isNaN(parsed.getTime()) && computeAge(parsed) >= 18) {
+                            userData.birthDate = parsed;
+                        }
+                    }
+                }
+                if (data.gender !== undefined && (GENDERS as readonly string[]).includes(data.gender)) {
+                    userData.gender = data.gender;
+                }
+                if (
+                    data.preferredPeriod !== undefined &&
+                    (PREFERRED_PERIODS as readonly string[]).includes(data.preferredPeriod)
+                ) {
+                    userData.preferredPeriod = data.preferredPeriod;
+                }
+                if (data.city !== undefined) userData.city = data.city;
+
                 await tx.user.update({
                     where: { id: client.userId },
-                    data: {
-                        ...(data.name !== undefined && { name: data.name }),
-                        ...(data.age !== undefined && { age: data.age }),
-                        ...(data.gender !== undefined &&
-                            (GENDERS as readonly string[]).includes(data.gender) && { gender: data.gender }),
-                        ...(data.preferredPeriod !== undefined &&
-                            (PREFERRED_PERIODS as readonly string[]).includes(data.preferredPeriod) && {
-                                preferredPeriod: data.preferredPeriod
-                            }),
-                        ...(data.city !== undefined && { city: data.city })
-                    }
+                    data: userData
                 });
 
                 // Update profile fields (bio, socialVibe, location, intentions)

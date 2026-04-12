@@ -8,6 +8,7 @@ import type {
     ProfilePhoto
 } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
+import { computeAge } from '@/services/userMapper';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_GetConversations>(
@@ -43,7 +44,8 @@ registerCommand<WSRequest_GetConversations>(
                         ? {
                               id: other.id,
                               name: other.name,
-                              age: other.age,
+                              age: computeAge(other.birthDate),
+                              birthDate: other.birthDate?.toISOString() ?? null,
                               gender: (other.gender || 'male') as Gender,
                               photos: (other.photos ?? []).map((p) => ({
                                   id: p.id,
@@ -59,6 +61,7 @@ registerCommand<WSRequest_GetConversations>(
                               id: '',
                               name: 'Unknown',
                               age: 0,
+                              birthDate: null,
                               gender: 'male' as Gender,
                               photos: [] as ProfilePhoto[],
                               city: '',

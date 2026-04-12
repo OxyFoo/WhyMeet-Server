@@ -275,8 +275,13 @@ function pickN<T>(arr: readonly T[], min: number, max: number): T[] {
     return shuffled.slice(0, count);
 }
 
-function randomAge(): number {
-    return 18 + Math.floor(Math.random() * 22); // 18–39
+function randomBirthDate(): Date {
+    const age = 18 + Math.floor(Math.random() * 22); // 18–39
+    const today = new Date();
+    const year = today.getFullYear() - age;
+    const month = Math.floor(Math.random() * 12);
+    const day = 1 + Math.floor(Math.random() * 28);
+    return new Date(year, month, day);
 }
 
 // ─── Main ───────────────────────────────────────────────────────────
@@ -340,7 +345,7 @@ async function main() {
             data: {
                 email,
                 name: `${firstName}${suffix}`,
-                age: randomAge(),
+                birthDate: randomBirthDate(),
 
                 city,
                 gender: pick(GENDERS),

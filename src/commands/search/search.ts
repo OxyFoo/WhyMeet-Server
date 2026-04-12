@@ -2,7 +2,7 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_Search, WSResponse_Search } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
-import { mapUserToCandidate, candidateInclude, getDistanceKm } from '@/services/userMapper';
+import { mapUserToCandidate, candidateInclude, getDistanceKm, ageToBirthDateRange } from '@/services/userMapper';
 import { logger } from '@/config/logger';
 
 const DEFAULT_MAX_DISTANCE = 50; // km
@@ -47,7 +47,8 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
         }
 
         if (filters.ageRange) {
-            where.age = { gte: filters.ageRange[0], lte: filters.ageRange[1] };
+            const { after, before } = ageToBirthDateRange(filters.ageRange[0], filters.ageRange[1]);
+            where.birthDate = { gte: after, lt: before };
         }
 
         if (filters.query) {

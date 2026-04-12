@@ -1,4 +1,4 @@
-import { mapUserToProfile, mapUserToCandidate } from '@/services/userMapper';
+import { mapUserToProfile, mapUserToCandidate, computeAge } from '@/services/userMapper';
 
 // ─── Fixtures ───────────────────────────────────────────────────────
 
@@ -6,11 +6,13 @@ function makePrismaUser(overrides: Record<string, unknown> = {}) {
     return { ...baseUser(), ...overrides };
 }
 
+const BIRTH_DATE = new Date('2000-01-15');
+
 function baseUser() {
     return {
         id: 'user-1',
         name: 'Alice',
-        age: 25,
+        birthDate: BIRTH_DATE,
         gender: 'female',
         photos: [{ id: 'photo-1', key: 'photos/user-1/abc.webp', description: '', position: 0 }],
         city: 'Paris',
@@ -48,7 +50,8 @@ describe('mapUserToProfile', () => {
         expect(profile).toEqual({
             id: 'user-1',
             name: 'Alice',
-            age: 25,
+            age: computeAge(BIRTH_DATE),
+            birthDate: BIRTH_DATE.toISOString(),
             gender: 'female',
             photos: [{ id: 'photo-1', key: 'photos/user-1/abc.webp', description: '', position: 0 }],
             city: 'Paris',
@@ -127,7 +130,8 @@ describe('mapUserToCandidate', () => {
             user: {
                 id: 'user-1',
                 name: 'Alice',
-                age: 25,
+                age: computeAge(BIRTH_DATE),
+                birthDate: BIRTH_DATE.toISOString(),
                 gender: 'female',
                 photos: [{ id: 'photo-1', key: 'photos/user-1/abc.webp', description: '', position: 0 }],
                 city: 'Paris',

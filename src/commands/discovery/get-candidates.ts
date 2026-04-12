@@ -2,7 +2,13 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_GetCandidates, WSResponse_GetCandidates, IntentionKey, PreferredPeriod } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
-import { mapUserToCandidate, candidateInclude, getDistanceKm } from '@/services/userMapper';
+import {
+    mapUserToCandidate,
+    candidateInclude,
+    getDistanceKm,
+    computeAge,
+    ageToBirthDateRange
+} from '@/services/userMapper';
 import { computeMatchScore, MIN_SCORE_THRESHOLD } from '@/services/scoring';
 import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
 import { logger } from '@/config/logger';
@@ -32,7 +38,7 @@ registerCommand<WSRequest_GetCandidates>(
                 longitude: currentUser?.profile?.longitude ?? null
             };
             const myGender = currentUser?.gender ?? '';
-            const myAge = currentUser?.age ?? 25;
+            const myAge = computeAge(currentUser?.birthDate ?? null);
             const myLanguages = currentUser?.profile?.spokenLanguages ?? [];
             const myPreferredPeriod = (currentUser?.preferredPeriod ?? 'any') as PreferredPeriod;
 
@@ -74,9 +80,10 @@ registerCommand<WSRequest_GetCandidates>(
                 banned: false
             };
 
-            // Age range filter
+            // Age range filter (via birthDate)
             if (prefAgeMin > 18 || prefAgeMax < 99) {
-                where.age = { gte: prefAgeMin, lte: prefAgeMax };
+                const { after, before } = ageToBirthDateRange(prefAgeMin, prefAgeMax);
+                where.birthDate = { gte: after, lt: before };
             }
 
             // Gender filter
