@@ -79,7 +79,7 @@ model Profile {
     intentions String[] @default([])
 
     // Spoken languages for remote matching
-    spokenLanguages String[] @default([])
+    spokenLanguages String[] @default(["fr"])
 
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

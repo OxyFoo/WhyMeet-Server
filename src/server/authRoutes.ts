@@ -261,7 +261,7 @@ authRouter.post('/enter', enterLimiter, async (req, res) => {
             data: {
                 email,
                 name: username,
-                profile: { create: {} }
+                profile: { create: { spokenLanguages: ['fr'] } }
             }
         });
 

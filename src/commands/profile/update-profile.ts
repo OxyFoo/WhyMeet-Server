@@ -117,6 +117,7 @@ registerCommand<WSRequest_UpdateProfile>(
                     profileData.longitude = discretized.longitude;
                 }
                 if (data.intentions !== undefined) profileData.intentions = data.intentions;
+                if (data.spokenLanguages !== undefined) profileData.spokenLanguages = data.spokenLanguages;
 
                 if (Object.keys(profileData).length > 0) {
                     await tx.profile.update({
