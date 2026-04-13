@@ -15,37 +15,29 @@ import { logger } from '@/config/logger';
 
 const DEFAULT_MAX_DISTANCE = 50;
 
-// Random first names for preview randomization
-const PREVIEW_NAMES = [
-    'Alex',
-    'Camille',
-    'Jordan',
-    'Charlie',
-    'Morgan',
-    'Jules',
-    'Lou',
-    'Eden',
-    'Noa',
-    'Sasha',
-    'Robin',
-    'Ange',
-    'Claude',
-    'Dominique',
-    'Sam',
-    'Taylor',
-    'Casey',
-    'Riley',
-    'Quinn',
-    'Avery'
-];
-
-const PREVIEW_BIOS = [
-    "Esprit curieux en quête d'aventure 🌍",
-    'Café addict & bookworm 📚',
-    'Toujours partant pour découvrir de nouvelles choses ✨',
-    'La vie est trop courte pour ne pas sourire 😊',
-    'Passionné par les rencontres authentiques 🤝'
-];
+/**
+ * Obfuscate a string: keep spaces, punctuation, and emojis, but replace
+ * each letter with a random letter (same case) and each digit with a random digit.
+ * The total length and word structure stay identical.
+ */
+function obfuscateString(str: string): string {
+    const lowers = 'abcdefghijklmnopqrstuvwxyz';
+    const uppers = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const digits = '0123456789';
+    let result = '';
+    for (const ch of str) {
+        if (lowers.includes(ch)) {
+            result += lowers[Math.floor(Math.random() * 26)];
+        } else if (uppers.includes(ch)) {
+            result += uppers[Math.floor(Math.random() * 26)];
+        } else if (digits.includes(ch)) {
+            result += digits[Math.floor(Math.random() * 10)];
+        } else {
+            result += ch;
+        }
+    }
+    return result;
+}
 
 registerCommand<WSRequest_PreviewSearch>(
     'preview-search',
@@ -142,19 +134,6 @@ registerCommand<WSRequest_PreviewSearch>(
                 isRemote
             };
 
-            // Fetch all tags from DB for randomization
-            const allTags = await db.tag.findMany({ select: { label: true }, take: 50 });
-            const allTagLabels = allTags.map((t) => t.label);
-
-            const INTENTION_KEYS: IntentionKey[] = [
-                'networking',
-                'friendship',
-                'dating',
-                'activity_partner',
-                'casual_chat',
-                'group_activity'
-            ];
-
             const results = users
                 .map((u) => {
                     const candidate = mapUserToCandidate(u, targetIntentions, myLatLng);
@@ -191,34 +170,24 @@ registerCommand<WSRequest_PreviewSearch>(
                 .sort((a, b) => (b.candidate.score ?? 0) - (a.candidate.score ?? 0))
                 .map((r) => r.candidate);
 
-            // Randomize data but keep real photos — mark as blurred
+            // Obfuscate data: keep structure (lengths, spaces) but scramble letters
             const randomized = results.map((c) => {
-                const randomName = PREVIEW_NAMES[Math.floor(Math.random() * PREVIEW_NAMES.length)];
-                const randomBio = PREVIEW_BIOS[Math.floor(Math.random() * PREVIEW_BIOS.length)];
-                const randomAge = (c.user.age ?? 25) + Math.floor(Math.random() * 11) - 5;
-                const randomDistance = `${Math.floor(Math.random() * 50) + 1} km`;
-                const randomIntentionCount = Math.floor(Math.random() * 3) + 1;
-                const randomIntentions = shuffleArray(INTENTION_KEYS).slice(0, randomIntentionCount);
-                const randomInterests =
-                    allTagLabels.length > 0
-                        ? shuffleArray(allTagLabels).slice(0, Math.floor(Math.random() * 4) + 1)
-                        : c.interests;
+                const obfuscatedAge = Math.max(18, (c.user.age ?? 25) + Math.floor(Math.random() * 5) - 2);
 
                 return {
                     ...c,
                     user: {
                         ...c.user,
-                        name: randomName,
-                        age: Math.max(18, randomAge)
+                        name: obfuscateString(c.user.name),
+                        age: obfuscatedAge,
+                        city: c.user.city ? obfuscateString(c.user.city) : c.user.city
                     },
-                    bio: randomBio,
-                    intentions: randomIntentions,
-                    interests: randomInterests,
-                    skills: [],
-                    distance: randomDistance,
-                    distanceKm: Math.floor(Math.random() * 50) + 1,
+                    bio: obfuscateString(c.bio),
+                    intentions: c.intentions,
+                    interests: c.interests.map(obfuscateString),
+                    skills: c.skills.map(obfuscateString),
+                    distance: c.distance ? obfuscateString(c.distance) : c.distance,
                     blurred: true
-                    // photos (c.user.photos) are kept real — client will blur them visually
                 };
             });
 
@@ -230,12 +199,3 @@ registerCommand<WSRequest_PreviewSearch>(
         }
     }
 );
-
-function shuffleArray<T>(arr: T[]): T[] {
-    const shuffled = [...arr];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
-}
