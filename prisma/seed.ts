@@ -260,6 +260,23 @@ const TAG_ALIASES: Record<string, string> = {
     développement: 'JavaScript'
 };
 
+const CITY_COORDS: Record<string, { lat: number; lng: number }> = {
+    Paris: { lat: 48.8566, lng: 2.3522 },
+    Lyon: { lat: 45.764, lng: 4.8357 },
+    Marseille: { lat: 43.2965, lng: 5.3698 },
+    Toulouse: { lat: 43.6047, lng: 1.4442 },
+    Bordeaux: { lat: 44.8378, lng: -0.5792 },
+    Lille: { lat: 50.6292, lng: 3.0573 },
+    Nantes: { lat: 47.2184, lng: -1.5536 },
+    Strasbourg: { lat: 48.5734, lng: 7.7521 },
+    Montpellier: { lat: 43.6108, lng: 3.8767 },
+    Nice: { lat: 43.7102, lng: 7.262 },
+    Rennes: { lat: 48.1173, lng: -1.6778 },
+    Grenoble: { lat: 45.1885, lng: 5.7245 }
+};
+
+const SPOKEN_LANGUAGES = ['fr', 'en', 'es', 'de', 'it', 'pt', 'ar', 'zh', 'ja', 'ko'] as const;
+
 const GENDERS = ['male', 'female', 'non_binary', 'other', 'prefer_not_to_say'] as const;
 const PERIODS = ['morning', 'noon', 'evening', 'any'] as const;
 
@@ -330,6 +347,18 @@ async function main() {
         const email = `${firstName.toLowerCase().replace(/[éèê]/g, 'e').replace(/[àâ]/g, 'a').replace(/[ïî]/g, 'i').replace(/[ô]/g, 'o')}${suffix}@seed.whymeet.dev`;
 
         const city = pick(CITIES);
+        const coords = CITY_COORDS[city];
+        // Add slight random offset (±0.05°) so users aren't all at exact same point
+        const latitude = coords.lat + (Math.random() - 0.5) * 0.1;
+        const longitude = coords.lng + (Math.random() - 0.5) * 0.1;
+        const spokenLanguages = [
+            'fr',
+            ...pickN(
+                SPOKEN_LANGUAGES.filter((l) => l !== 'fr'),
+                0,
+                2
+            )
+        ];
         const intentions = pickN(INTENTION_KEYS, 1, 3);
         const interests = pickN(INTEREST_LABELS, 2, 6);
         const skills = pickN(SKILL_LABELS, 1, 4);
@@ -359,7 +388,10 @@ async function main() {
                         city,
                         country: 'France',
                         region: city,
-                        intentions
+                        intentions,
+                        spokenLanguages,
+                        latitude,
+                        longitude
                     }
                 },
 
