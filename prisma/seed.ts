@@ -306,7 +306,8 @@ function randomBirthDate(): Date {
 async function main() {
     console.log('🌱 Seeding database...');
 
-    const USER_COUNT = 60;
+    const USER_COUNT = 10_000;
+    const BATCH_SIZE = 100;
 
     // 1. Pre-create all tags
     const allLabels = [...new Set([...INTEREST_LABELS, ...SKILL_LABELS])];
@@ -339,87 +340,102 @@ async function main() {
     }
     console.log(`  ✅ ${aliasCount} tag aliases created`);
 
-    // 2. Create users with profiles and tags
+    // 2. Pre-fetch existing seed emails to skip duplicates
+    const existingUsers = await prisma.user.findMany({
+        where: { email: { endsWith: '@seed.whymeet.dev' } },
+        select: { email: true }
+    });
+    const existingEmails = new Set(existingUsers.map((u) => u.email));
+    if (existingEmails.size > 0) {
+        console.log(`  ℹ️  ${existingEmails.size} existing seed users found, will skip`);
+    }
+
+    // 3. Create users in batches
     let created = 0;
-    for (let i = 0; i < USER_COUNT; i++) {
-        const firstName = FIRST_NAMES[i % FIRST_NAMES.length];
-        const suffix = i >= FIRST_NAMES.length ? `${Math.floor(i / FIRST_NAMES.length) + 1}` : '';
-        const email = `${firstName.toLowerCase().replace(/[éèê]/g, 'e').replace(/[àâ]/g, 'a').replace(/[ïî]/g, 'i').replace(/[ô]/g, 'o')}${suffix}@seed.whymeet.dev`;
+    for (let batchStart = 0; batchStart < USER_COUNT; batchStart += BATCH_SIZE) {
+        const batchEnd = Math.min(batchStart + BATCH_SIZE, USER_COUNT);
+        const operations = [];
 
-        const city = pick(CITIES);
-        const coords = CITY_COORDS[city];
-        // Add slight random offset (±0.05°) so users aren't all at exact same point
-        const latitude = coords.lat + (Math.random() - 0.5) * 0.1;
-        const longitude = coords.lng + (Math.random() - 0.5) * 0.1;
-        const spokenLanguages = [
-            'fr',
-            ...pickN(
-                SPOKEN_LANGUAGES.filter((l) => l !== 'fr'),
-                0,
-                2
-            )
-        ];
-        const intentions = pickN(INTENTION_KEYS, 1, 3);
-        const interests = pickN(INTEREST_LABELS, 2, 6);
-        const skills = pickN(SKILL_LABELS, 1, 4);
+        for (let i = batchStart; i < batchEnd; i++) {
+            const firstName = FIRST_NAMES[i % FIRST_NAMES.length];
+            const suffix = i >= FIRST_NAMES.length ? `${Math.floor(i / FIRST_NAMES.length) + 1}` : '';
+            const email = `${firstName.toLowerCase().replace(/[éèê]/g, 'e').replace(/[àâ]/g, 'a').replace(/[ïî]/g, 'i').replace(/[ô]/g, 'o')}${suffix}@seed.whymeet.dev`;
 
-        // Skip if email already exists
-        const exists = await prisma.user.findUnique({ where: { email } });
-        if (exists) {
-            console.log(`  ⏭️  ${email} already exists, skipping`);
-            continue;
+            if (existingEmails.has(email)) continue;
+
+            const city = pick(CITIES);
+            const coords = CITY_COORDS[city];
+            const latitude = coords.lat + (Math.random() - 0.5) * 0.1;
+            const longitude = coords.lng + (Math.random() - 0.5) * 0.1;
+            const spokenLanguages = [
+                'fr',
+                ...pickN(
+                    SPOKEN_LANGUAGES.filter((l) => l !== 'fr'),
+                    0,
+                    2
+                )
+            ];
+            const intentions = pickN(INTENTION_KEYS, 1, 3);
+            const interests = pickN(INTEREST_LABELS, 2, 6);
+            const skills = pickN(SKILL_LABELS, 1, 4);
+
+            operations.push(
+                prisma.user.create({
+                    data: {
+                        email,
+                        name: `${firstName}${suffix}`,
+                        birthDate: randomBirthDate(),
+
+                        city,
+                        gender: pick(GENDERS),
+                        preferredPeriod: pick(PERIODS),
+                        verified: Math.random() > 0.3,
+
+                        profile: {
+                            create: {
+                                bio: pick(BIOS),
+                                socialVibe: pick(SOCIAL_VIBES),
+                                city,
+                                country: 'France',
+                                region: city,
+                                intentions,
+                                spokenLanguages,
+                                latitude,
+                                longitude
+                            }
+                        },
+
+                        photos: {
+                            create: {
+                                key: `https://i.pravatar.cc/300?u=${email}`,
+                                description: '',
+                                position: 0
+                            }
+                        },
+
+                        tags: {
+                            create: [
+                                ...interests.map((label) => ({
+                                    type: 'interest',
+                                    tagId: tagMap.get(label)!
+                                })),
+                                ...skills.map((label) => ({
+                                    type: 'skill',
+                                    tagId: tagMap.get(label)!
+                                }))
+                            ]
+                        }
+                    }
+                })
+            );
         }
 
-        const user = await prisma.user.create({
-            data: {
-                email,
-                name: `${firstName}${suffix}`,
-                birthDate: randomBirthDate(),
+        if (operations.length > 0) {
+            await prisma.$transaction(operations);
+            created += operations.length;
+        }
 
-                city,
-                gender: pick(GENDERS),
-                preferredPeriod: pick(PERIODS),
-                verified: Math.random() > 0.3, // 70% verified
-
-                profile: {
-                    create: {
-                        bio: pick(BIOS),
-                        socialVibe: pick(SOCIAL_VIBES),
-                        city,
-                        country: 'France',
-                        region: city,
-                        intentions,
-                        spokenLanguages,
-                        latitude,
-                        longitude
-                    }
-                },
-
-                photos: {
-                    create: {
-                        key: `https://i.pravatar.cc/300?u=${email}`,
-                        description: '',
-                        position: 0
-                    }
-                },
-
-                tags: {
-                    create: [
-                        ...interests.map((label) => ({
-                            type: 'interest',
-                            tagId: tagMap.get(label)!
-                        })),
-                        ...skills.map((label) => ({
-                            type: 'skill',
-                            tagId: tagMap.get(label)!
-                        }))
-                    ]
-                }
-            }
-        });
-
-        created++;
-        if (created % 10 === 0) {
+        if (created > 0 && (batchStart + BATCH_SIZE) % 1000 < BATCH_SIZE) {
             console.log(`  📦 ${created}/${USER_COUNT} users created...`);
         }
     }
