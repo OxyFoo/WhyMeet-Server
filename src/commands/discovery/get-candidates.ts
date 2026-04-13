@@ -216,7 +216,11 @@ registerCommand<WSRequest_GetCandidates>(
 
             scored.sort((a, b) => b.score - a.score);
 
-            const candidates = scored.slice(0, 20).map((s) => mapUserToCandidate(s.user, prefIntentions, myLatLng));
+            const candidates = scored.slice(0, 20).map((s) => {
+                const candidate = mapUserToCandidate(s.user, prefIntentions, myLatLng);
+                candidate.score = s.score;
+                return candidate;
+            });
 
             logger.debug(`[Discovery] ${candidates.length} candidates for user: ${client.userId}`);
             return { command: 'get-candidates', payload: { candidates } };

@@ -60,12 +60,23 @@ function distanceKm(lat1: number | null, lng1: number | null, lat2: number | nul
 
 // ─── Sub-scores ─────────────────────────────────────────────────────
 
+// Hybrid scoring: blend ratio (relative compatibility) with volume (absolute count).
+// This avoids penalising users with many tags who share several with you,
+// while still rewarding high overlap when both sides have few items.
+// ratio_weight = 0.4, volume_weight = 0.6
+
+function hybridScore(common: number, maxSide: number, cap: number, weight: number): number {
+    if (maxSide === 0) return 0;
+    const ratio = common / maxSide;
+    const volume = Math.min(common / cap, 1);
+    return (0.4 * ratio + 0.6 * volume) * weight;
+}
+
 function scoreIntentions(mine: IntentionKey[], theirs: IntentionKey[]): number {
     if (mine.length === 0 && theirs.length === 0) return 0;
     const max = Math.max(mine.length, theirs.length);
-    if (max === 0) return 0;
     const common = mine.filter((i) => theirs.includes(i)).length;
-    return (common / max) * WEIGHT_INTENTIONS;
+    return hybridScore(common, max, 3, WEIGHT_INTENTIONS);
 }
 
 function scoreDistance(ctx: ScoringContext, candidate: ScoringCandidate): number {
@@ -90,7 +101,7 @@ function scoreInterests(mine: Set<string>, theirs: Set<string>): number {
     for (const t of theirs) {
         if (mine.has(t)) common++;
     }
-    return (common / max) * WEIGHT_INTERESTS;
+    return hybridScore(common, max, 5, WEIGHT_INTERESTS);
 }
 
 function scoreAvailability(mine: PreferredPeriod, theirs: PreferredPeriod): number {
