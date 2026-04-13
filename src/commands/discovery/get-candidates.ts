@@ -52,6 +52,13 @@ registerCommand<WSRequest_GetCandidates>(
             const myPreferredPeriod = (currentUser?.preferredPeriod ?? 'any') as PreferredPeriod;
             const mySocialVibe = (currentUser?.profile?.socialVibe ?? 'balanced') as SocialVibe;
 
+            // Detect incomplete profile — relaxes visibility filters & blurs results
+            const myProfileComplete =
+                currentUser?.birthDate != null &&
+                myGender !== '' &&
+                myIntentions.length > 0 &&
+                myLatLng.latitude != null;
+
             // Use stored preferences, fall back to payload filters, then defaults
             const prefAgeMin = settings?.discoveryAgeMin ?? 18;
             const prefAgeMax = settings?.discoveryAgeMax ?? 99;
@@ -134,28 +141,31 @@ registerCommand<WSRequest_GetCandidates>(
             }
 
             // ── Visibility pre-filter (candidate's settings must accept me) ──
-            const visibilityFilter: Record<string, unknown>[] = [];
+            // Skip visibility filters when profile is incomplete (age/gender unknown)
+            if (myProfileComplete) {
+                const visibilityFilter: Record<string, unknown>[] = [];
 
-            // Candidate must accept my age
-            visibilityFilter.push({ visibilityAgeMin: { lte: myAge } });
-            visibilityFilter.push({ visibilityAgeMax: { gte: myAge } });
+                // Candidate must accept my age
+                visibilityFilter.push({ visibilityAgeMin: { lte: myAge } });
+                visibilityFilter.push({ visibilityAgeMax: { gte: myAge } });
 
-            // Candidate must accept my gender (if I have one set)
-            if (myGender !== '') {
-                visibilityFilter.push({ visibilityGenders: { hasSome: [myGender] } });
+                // Candidate must accept my gender (if I have one set)
+                if (myGender !== '') {
+                    visibilityFilter.push({ visibilityGenders: { hasSome: [myGender] } });
+                }
+
+                // Candidate must accept at least one of my intentions (or have no restriction)
+                if (myIntentions.length > 0) {
+                    visibilityFilter.push({
+                        OR: [
+                            { visibilityIntentions: { isEmpty: true } },
+                            { visibilityIntentions: { hasSome: myIntentions } }
+                        ]
+                    });
+                }
+
+                where.settings = { AND: visibilityFilter };
             }
-
-            // Candidate must accept at least one of my intentions (or have no restriction)
-            if (myIntentions.length > 0) {
-                visibilityFilter.push({
-                    OR: [
-                        { visibilityIntentions: { isEmpty: true } },
-                        { visibilityIntentions: { hasSome: myIntentions } }
-                    ]
-                });
-            }
-
-            where.settings = { AND: visibilityFilter };
 
             // ── Fetch candidates ─────────────────────────────────────
             const users = await db.user.findMany({
@@ -231,6 +241,9 @@ registerCommand<WSRequest_GetCandidates>(
             const scoredCandidates = scored.slice(0, 20).map((s) => {
                 const candidate = mapUserToCandidate(s.user, prefIntentions, myLatLng);
                 candidate.score = s.score;
+                if (!myProfileComplete) {
+                    candidate.blurred = true;
+                }
                 return candidate;
             });
 

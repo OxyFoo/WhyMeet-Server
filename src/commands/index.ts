@@ -1,6 +1,7 @@
 // Register all command handlers
 import './auth/handshake';
 import './discovery/get-candidates';
+import './discovery/get-candidate-counts';
 import './discovery/get-requests';
 import './discovery/accept-request';
 import './discovery/decline-request';
