@@ -1,4 +1,7 @@
-import type { IntentionKey, PreferredPeriod } from '@whymeet/types';
+import type { IntentionKey, PreferredPeriod, SocialVibe } from '@whymeet/types';
+
+// Local copy of the ordinal vibe scale (avoids ESM value import in CJS test env)
+const VIBE_SCALE: readonly SocialVibe[] = ['reserved', 'calm', 'balanced', 'outgoing', 'very_social'];
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -13,6 +16,7 @@ export interface ScoringCandidate {
     verified: boolean;
     tagCount: number;
     preferredPeriod: PreferredPeriod;
+    socialVibe: SocialVibe;
 }
 
 export interface ScoringContext {
@@ -22,6 +26,7 @@ export interface ScoringContext {
     myLatitude: number | null;
     myLongitude: number | null;
     myPreferredPeriod: PreferredPeriod;
+    mySocialVibe: SocialVibe;
     maxDistance: number;
     isRemote: boolean;
 }
@@ -31,6 +36,7 @@ export interface ScoreBreakdown {
     distance: number;
     interests: number;
     availability: number;
+    socialVibe: number;
     profileQuality: number;
     total: number;
 }
@@ -38,9 +44,10 @@ export interface ScoreBreakdown {
 // ─── Constants ──────────────────────────────────────────────────────
 
 const WEIGHT_INTENTIONS = 25;
-const WEIGHT_DISTANCE = 20;
+const WEIGHT_DISTANCE = 15;
 const WEIGHT_INTERESTS = 25;
-const WEIGHT_AVAILABILITY = 10;
+const WEIGHT_AVAILABILITY = 5;
+const WEIGHT_SOCIAL_VIBE = 10;
 const WEIGHT_QUALITY = 20;
 
 export const MIN_SCORE_THRESHOLD = 15;
@@ -121,6 +128,14 @@ function scoreProfileQuality(candidate: ScoringCandidate): number {
     return (parts / 10) * WEIGHT_QUALITY;
 }
 
+function scoreSocialVibe(mine: SocialVibe, theirs: SocialVibe): number {
+    const myIdx = VIBE_SCALE.indexOf(mine);
+    const theirIdx = VIBE_SCALE.indexOf(theirs);
+    if (myIdx === -1 || theirIdx === -1) return WEIGHT_SOCIAL_VIBE * 0.5;
+    const dist = Math.abs(myIdx - theirIdx);
+    return (1 - dist / (VIBE_SCALE.length - 1)) * WEIGHT_SOCIAL_VIBE;
+}
+
 // ─── Main ───────────────────────────────────────────────────────────
 
 export function computeMatchScore(ctx: ScoringContext, candidate: ScoringCandidate): ScoreBreakdown {
@@ -128,8 +143,12 @@ export function computeMatchScore(ctx: ScoringContext, candidate: ScoringCandida
     const distance = scoreDistance(ctx, candidate);
     const interests = scoreInterests(ctx.myTagLabels, candidate.tagLabels);
     const availability = scoreAvailability(ctx.myPreferredPeriod, candidate.preferredPeriod);
+    const socialVibe = scoreSocialVibe(ctx.mySocialVibe, candidate.socialVibe);
     const profileQuality = scoreProfileQuality(candidate);
-    const total = Math.min(100, Math.max(0, intentions + distance + interests + availability + profileQuality));
+    const total = Math.min(
+        100,
+        Math.max(0, intentions + distance + interests + availability + socialVibe + profileQuality)
+    );
 
-    return { intentions, distance, interests, availability, profileQuality, total };
+    return { intentions, distance, interests, availability, socialVibe, profileQuality, total };
 }

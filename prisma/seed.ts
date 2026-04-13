@@ -99,7 +99,7 @@ const BIOS = [
     'Passionné(e) de mode éthique et de DIY ♻️✂️'
 ];
 
-const SOCIAL_VIBES = ['chill', 'energetic', 'adventurous', 'intellectual', 'creative'] as const;
+const SOCIAL_VIBES = ['reserved', 'calm', 'balanced', 'outgoing', 'very_social'] as const;
 
 const INTENTION_KEYS = [
     'dating',

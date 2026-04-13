@@ -1,6 +1,12 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_GetCandidates, WSResponse_GetCandidates, IntentionKey, PreferredPeriod } from '@whymeet/types';
+import type {
+    WSRequest_GetCandidates,
+    WSResponse_GetCandidates,
+    IntentionKey,
+    PreferredPeriod,
+    SocialVibe
+} from '@whymeet/types';
 import { getDatabase } from '@/services/database';
 import {
     mapUserToCandidate,
@@ -41,6 +47,7 @@ registerCommand<WSRequest_GetCandidates>(
             const myAge = computeAge(currentUser?.birthDate ?? null);
             const myLanguages = currentUser?.profile?.spokenLanguages ?? [];
             const myPreferredPeriod = (currentUser?.preferredPeriod ?? 'any') as PreferredPeriod;
+            const mySocialVibe = (currentUser?.profile?.socialVibe ?? 'balanced') as SocialVibe;
 
             // Use stored preferences, fall back to payload filters, then defaults
             const prefAgeMin = settings?.discoveryAgeMin ?? 18;
@@ -164,6 +171,7 @@ registerCommand<WSRequest_GetCandidates>(
                 myLatitude: myLatLng.latitude,
                 myLongitude: myLatLng.longitude,
                 myPreferredPeriod,
+                mySocialVibe,
                 maxDistance: prefMaxDistance,
                 isRemote: prefRemote
             };
@@ -189,7 +197,8 @@ registerCommand<WSRequest_GetCandidates>(
                         photoCount: (u.photos ?? []).length,
                         verified: u.verified,
                         tagCount: (u.tags ?? []).length,
-                        preferredPeriod: (u.preferredPeriod ?? 'any') as PreferredPeriod
+                        preferredPeriod: (u.preferredPeriod ?? 'any') as PreferredPeriod,
+                        socialVibe: (u.profile?.socialVibe ?? 'balanced') as SocialVibe
                     };
 
                     const breakdown = computeMatchScore(scoringCtx, candidate);

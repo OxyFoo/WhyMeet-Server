@@ -1,6 +1,6 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_Search, WSResponse_Search, IntentionKey, PreferredPeriod } from '@whymeet/types';
+import type { WSRequest_Search, WSResponse_Search, IntentionKey, PreferredPeriod, SocialVibe } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
 import { mapUserToCandidate, candidateInclude, getDistanceKm, ageToBirthDateRange } from '@/services/userMapper';
 import { computeMatchScore } from '@/services/scoring';
@@ -27,6 +27,7 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
         const myTagLabels = new Set((currentUser?.tags ?? []).map((t) => t.tag.label));
         const myLanguages = currentUser?.profile?.spokenLanguages ?? [];
         const myPreferredPeriod = (currentUser?.preferredPeriod ?? 'any') as PreferredPeriod;
+        const mySocialVibe = (currentUser?.profile?.socialVibe ?? 'balanced') as SocialVibe;
 
         const where: Record<string, unknown> = {
             id: { not: client.userId },
@@ -116,6 +117,7 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
             myLatitude: myLatLng.latitude,
             myLongitude: myLatLng.longitude,
             myPreferredPeriod,
+            mySocialVibe,
             maxDistance: maxDistance === Infinity ? DEFAULT_MAX_DISTANCE : maxDistance,
             isRemote
         };
@@ -142,7 +144,8 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
                     photoCount: (u.photos ?? []).length,
                     verified: u.verified,
                     tagCount: (u.tags ?? []).length,
-                    preferredPeriod: (u.preferredPeriod ?? 'any') as PreferredPeriod
+                    preferredPeriod: (u.preferredPeriod ?? 'any') as PreferredPeriod,
+                    socialVibe: (u.profile?.socialVibe ?? 'balanced') as SocialVibe
                 };
                 const breakdown = computeMatchScore(scoringCtx, scoringCandidate);
                 candidate.score = breakdown.total;

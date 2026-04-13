@@ -63,7 +63,7 @@ model Profile {
     id         String @id @default(cuid())
     userId     String @unique
     bio        String @default("")
-    socialVibe String @default("chill")
+    socialVibe String @default("balanced")
     country    String @default("")
     region     String @default("")
     city       String @default("")
