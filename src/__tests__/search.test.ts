@@ -4,6 +4,18 @@ jest.mock('@/config/logger', () => ({
     logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn(), success: jest.fn() }
 }));
 
+jest.mock('@/services/tokenService', () => ({
+    getBalance: jest.fn().mockResolvedValue({ tokens: 5, lastRefillAt: new Date() })
+}));
+
+jest.mock('@/services/boostService', () => ({
+    getBoostedUserIds: jest.fn().mockResolvedValue(new Set<string>())
+}));
+
+jest.mock('@/services/interleaveResults', () => ({
+    interleaveByBoost: jest.fn().mockImplementation((candidates: unknown[]) => candidates)
+}));
+
 const mockFindMany = jest.fn();
 const mockFindUnique = jest.fn();
 const mockBlockFindMany = jest.fn();

@@ -57,7 +57,9 @@ registerCommand<WSRequest_GetRequests>('get-requests', async (client: Client): P
                     })) as ProfilePhoto[],
                     city: m.sender.city,
                     verified: m.sender.verified,
-                    preferredPeriod: (m.sender.preferredPeriod ?? 'any') as PreferredPeriod
+                    preferredPeriod: (m.sender.preferredPeriod ?? 'any') as PreferredPeriod,
+                    isPremium: false,
+                    isBoosted: false
                 },
                 intentions: (m.sender.profile?.intentions ?? []) as IntentionKey[],
                 matchContext: m.matchContext,

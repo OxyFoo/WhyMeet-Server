@@ -57,6 +57,8 @@ describe('mapUserToProfile', () => {
             city: 'Paris',
             verified: true,
             preferredPeriod: 'any',
+            isPremium: false,
+            isBoosted: false,
             bio: 'Hello world',
             socialVibe: 'chill',
             interests: [
@@ -136,7 +138,9 @@ describe('mapUserToCandidate', () => {
                 photos: [{ id: 'photo-1', key: 'photos/user-1/abc.webp', description: '', position: 0 }],
                 city: 'Paris',
                 verified: true,
-                preferredPeriod: 'any'
+                preferredPeriod: 'any',
+                isPremium: false,
+                isBoosted: false
             },
             intentions: ['dating', 'friendship'],
             bio: 'Hello world',

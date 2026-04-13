@@ -55,7 +55,9 @@ registerCommand<WSRequest_GetConversations>(
                               })) as ProfilePhoto[],
                               city: other.city,
                               verified: other.verified,
-                              preferredPeriod: (other.preferredPeriod ?? 'any') as PreferredPeriod
+                              preferredPeriod: (other.preferredPeriod ?? 'any') as PreferredPeriod,
+                              isPremium: false,
+                              isBoosted: false
                           }
                         : {
                               id: '',
@@ -66,7 +68,9 @@ registerCommand<WSRequest_GetConversations>(
                               photos: [] as ProfilePhoto[],
                               city: '',
                               verified: false,
-                              preferredPeriod: 'any' as PreferredPeriod
+                              preferredPeriod: 'any' as PreferredPeriod,
+                              isPremium: false,
+                              isBoosted: false
                           },
                     lastMessage: lastMsg?.text,
                     lastMessageTime: lastMsg?.timestamp.toISOString(),

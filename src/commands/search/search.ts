@@ -5,6 +5,9 @@ import { getDatabase } from '@/services/database';
 import { mapUserToCandidate, candidateInclude, getDistanceKm, ageToBirthDateRange } from '@/services/userMapper';
 import { computeMatchScore } from '@/services/scoring';
 import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
+import { getBalance } from '@/services/tokenService';
+import { getBoostedUserIds } from '@/services/boostService';
+import { interleaveByBoost } from '@/services/interleaveResults';
 import { logger } from '@/config/logger';
 
 const DEFAULT_MAX_DISTANCE = 50; // km
@@ -161,8 +164,15 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
             .sort((a, b) => (b.candidate.score ?? 0) - (a.candidate.score ?? 0))
             .map((r) => r.candidate);
 
-        logger.debug(`[Search] ${results.length} results for user: ${client.userId}`);
-        return { command: 'search', payload: { results } };
+        // Apply 60/40 boost interleave
+        const boostedIds = await getBoostedUserIds();
+        const interleaved = interleaveByBoost(results, boostedIds);
+
+        // Include token balance info
+        const balance = await getBalance(client.userId);
+
+        logger.debug(`[Search] ${interleaved.length} results for user: ${client.userId}`);
+        return { command: 'search', payload: { results: interleaved, tokensRemaining: balance.tokens } };
     } catch (error) {
         logger.error('[Search] Search error', error);
         return { command: 'search', payload: { error: 'Internal error' } };

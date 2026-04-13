@@ -265,6 +265,15 @@ authRouter.post('/enter', enterLimiter, async (req, res) => {
             }
         });
 
+        // Initialize token balance and swipe quota for new user
+        const nextMidnight = new Date();
+        nextMidnight.setUTCDate(nextMidnight.getUTCDate() + 1);
+        nextMidnight.setUTCHours(0, 0, 0, 0);
+        await Promise.all([
+            db.tokenBalance.create({ data: { userId: newUser.id, tokens: 5, lastRefillAt: new Date() } }),
+            db.swipeQuota.create({ data: { userId: newUser.id, swipesUsed: 0, resetAt: nextMidnight } })
+        ]);
+
         await linkDeviceAndSendMail(newUser.id, device.id, email);
 
         logger.info(`[Auth] Enter sign-up: user=${newUser.id}, device=${device.id}, email=${email}`);

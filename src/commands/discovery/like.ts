@@ -6,6 +6,7 @@ import { getConnectedClients } from '@/server/Server';
 import { pushToUser } from '@/services/pushService';
 import { t, getUserLanguage } from '@/services/notifI18n';
 import { mapUserToProfile, profileInclude } from '@/services/userMapper';
+import { useSwipe } from '@/services/swipeQuotaService';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise<WSResponse_Like> => {
@@ -13,6 +14,15 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
     const db = getDatabase();
 
     try {
+        // Check and consume swipe quota
+        try {
+            await useSwipe(client.userId);
+        } catch (err) {
+            if (err instanceof Error && err.message === 'quota_exceeded') {
+                return { command: 'like', payload: { error: 'quota_exceeded' } };
+            }
+            throw err;
+        }
         // Create or update the match record
         const match = await db.match.upsert({
             where: {

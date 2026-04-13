@@ -4,6 +4,20 @@ jest.mock('@/config/logger', () => ({
     logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn(), success: jest.fn() }
 }));
 
+jest.mock('@/services/swipeQuotaService', () => ({
+    getQuota: jest.fn().mockResolvedValue({ swipesRemaining: 20, dailySwipeLimit: 20 }),
+    useSwipe: jest.fn().mockResolvedValue(undefined),
+    canSwipe: jest.fn().mockResolvedValue(true)
+}));
+
+jest.mock('@/services/boostService', () => ({
+    getBoostedUserIds: jest.fn().mockResolvedValue(new Set<string>())
+}));
+
+jest.mock('@/services/interleaveResults', () => ({
+    interleaveByBoost: jest.fn().mockImplementation((candidates: unknown[]) => candidates)
+}));
+
 const mockUserFindUnique = jest.fn();
 const mockUserFindMany = jest.fn();
 const mockMatchFindMany = jest.fn();

@@ -103,6 +103,8 @@ export function mapUserToProfile(user: {
         city: user.city,
         verified: user.verified,
         preferredPeriod: (user.preferredPeriod ?? 'any') as PreferredPeriod,
+        isPremium: false,
+        isBoosted: false,
         bio: user.profile?.bio ?? '',
         socialVibe: (user.profile?.socialVibe ?? 'chill') as Profile['socialVibe'],
         interests: (user.tags ?? [])
@@ -143,11 +145,13 @@ type PrismaUserWithProfile = Parameters<typeof mapUserToProfile>[0];
  * Maps a Prisma User (with profile/tags) to a MatchCandidate.
  * @param priorityIntentions — intentions to sort first in the list
  * @param refLatLng — reference user's coordinates for distance calculation
+ * @param flags — additional flags (isPremium, isBoosted) derived at runtime
  */
 export function mapUserToCandidate(
     user: PrismaUserWithProfile,
     priorityIntentions?: IntentionKey[],
-    refLatLng?: { latitude: number | null; longitude: number | null }
+    refLatLng?: { latitude: number | null; longitude: number | null },
+    flags?: { isPremium?: boolean; isBoosted?: boolean }
 ): MatchCandidate {
     const userIntentions = (user.profile?.intentions ?? []) as IntentionKey[];
     const sorted = priorityIntentions?.length
@@ -173,7 +177,9 @@ export function mapUserToCandidate(
             })) as ProfilePhoto[],
             city: user.city,
             verified: user.verified,
-            preferredPeriod: (user.preferredPeriod ?? 'any') as PreferredPeriod
+            preferredPeriod: (user.preferredPeriod ?? 'any') as PreferredPeriod,
+            isPremium: flags?.isPremium ?? false,
+            isBoosted: flags?.isBoosted ?? false
         },
         intentions: sorted,
         bio: user.profile?.bio ?? '',

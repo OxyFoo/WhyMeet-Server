@@ -2,6 +2,7 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_Skip, WSResponse_Skip } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
+import { useSwipe } from '@/services/swipeQuotaService';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_Skip>('skip', async (client: Client, payload): Promise<WSResponse_Skip> => {
@@ -9,6 +10,15 @@ registerCommand<WSRequest_Skip>('skip', async (client: Client, payload): Promise
     const db = getDatabase();
 
     try {
+        // Check and consume swipe quota
+        try {
+            await useSwipe(client.userId);
+        } catch (err) {
+            if (err instanceof Error && err.message === 'quota_exceeded') {
+                return { command: 'skip', payload: { success: false } };
+            }
+            throw err;
+        }
         await db.match.upsert({
             where: {
                 senderId_receiverId_category: { senderId: client.userId, receiverId: candidateId, category: 'skip' }

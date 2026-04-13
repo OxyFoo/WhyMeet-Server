@@ -6,6 +6,7 @@ import { getConnectedClients } from '@/server/Server';
 import { pushToUser } from '@/services/pushService';
 import { t, getUserLanguage } from '@/services/notifI18n';
 import { mapUserToProfile, profileInclude } from '@/services/userMapper';
+import { useSwipe } from '@/services/swipeQuotaService';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_Star>('star', async (client: Client, payload): Promise<WSResponse_Star> => {
@@ -13,6 +14,15 @@ registerCommand<WSRequest_Star>('star', async (client: Client, payload): Promise
     const db = getDatabase();
 
     try {
+        // Check and consume swipe quota
+        try {
+            await useSwipe(client.userId);
+        } catch (err) {
+            if (err instanceof Error && err.message === 'quota_exceeded') {
+                return { command: 'star', payload: { error: 'quota_exceeded' } };
+            }
+            throw err;
+        }
         // Star is like a super-like
         const match = await db.match.upsert({
             where: {

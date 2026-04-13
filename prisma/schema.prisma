@@ -35,6 +35,10 @@ model User {
     blockedBy       Block[]                   @relation("Blocked")
     sentReports     Report[]                  @relation("Reporter")
     receivedReports Report[]                  @relation("Reported")
+    subscription    Subscription?
+    activeBoost     ActiveBoost?
+    tokenBalance    TokenBalance?
+    swipeQuota      SwipeQuota?
 
     @@map("users")
 }
@@ -276,4 +280,57 @@ model Report {
     @@index([reportedId])
     @@index([status])
     @@map("reports")
+}
+
+// ─── Subscription & Monetization ────────────────────────────────────
+
+model Subscription {
+    id                    String   @id @default(cuid())
+    userId                String   @unique
+    plan                  String // "monthly" | "semi_annual" | "annual"
+    status                String   @default("active") // "active" | "expired" | "cancelled" | "grace_period"
+    platform              String // "ios" | "android"
+    productId             String
+    originalTransactionId String   @default("")
+    expiresAt             DateTime
+    createdAt             DateTime @default(now())
+    updatedAt             DateTime @updatedAt
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@map("subscriptions")
+}
+
+model ActiveBoost {
+    id        String   @id @default(cuid())
+    userId    String   @unique
+    expiresAt DateTime
+    source    String // "purchase" | "subscription"
+    createdAt DateTime @default(now())
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@map("active_boosts")
+}
+
+model TokenBalance {
+    id           String   @id @default(cuid())
+    userId       String   @unique
+    tokens       Int      @default(5)
+    lastRefillAt DateTime @default(now())
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@map("token_balances")
+}
+
+model SwipeQuota {
+    id         String   @id @default(cuid())
+    userId     String   @unique
+    swipesUsed Int      @default(0)
+    resetAt    DateTime @default(now())
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@map("swipe_quotas")
 }

@@ -17,6 +17,9 @@ import {
 } from '@/services/userMapper';
 import { computeMatchScore, MIN_SCORE_THRESHOLD } from '@/services/scoring';
 import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
+import { getQuota } from '@/services/swipeQuotaService';
+import { getBoostedUserIds } from '@/services/boostService';
+import { interleaveByBoost } from '@/services/interleaveResults';
 import { logger } from '@/config/logger';
 
 const DEFAULT_MAX_DISTANCE = 50; // km
@@ -225,14 +228,28 @@ registerCommand<WSRequest_GetCandidates>(
 
             scored.sort((a, b) => b.score - a.score);
 
-            const candidates = scored.slice(0, 20).map((s) => {
+            const scoredCandidates = scored.slice(0, 20).map((s) => {
                 const candidate = mapUserToCandidate(s.user, prefIntentions, myLatLng);
                 candidate.score = s.score;
                 return candidate;
             });
 
+            // Apply 60/40 boost interleave
+            const boostedIds = await getBoostedUserIds();
+            const candidates = interleaveByBoost(scoredCandidates, boostedIds);
+
+            // Get swipe quota info
+            const quota = await getQuota(client.userId);
+
             logger.debug(`[Discovery] ${candidates.length} candidates for user: ${client.userId}`);
-            return { command: 'get-candidates', payload: { candidates } };
+            return {
+                command: 'get-candidates',
+                payload: {
+                    candidates,
+                    swipesRemaining: quota.swipesRemaining,
+                    dailySwipeLimit: quota.dailySwipeLimit
+                }
+            };
         } catch (error) {
             logger.error('[Discovery] Get candidates error', error);
             return { command: 'get-candidates', payload: { error: 'Internal error' } };
