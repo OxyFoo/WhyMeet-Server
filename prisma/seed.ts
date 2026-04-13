@@ -397,7 +397,7 @@ async function main() {
 
                 photos: {
                     create: {
-                        key: `photos/seed/${firstName}${suffix}.webp`,
+                        key: `https://i.pravatar.cc/300?u=${email}`,
                         description: '',
                         position: 0
                     }
