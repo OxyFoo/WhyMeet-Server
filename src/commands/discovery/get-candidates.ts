@@ -50,7 +50,6 @@ registerCommand<WSRequest_GetCandidates>(
             const prefRemote = filters?.remote ?? settings?.discoveryRemoteMode ?? false;
             const prefIntentions = filters?.intentions ?? (settings?.discoveryIntentions as IntentionKey[] | undefined);
             const prefVerified = settings?.discoveryVerified ?? false;
-            const prefPhotosOnly = settings?.discoveryPhotosOnly ?? false;
 
             // Get IDs to exclude: self, seen, blocked, reported
             const [seenMatches, blocks, reports] = await Promise.all([
