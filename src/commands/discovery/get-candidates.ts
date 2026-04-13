@@ -77,13 +77,26 @@ registerCommand<WSRequest_GetCandidates>(
 
             const where: Record<string, unknown> = {
                 id: { notIn: excludeIds },
-                banned: false
+                banned: false,
+                // Only show candidates with a complete profile
+                birthDate: { not: null },
+                photos: { some: {} },
+                tags: { some: {} },
+                name: { not: '' }
             };
 
-            // Age range filter (via birthDate)
+            // Profile completeness: bio, intentions, languages, location must be filled
+            const profileWhere: Record<string, unknown> = {
+                bio: { not: '' },
+                intentions: { isEmpty: false },
+                spokenLanguages: { isEmpty: false },
+                latitude: { not: null }
+            };
+
+            // Age range filter (via birthDate — merge with existing not-null constraint)
             if (prefAgeMin > 18 || prefAgeMax < 99) {
                 const { after, before } = ageToBirthDateRange(prefAgeMin, prefAgeMax);
-                where.birthDate = { gte: after, lt: before };
+                where.birthDate = { not: null, gte: after, lt: before };
             }
 
             // Gender filter
@@ -96,13 +109,6 @@ registerCommand<WSRequest_GetCandidates>(
                 where.verified = true;
             }
 
-            // Photos-only filter
-            if (prefPhotosOnly) {
-                where.photos = { some: {} };
-            }
-
-            // Filter by intentions (stored preferences or user's own)
-            const profileWhere: Record<string, unknown> = {};
             if (prefIntentions && prefIntentions.length > 0) {
                 profileWhere.intentions = { hasSome: prefIntentions };
             } else if (myIntentions.length > 0) {

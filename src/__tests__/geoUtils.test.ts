@@ -1,7 +1,7 @@
 import { discretizePosition } from '@/services/geoUtils';
 
 describe('discretizePosition', () => {
-    it('should snap two nearby points (<500m) to the same grid cell', () => {
+    it('should snap two nearby points (<1km) to the same grid cell', () => {
         // Paris center: 48.8566, 2.3522
         const a = discretizePosition(48.8566, 2.3522);
         const b = discretizePosition(48.857, 2.3525); // ~50m away
@@ -9,14 +9,14 @@ describe('discretizePosition', () => {
         expect(a.longitude).toBe(b.longitude);
     });
 
-    it('should produce different cells for points >1.5 km apart', () => {
+    it('should produce different cells for points >3 km apart', () => {
         const a = discretizePosition(48.8566, 2.3522); // Paris center
-        const b = discretizePosition(48.87, 2.3522); // ~1.5 km north
+        const b = discretizePosition(48.884, 2.3522); // ~3 km north
         expect(a.latitude).not.toBe(b.latitude);
     });
 
     it('should return values that are multiples of the grid step', () => {
-        const STEP_LAT = 1 / 111.32;
+        const STEP_LAT = 2 / 111.32;
         const result = discretizePosition(48.8566, 2.3522);
 
         const latIndex = result.latitude / STEP_LAT;
@@ -28,7 +28,7 @@ describe('discretizePosition', () => {
         expect(result.latitude).toBeDefined();
         expect(result.longitude).toBeDefined();
         // At equator, STEP_LAT ≈ STEP_LNG
-        const STEP = 1 / 111.32;
+        const STEP = 2 / 111.32;
         const latIndex = result.latitude / STEP;
         expect(Math.abs(latIndex - Math.round(latIndex))).toBeLessThan(0.001);
     });

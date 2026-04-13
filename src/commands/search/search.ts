@@ -22,7 +22,21 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
             longitude: currentUser?.profile?.longitude ?? null
         };
 
-        const where: Record<string, unknown> = { id: { not: client.userId }, banned: false };
+        const where: Record<string, unknown> = {
+            id: { not: client.userId },
+            banned: false,
+            // Only show candidates with a complete profile
+            birthDate: { not: null },
+            photos: { some: {} },
+            tags: { some: {} },
+            name: { not: '' },
+            profile: {
+                bio: { not: '' },
+                intentions: { isEmpty: false },
+                spokenLanguages: { isEmpty: false },
+                latitude: { not: null }
+            }
+        };
 
         // Exclude blocked + reported users
         const [blocks, reports] = await Promise.all([
@@ -48,7 +62,7 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
 
         if (filters.ageRange) {
             const { after, before } = ageToBirthDateRange(filters.ageRange[0], filters.ageRange[1]);
-            where.birthDate = { gte: after, lt: before };
+            where.birthDate = { not: null, gte: after, lt: before };
         }
 
         if (filters.query) {
@@ -60,7 +74,7 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
 
         if (filters.intentions && filters.intentions.length > 0) {
             where.profile = {
-                ...((where.profile as Record<string, unknown>) ?? {}),
+                ...(where.profile as Record<string, unknown>),
                 intentions: { hasSome: filters.intentions }
             };
         }
@@ -74,7 +88,7 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
         // Remote mode: filter by spoken languages
         if (filters.remote && filters.languages && filters.languages.length > 0) {
             where.profile = {
-                ...((where.profile as Record<string, unknown>) ?? {}),
+                ...(where.profile as Record<string, unknown>),
                 spokenLanguages: { hasSome: filters.languages }
             };
         }
