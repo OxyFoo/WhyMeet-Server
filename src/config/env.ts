@@ -48,7 +48,14 @@ const envSchema = z.object({
     UPLOAD_MAX_SIZE: z.coerce.number().int().positive().default(5_242_880),
 
     // Firebase Cloud Messaging
-    FIREBASE_SERVICE_ACCOUNT: z.string().default('')
+    FIREBASE_SERVICE_ACCOUNT: z.string().default(''),
+
+    // Subscription / token / swipe tuning
+    FREE_DAILY_SWIPE_LIMIT: z.coerce.number().int().positive().default(20),
+    FREE_DAILY_TOKEN_REFILL: z.coerce.number().int().positive().default(3),
+    PREMIUM_DAILY_TOKEN_REFILL: z.coerce.number().int().positive().default(20),
+    INITIAL_TOKEN_COUNT: z.coerce.number().int().nonnegative().default(5),
+    SUBSCRIPTION_BOOST_DAYS: z.coerce.number().int().positive().default(10)
 });
 
 const parsed = envSchema.safeParse(process.env);

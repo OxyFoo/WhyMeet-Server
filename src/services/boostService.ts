@@ -1,7 +1,7 @@
 import { getDatabase } from '@/services/database';
 import type { UserBoost, BoostSource } from '@whymeet/types';
-import { SUBSCRIPTION_BOOST_DAYS } from '@whymeet/types';
 import { logger } from '@/config/logger';
+import { env } from '@/config/env';
 
 /**
  * Check if user has an active boost (not expired).
@@ -87,7 +87,7 @@ export async function grantSubscriptionBoost(userId: string): Promise<UserBoost>
     }
 
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + SUBSCRIPTION_BOOST_DAYS);
+    expiresAt.setDate(expiresAt.getDate() + env.SUBSCRIPTION_BOOST_DAYS);
 
     const boost = await db.activeBoost.create({
         data: { userId, expiresAt, source: 'subscription' }

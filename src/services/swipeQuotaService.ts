@@ -1,7 +1,7 @@
 import { getDatabase } from '@/services/database';
 import type { SwipeQuotaInfo } from '@whymeet/types';
-import { FREE_DAILY_SWIPE_LIMIT } from '@whymeet/types';
 import { isPremium } from '@/services/subscriptionService';
+import { env } from '@/config/env';
 
 /**
  * Get the next midnight UTC for quota reset.
@@ -40,8 +40,8 @@ export async function getQuota(userId: string): Promise<SwipeQuotaInfo> {
     }
 
     return {
-        swipesRemaining: Math.max(0, FREE_DAILY_SWIPE_LIMIT - record.swipesUsed),
-        dailySwipeLimit: FREE_DAILY_SWIPE_LIMIT
+        swipesRemaining: Math.max(0, env.FREE_DAILY_SWIPE_LIMIT - record.swipesUsed),
+        dailySwipeLimit: env.FREE_DAILY_SWIPE_LIMIT
     };
 }
 
@@ -75,7 +75,7 @@ export async function useSwipe(userId: string): Promise<SwipeQuotaInfo> {
     });
 
     return {
-        swipesRemaining: Math.max(0, FREE_DAILY_SWIPE_LIMIT - record.swipesUsed),
-        dailySwipeLimit: FREE_DAILY_SWIPE_LIMIT
+        swipesRemaining: Math.max(0, env.FREE_DAILY_SWIPE_LIMIT - record.swipesUsed),
+        dailySwipeLimit: env.FREE_DAILY_SWIPE_LIMIT
     };
 }

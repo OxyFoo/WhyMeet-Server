@@ -270,7 +270,9 @@ authRouter.post('/enter', enterLimiter, async (req, res) => {
         nextMidnight.setUTCDate(nextMidnight.getUTCDate() + 1);
         nextMidnight.setUTCHours(0, 0, 0, 0);
         await Promise.all([
-            db.tokenBalance.create({ data: { userId: newUser.id, tokens: 5, lastRefillAt: new Date() } }),
+            db.tokenBalance.create({
+                data: { userId: newUser.id, tokens: env.INITIAL_TOKEN_COUNT, lastRefillAt: new Date() }
+            }),
             db.swipeQuota.create({ data: { userId: newUser.id, swipesUsed: 0, resetAt: nextMidnight } })
         ]);
 

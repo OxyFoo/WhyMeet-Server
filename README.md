@@ -15,6 +15,9 @@ docker compose -f docker-compose.dev.yml up --build
 
 # Production (app only, external DB & S3)
 docker compose -f docker-compose.prod.yml up --build
+
+# Ajouter les comptes de test
+npm run db:seed
 ```
 
 ## Scripts

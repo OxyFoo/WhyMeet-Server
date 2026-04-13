@@ -1,8 +1,8 @@
 import { getDatabase } from '@/services/database';
 import type { TokenBalance } from '@whymeet/types';
-import { INITIAL_TOKEN_COUNT, FREE_DAILY_TOKEN_REFILL, PREMIUM_DAILY_TOKEN_REFILL } from '@whymeet/types';
 import { isPremium } from '@/services/subscriptionService';
 import { logger } from '@/config/logger';
+import { env } from '@/config/env';
 
 /**
  * Get the start of today (midnight UTC).
@@ -24,7 +24,7 @@ export async function getBalance(userId: string): Promise<TokenBalance> {
 
     if (!record) {
         record = await db.tokenBalance.create({
-            data: { userId, tokens: INITIAL_TOKEN_COUNT, lastRefillAt: new Date() }
+            data: { userId, tokens: env.INITIAL_TOKEN_COUNT, lastRefillAt: new Date() }
         });
         return { tokens: record.tokens, lastRefillAt: record.lastRefillAt.toISOString() };
     }
@@ -32,7 +32,7 @@ export async function getBalance(userId: string): Promise<TokenBalance> {
     const midnight = todayMidnight();
     if (record.lastRefillAt < midnight) {
         const premium = await isPremium(userId);
-        const cap = premium ? PREMIUM_DAILY_TOKEN_REFILL : FREE_DAILY_TOKEN_REFILL;
+        const cap = premium ? env.PREMIUM_DAILY_TOKEN_REFILL : env.FREE_DAILY_TOKEN_REFILL;
 
         const newTokens = Math.max(record.tokens, cap);
         record = await db.tokenBalance.update({
@@ -73,7 +73,7 @@ export async function addTokens(userId: string, count: number): Promise<TokenBal
 
     if (!record) {
         record = await db.tokenBalance.create({
-            data: { userId, tokens: INITIAL_TOKEN_COUNT + count, lastRefillAt: new Date() }
+            data: { userId, tokens: env.INITIAL_TOKEN_COUNT + count, lastRefillAt: new Date() }
         });
     } else {
         record = await db.tokenBalance.update({
