@@ -18,6 +18,8 @@ import {
 } from '@/services/userMapper';
 import { computeMatchScore } from '@/services/scoring';
 import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
+import { getBoostedUserIds } from '@/services/boostService';
+import { interleaveByBoost } from '@/services/interleaveResults';
 import { logger } from '@/config/logger';
 
 const DEFAULT_MAX_DISTANCE = 50;
@@ -112,6 +114,12 @@ registerCommand<WSRequest_PreviewSearch>(
                 const { after, before } = ageToBirthDateRange(filters.ageRange[0], filters.ageRange[1]);
                 where.birthDate = { not: null, gte: after, lt: before };
             }
+            if (filters.query) {
+                where.OR = [
+                    { name: { contains: filters.query, mode: 'insensitive' } },
+                    { profile: { bio: { contains: filters.query, mode: 'insensitive' } } }
+                ];
+            }
             if (filters.intentions && filters.intentions.length > 0) {
                 where.profile = {
                     ...(where.profile as Record<string, unknown>),
@@ -198,10 +206,14 @@ registerCommand<WSRequest_PreviewSearch>(
                 .sort((a, b) => (b.candidate.score ?? 0) - (a.candidate.score ?? 0))
                 .map((r) => r.candidate);
 
-            const totalCount = results.length;
+            // Apply 60/40 boost interleave
+            const boostedIds = await getBoostedUserIds();
+            const interleaved = interleaveByBoost(results, boostedIds);
+
+            const totalCount = interleaved.length;
 
             // Add slight randomness and limit to MAX_RESULTS
-            const limited = addRandomness(results).slice(0, MAX_RESULTS);
+            const limited = addRandomness(interleaved).slice(0, MAX_RESULTS);
 
             // Obfuscate data: keep structure (lengths, spaces) but scramble letters
             const randomized = limited.map((c) => {
