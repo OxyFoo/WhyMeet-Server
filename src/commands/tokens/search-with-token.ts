@@ -3,6 +3,7 @@ import type { Client } from '@/server/Client';
 import type {
     WSRequest_SearchWithToken,
     WSResponse_SearchWithToken,
+    MatchCandidate,
     IntentionKey,
     PreferredPeriod,
     SocialVibe
@@ -17,6 +18,15 @@ import { interleaveByBoost } from '@/services/interleaveResults';
 import { logger } from '@/config/logger';
 
 const DEFAULT_MAX_DISTANCE = 50;
+const MAX_RESULTS = 25;
+
+/** Add slight score jitter (±10 pts) so results with similar scores get shuffled */
+function addRandomness(candidates: MatchCandidate[]): MatchCandidate[] {
+    return candidates
+        .map((c) => ({ c, sortKey: (c.score ?? 0) + (Math.random() - 0.5) * 20 }))
+        .sort((a, b) => b.sortKey - a.sortKey)
+        .map((x) => x.c);
+}
 
 registerCommand<WSRequest_SearchWithToken>(
     'search-with-token',
@@ -168,15 +178,20 @@ registerCommand<WSRequest_SearchWithToken>(
             const boostedIds = await getBoostedUserIds();
             const interleaved = interleaveByBoost(results, boostedIds);
 
+            const totalCount = interleaved.length;
+
+            // Add slight randomness and limit to MAX_RESULTS
+            const shuffled = addRandomness(interleaved).slice(0, MAX_RESULTS);
+
             // Only consume a token if there are actual results
             let tokensRemaining = balance.tokens;
-            if (interleaved.length > 0) {
+            if (shuffled.length > 0) {
                 const newBalance = await useToken(client.userId);
                 tokensRemaining = newBalance.tokens;
             }
 
-            logger.debug(`[Search] ${interleaved.length} results (with token) for user: ${client.userId}`);
-            return { command: 'search-with-token', payload: { results: interleaved, tokensRemaining } };
+            logger.debug(`[Search] ${shuffled.length}/${totalCount} results (with token) for user: ${client.userId}`);
+            return { command: 'search-with-token', payload: { results: shuffled, tokensRemaining, totalCount } };
         } catch (error) {
             logger.error('[Search] Search with token error', error);
             return { command: 'search-with-token', payload: { error: 'Internal error' } };

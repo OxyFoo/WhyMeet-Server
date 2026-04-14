@@ -1,6 +1,13 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_Search, WSResponse_Search, IntentionKey, PreferredPeriod, SocialVibe } from '@whymeet/types';
+import type {
+    WSRequest_Search,
+    WSResponse_Search,
+    MatchCandidate,
+    IntentionKey,
+    PreferredPeriod,
+    SocialVibe
+} from '@whymeet/types';
 import { getDatabase } from '@/services/database';
 import { mapUserToCandidate, candidateInclude, getDistanceKm, ageToBirthDateRange } from '@/services/userMapper';
 import { computeMatchScore } from '@/services/scoring';
@@ -11,6 +18,15 @@ import { interleaveByBoost } from '@/services/interleaveResults';
 import { logger } from '@/config/logger';
 
 const DEFAULT_MAX_DISTANCE = 50; // km
+const MAX_RESULTS = 25;
+
+/** Add slight score jitter (±10 pts) so results with similar scores get shuffled */
+function addRandomness(candidates: MatchCandidate[]): MatchCandidate[] {
+    return candidates
+        .map((c) => ({ c, sortKey: (c.score ?? 0) + (Math.random() - 0.5) * 20 }))
+        .sort((a, b) => b.sortKey - a.sortKey)
+        .map((x) => x.c);
+}
 
 registerCommand<WSRequest_Search>('search', async (client: Client, payload): Promise<WSResponse_Search> => {
     const { filters } = payload;
@@ -168,11 +184,16 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
         const boostedIds = await getBoostedUserIds();
         const interleaved = interleaveByBoost(results, boostedIds);
 
+        const totalCount = interleaved.length;
+
+        // Add slight randomness and limit to MAX_RESULTS
+        const shuffled = addRandomness(interleaved).slice(0, MAX_RESULTS);
+
         // Include token balance info
         const balance = await getBalance(client.userId);
 
-        logger.debug(`[Search] ${interleaved.length} results for user: ${client.userId}`);
-        return { command: 'search', payload: { results: interleaved, tokensRemaining: balance.tokens } };
+        logger.debug(`[Search] ${shuffled.length}/${totalCount} results for user: ${client.userId}`);
+        return { command: 'search', payload: { results: shuffled, tokensRemaining: balance.tokens, totalCount } };
     } catch (error) {
         logger.error('[Search] Search error', error);
         return { command: 'search', payload: { error: 'Internal error' } };

@@ -378,16 +378,23 @@ async function main() {
             const intentions = pickN(INTENTION_KEYS, 1, 3);
             const interests = pickN(INTEREST_LABELS, 2, 6);
             const skills = pickN(SKILL_LABELS, 1, 4);
+            const gender = pick(GENDERS);
+            const birthDate = randomBirthDate();
+
+            // Generate realistic visibility preferences
+            const visAgeMin = 18 + Math.floor(Math.random() * 5); // 18-22
+            const visAgeMax = 30 + Math.floor(Math.random() * 20); // 30-49
+            const visGenders = pickN(GENDERS, 1, GENDERS.length);
 
             operations.push(
                 prisma.user.create({
                     data: {
                         email,
                         name: `${firstName}${suffix}`,
-                        birthDate: randomBirthDate(),
+                        birthDate,
 
                         city,
-                        gender: pick(GENDERS),
+                        gender,
                         preferredPeriod: pick(PERIODS),
                         verified: Math.random() > 0.3,
 
@@ -402,6 +409,26 @@ async function main() {
                                 spokenLanguages,
                                 latitude,
                                 longitude
+                            }
+                        },
+
+                        settings: {
+                            create: {
+                                language: 'fr',
+                                theme: 'light',
+                                discoveryAgeMin: visAgeMin,
+                                discoveryAgeMax: visAgeMax,
+                                discoveryGenders: [...GENDERS],
+                                discoveryIntentions: intentions,
+                                discoveryMaxDistance: 20 + Math.floor(Math.random() * 80),
+                                discoveryRemoteMode: Math.random() > 0.8,
+                                discoveryVerified: Math.random() > 0.7,
+                                visibilityAgeMin: visAgeMin,
+                                visibilityAgeMax: visAgeMax,
+                                visibilityGenders: visGenders as string[],
+                                visibilityIntentions: intentions,
+                                visibilityMaxDistance: 20 + Math.floor(Math.random() * 80),
+                                visibilityRemoteMode: Math.random() > 0.8
                             }
                         },
 

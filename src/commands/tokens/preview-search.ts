@@ -3,6 +3,7 @@ import type { Client } from '@/server/Client';
 import type {
     WSRequest_PreviewSearch,
     WSResponse_PreviewSearch,
+    MatchCandidate,
     IntentionKey,
     PreferredPeriod,
     SocialVibe
@@ -14,6 +15,15 @@ import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
 import { logger } from '@/config/logger';
 
 const DEFAULT_MAX_DISTANCE = 50;
+const MAX_RESULTS = 25;
+
+/** Add slight score jitter (±10 pts) so results with similar scores get shuffled */
+function addRandomness(candidates: MatchCandidate[]): MatchCandidate[] {
+    return candidates
+        .map((c) => ({ c, sortKey: (c.score ?? 0) + (Math.random() - 0.5) * 20 }))
+        .sort((a, b) => b.sortKey - a.sortKey)
+        .map((x) => x.c);
+}
 
 /**
  * Obfuscate a string: keep spaces, punctuation, and emojis, but replace
@@ -170,8 +180,13 @@ registerCommand<WSRequest_PreviewSearch>(
                 .sort((a, b) => (b.candidate.score ?? 0) - (a.candidate.score ?? 0))
                 .map((r) => r.candidate);
 
+            const totalCount = results.length;
+
+            // Add slight randomness and limit to MAX_RESULTS
+            const limited = addRandomness(results).slice(0, MAX_RESULTS);
+
             // Obfuscate data: keep structure (lengths, spaces) but scramble letters
-            const randomized = results.map((c) => {
+            const randomized = limited.map((c) => {
                 const obfuscatedAge = Math.max(18, (c.user.age ?? 25) + Math.floor(Math.random() * 5) - 2);
 
                 return {
@@ -191,8 +206,8 @@ registerCommand<WSRequest_PreviewSearch>(
                 };
             });
 
-            logger.debug(`[Search] ${randomized.length} preview results for user: ${client.userId}`);
-            return { command: 'preview-search', payload: { results: randomized } };
+            logger.debug(`[Search] ${randomized.length}/${totalCount} preview results for user: ${client.userId}`);
+            return { command: 'preview-search', payload: { results: randomized, totalCount } };
         } catch (error) {
             logger.error('[Search] Preview search error', error);
             return { command: 'preview-search', payload: { error: 'Internal error' } };
