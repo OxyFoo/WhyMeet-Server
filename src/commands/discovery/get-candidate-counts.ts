@@ -1,9 +1,19 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_GetCandidateCounts, WSResponse_GetCandidateCounts, IntentionKey } from '@whymeet/types';
+import type {
+    WSRequest_GetCandidateCounts,
+    WSResponse_GetCandidateCounts,
+    IntentionKey,
+    PreferredPeriod,
+    SocialVibe
+} from '@whymeet/types';
 import { getDatabase } from '@/services/database';
-import { computeAge, ageToBirthDateRange } from '@/services/userMapper';
+import { candidateInclude, getDistanceKm, computeAge, ageToBirthDateRange } from '@/services/userMapper';
+import { computeMatchScore, MIN_SCORE_THRESHOLD } from '@/services/scoring';
+import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
 import { logger } from '@/config/logger';
+
+const DEFAULT_MAX_DISTANCE = 50;
 
 registerCommand<WSRequest_GetCandidateCounts>(
     'get-candidate-counts',
@@ -14,26 +24,36 @@ registerCommand<WSRequest_GetCandidateCounts>(
             const [currentUser, settings] = await Promise.all([
                 db.user.findUnique({
                     where: { id: client.userId },
-                    include: { profile: true }
+                    include: { profile: true, tags: { include: { tag: true } } }
                 }),
                 db.settings.findUnique({ where: { userId: client.userId } })
             ]);
 
             const myIntentions = (currentUser?.profile?.intentions ?? []) as IntentionKey[];
+            const myTagLabels = new Set((currentUser?.tags ?? []).map((t) => t.tag.label));
             const myGender = currentUser?.gender ?? '';
             const myAge = computeAge(currentUser?.birthDate ?? null);
+            const myLanguages = currentUser?.profile?.spokenLanguages ?? [];
+            const myPreferredPeriod = (currentUser?.preferredPeriod ?? 'any') as PreferredPeriod;
+            const mySocialVibe = (currentUser?.profile?.socialVibe ?? 'balanced') as SocialVibe;
+            const myLatLng = {
+                latitude: currentUser?.profile?.latitude ?? null,
+                longitude: currentUser?.profile?.longitude ?? null
+            };
 
             const myProfileComplete =
                 currentUser?.birthDate != null &&
                 myGender !== '' &&
                 myIntentions.length > 0 &&
-                currentUser?.profile?.latitude != null;
+                myLatLng.latitude != null;
 
             const prefAgeMin = settings?.discoveryAgeMin ?? 18;
             const prefAgeMax = settings?.discoveryAgeMax ?? 99;
             const prefGenders = settings?.discoveryGenders ?? [];
             const prefIntentions = settings?.discoveryIntentions as IntentionKey[] | undefined;
             const prefVerified = settings?.discoveryVerified ?? false;
+            const prefMaxDistance = settings?.discoveryMaxDistance ?? DEFAULT_MAX_DISTANCE;
+            const prefRemote = settings?.discoveryRemoteMode ?? false;
 
             // Exclusion list
             const [seenMatches, blocks, reports] = await Promise.all([
@@ -118,19 +138,82 @@ registerCommand<WSRequest_GetCandidateCounts>(
                 where.settings = { AND: visibilityFilter };
             }
 
-            // ── Count intentions ─────────────────────────────────────
+            // ── Fetch and score (same pipeline as get-candidates) ────
             const users = await db.user.findMany({
                 where,
-                select: {
-                    profile: { select: { intentions: true } }
+                include: {
+                    ...candidateInclude
                 },
                 take: 200
             });
 
+            const scoringCtx: ScoringContext = {
+                myIntentions,
+                myTagLabels,
+                myLanguages,
+                myLatitude: myLatLng.latitude,
+                myLongitude: myLatLng.longitude,
+                myPreferredPeriod,
+                mySocialVibe,
+                maxDistance: prefMaxDistance,
+                isRemote: prefRemote
+            };
+
+            const qualified = users
+                .map((u) => {
+                    const theirIntentions = (u.profile?.intentions ?? []) as IntentionKey[];
+                    const theirTags = new Set((u.tags ?? []).map((t) => t.tag.label));
+                    const distKm = getDistanceKm(
+                        myLatLng.latitude,
+                        myLatLng.longitude,
+                        u.profile?.latitude,
+                        u.profile?.longitude
+                    );
+
+                    const candidate: ScoringCandidate = {
+                        intentions: theirIntentions,
+                        tagLabels: theirTags,
+                        spokenLanguages: u.profile?.spokenLanguages ?? [],
+                        latitude: u.profile?.latitude ?? null,
+                        longitude: u.profile?.longitude ?? null,
+                        bio: u.profile?.bio ?? '',
+                        photoCount: (u.photos ?? []).length,
+                        verified: u.verified,
+                        tagCount: (u.tags ?? []).length,
+                        preferredPeriod: (u.preferredPeriod ?? 'any') as PreferredPeriod,
+                        socialVibe: (u.profile?.socialVibe ?? 'balanced') as SocialVibe
+                    };
+
+                    const breakdown = computeMatchScore(scoringCtx, candidate);
+
+                    return {
+                        intentions: theirIntentions,
+                        score: breakdown.total,
+                        distKm,
+                        visibilityMaxDistance: (u as { settings?: { visibilityMaxDistance?: number } }).settings
+                            ?.visibilityMaxDistance
+                    };
+                })
+                // Post-filter: distance
+                .filter((s) => {
+                    if (prefRemote) return true;
+                    if (s.distKm == null) return true;
+                    return s.distKm <= prefMaxDistance;
+                })
+                // Post-filter: candidate visibility distance
+                .filter((s) => {
+                    if (prefRemote) return true;
+                    if (s.visibilityMaxDistance == null) return true;
+                    if (s.distKm == null) return true;
+                    return s.distKm <= s.visibilityMaxDistance;
+                })
+                // Score threshold
+                .filter((s) => s.score >= MIN_SCORE_THRESHOLD);
+
+            // ── Count per intention ──────────────────────────────────
             const counts: Record<string, number> = {};
-            for (const u of users) {
-                const intentions = (u.profile?.intentions ?? []) as string[];
-                for (const i of intentions) {
+            for (const u of qualified) {
+                for (const i of u.intentions) {
                     counts[i] = (counts[i] || 0) + 1;
                 }
             }
