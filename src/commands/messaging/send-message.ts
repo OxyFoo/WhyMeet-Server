@@ -41,7 +41,8 @@ registerCommand<WSRequest_SendMessage>(
                 id: message.id,
                 text: message.text,
                 senderId: message.senderId,
-                timestamp: message.timestamp.toISOString()
+                timestamp: message.timestamp.toISOString(),
+                read: false
             };
 
             // Push to other connected participants

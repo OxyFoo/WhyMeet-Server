@@ -14,7 +14,7 @@ registerCommand<WSRequest_GetCandidates>(
         const filters = payload.filters;
 
         try {
-            const { qualified, ctx } = await runDiscoveryPipeline(client, filters, 100);
+            const { qualified, ctx } = await runDiscoveryPipeline(client, filters, 5000);
 
             // Take top 20 and map to client-facing candidates
             const scoredCandidates = qualified.slice(0, 20).map((s) => {

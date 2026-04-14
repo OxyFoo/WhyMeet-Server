@@ -222,6 +222,7 @@ model Message {
     conversationId String
     senderId       String
     text           String
+    read           Boolean  @default(false)
     timestamp      DateTime @default(now())
 
     conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

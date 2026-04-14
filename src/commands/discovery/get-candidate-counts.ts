@@ -12,11 +12,11 @@ registerCommand<WSRequest_GetCandidateCounts>(
             // Build context once (user, settings, exclusion list)
             const setup = await buildPipelineContext(client);
 
-            // Run the SAME pipeline per intention, with the SAME fetchLimit (100)
-            // as get-candidates, so counts are perfectly consistent.
+            // Run the SAME pipeline per intention but with a higher limit
+            // so counts reflect reality, not a fetch cap.
             const counts: Record<string, number> = {};
             for (const key of INTENTION_KEYS) {
-                const { qualified } = await runPipelineQuery(setup, { intentions: [key] }, 100);
+                const { qualified } = await runPipelineQuery(setup, { intentions: [key] }, 5000);
                 counts[key] = qualified.length;
             }
 

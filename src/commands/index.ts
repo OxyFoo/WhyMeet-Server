@@ -14,6 +14,7 @@ import './profile/update-profile';
 import './messaging/get-conversations';
 import './messaging/get-messages';
 import './messaging/send-message';
+import './messaging/mark-read';
 import './notifications/get-notifications';
 import './notifications/mark-notification-read';
 import './notifications/register-push-token';

@@ -34,14 +34,6 @@ registerCommand<WSRequest_GetMessages>(
             if (hasMore) messages.pop();
             messages.reverse();
 
-            // Mark as read only on first page
-            if (!cursor) {
-                await db.conversationParticipant.update({
-                    where: { conversationId_userId: { conversationId, userId: client.userId } },
-                    data: { unreadCount: 0 }
-                });
-            }
-
             return {
                 command: 'get-messages',
                 payload: {
@@ -49,7 +41,8 @@ registerCommand<WSRequest_GetMessages>(
                         id: m.id,
                         text: m.text,
                         senderId: m.senderId,
-                        timestamp: m.timestamp.toISOString()
+                        timestamp: m.timestamp.toISOString(),
+                        read: m.read
                     })),
                     hasMore
                 }
