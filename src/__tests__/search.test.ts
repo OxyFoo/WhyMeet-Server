@@ -162,7 +162,7 @@ describe('search command', () => {
         });
     });
 
-    it('limits results to 100 (pre-filtering pool)', async () => {
+    it('limits results to 500 (pre-filtering pool)', async () => {
         mockFindMany.mockResolvedValue([]);
 
         await routeCommand(fakeClient(), {
@@ -170,7 +170,7 @@ describe('search command', () => {
             payload: { filters: {} }
         } as never);
 
-        expect(mockFindMany.mock.calls[0][0].take).toBe(100);
+        expect(mockFindMany.mock.calls[0][0].take).toBe(1000);
     });
 
     it('maps users to MatchCandidate format', async () => {

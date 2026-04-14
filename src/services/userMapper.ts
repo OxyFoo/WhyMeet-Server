@@ -46,6 +46,24 @@ export function getDistanceKm(
 }
 
 /**
+ * Compute a lat/lng bounding box for a given center and radius in km.
+ * Returns Prisma-compatible filters for profile.latitude and profile.longitude.
+ */
+export function geoBoundingBox(
+    lat: number | null | undefined,
+    lng: number | null | undefined,
+    radiusKm: number
+): { latitude: { gte: number; lte: number }; longitude: { gte: number; lte: number } } | null {
+    if (lat == null || lng == null) return null;
+    const latDelta = radiusKm / 111;
+    const lngDelta = radiusKm / (111 * Math.cos((lat * Math.PI) / 180));
+    return {
+        latitude: { gte: lat - latDelta, lte: lat + latDelta },
+        longitude: { gte: lng - lngDelta, lte: lng + lngDelta }
+    };
+}
+
+/**
  * Format a numeric distance as a human-readable string.
  */
 function formatDistance(

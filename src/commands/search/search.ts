@@ -9,7 +9,13 @@ import type {
     SocialVibe
 } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
-import { mapUserToCandidate, candidateInclude, getDistanceKm, ageToBirthDateRange } from '@/services/userMapper';
+import {
+    mapUserToCandidate,
+    candidateInclude,
+    getDistanceKm,
+    geoBoundingBox,
+    ageToBirthDateRange
+} from '@/services/userMapper';
 import { computeMatchScore } from '@/services/scoring';
 import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
 import { getBalance } from '@/services/tokenService';
@@ -119,14 +125,26 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
             };
         }
 
+        const isRemote = filters.remote === true;
+        const maxDistance = isRemote ? Infinity : (filters.maxDistance ?? DEFAULT_MAX_DISTANCE);
+
+        // Pre-filter by geo bounding box when not remote
+        if (!isRemote) {
+            const bbox = geoBoundingBox(myLatLng.latitude, myLatLng.longitude, maxDistance);
+            if (bbox) {
+                where.profile = {
+                    ...(where.profile as Record<string, unknown>),
+                    latitude: bbox.latitude,
+                    longitude: bbox.longitude
+                };
+            }
+        }
+
         const users = await db.user.findMany({
             where,
             include: candidateInclude,
-            take: 100 // fetch more for post-filtering by distance
+            take: 1000
         });
-
-        const isRemote = filters.remote === true;
-        const maxDistance = isRemote ? Infinity : (filters.maxDistance ?? DEFAULT_MAX_DISTANCE);
         const targetIntentions = filters.intentions ?? [];
 
         const scoringCtx: ScoringContext = {

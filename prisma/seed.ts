@@ -433,11 +433,11 @@ async function main() {
                         },
 
                         photos: {
-                            create: {
-                                key: `https://i.pravatar.cc/300?u=${email}`,
+                            create: Array.from({ length: 2 + Math.floor(Math.random() * 3) }, (_, idx) => ({
+                                key: `https://i.pravatar.cc/300?u=${email}-${idx}`,
                                 description: '',
-                                position: 0
-                            }
+                                position: idx
+                            }))
                         },
 
                         tags: {
