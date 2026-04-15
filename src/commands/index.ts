@@ -10,6 +10,7 @@ import './discovery/skip';
 import './discovery/star';
 import './search/search';
 import './profile/get-profile';
+import './profile/get-user-profile';
 import './profile/update-profile';
 import './messaging/get-conversations';
 import './messaging/get-messages';
