@@ -17,7 +17,12 @@ registerCommand<WSRequest_GetSettings>('get-settings', async (client: Client): P
             payload: {
                 settings: {
                     language: (settings?.language ?? 'fr') as Language,
-                    theme: (settings?.theme ?? 'light') as Theme
+                    theme: (settings?.theme ?? 'light') as Theme,
+                    notifNewMatch: settings?.notifNewMatch ?? true,
+                    notifLikes: settings?.notifLikes ?? true,
+                    notifMessages: settings?.notifMessages ?? true,
+                    notifNearbyPeople: settings?.notifNearbyPeople ?? true,
+                    notifActivityReminders: settings?.notifActivityReminders ?? false
                 }
             }
         };

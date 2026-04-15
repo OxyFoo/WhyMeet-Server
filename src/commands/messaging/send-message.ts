@@ -72,11 +72,15 @@ registerCommand<WSRequest_SendMessage>(
                             })
                         )?.name ?? 'Someone';
 
-                    pushToUser(p.userId, {
-                        title: senderName,
-                        body: text.length > 100 ? text.slice(0, 100) + '…' : text,
-                        data: { type: 'message', conversationId }
-                    });
+                    pushToUser(
+                        p.userId,
+                        {
+                            title: senderName,
+                            body: text.length > 100 ? text.slice(0, 100) + '…' : text,
+                            data: { type: 'message', conversationId }
+                        },
+                        'message'
+                    );
                 }
             }
 

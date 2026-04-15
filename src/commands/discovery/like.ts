@@ -106,11 +106,15 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
                 }
 
                 if (!matchedUserOnline) {
-                    pushToUser(candidateId, {
-                        title: notification.title,
-                        body: notification.body,
-                        data: { type: 'match', conversationId: conversation.id }
-                    });
+                    pushToUser(
+                        candidateId,
+                        {
+                            title: notification.title,
+                            body: notification.body,
+                            data: { type: 'match', conversationId: conversation.id }
+                        },
+                        'match'
+                    );
                 }
             }
 
@@ -160,11 +164,15 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
         }
 
         if (!likedUserOnline) {
-            pushToUser(candidateId, {
-                title: likeNotif.title,
-                body: likeNotif.body,
-                data: { type: 'like' }
-            });
+            pushToUser(
+                candidateId,
+                {
+                    title: likeNotif.title,
+                    body: likeNotif.body,
+                    data: { type: 'like' }
+                },
+                'like'
+            );
         }
 
         logger.debug(`[Discovery] User ${client.userId} liked ${candidateId}`);

@@ -7,6 +7,14 @@ import { logger } from '@/config/logger';
 const VALID_LANGUAGES: Language[] = ['fr', 'en'];
 const VALID_THEMES: Theme[] = ['light', 'dark'];
 
+const NOTIF_KEYS = [
+    'notifNewMatch',
+    'notifLikes',
+    'notifMessages',
+    'notifNearbyPeople',
+    'notifActivityReminders'
+] as const;
+
 registerCommand<WSRequest_UpdateSettings>(
     'update-settings',
     async (client: Client, payload): Promise<WSResponse_UpdateSettings> => {
@@ -14,7 +22,10 @@ registerCommand<WSRequest_UpdateSettings>(
         const db = getDatabase();
 
         try {
-            if (data.language === undefined && data.theme === undefined) {
+            const hasLangOrTheme = data.language !== undefined || data.theme !== undefined;
+            const hasNotif = NOTIF_KEYS.some((k) => data[k] !== undefined);
+
+            if (!hasLangOrTheme && !hasNotif) {
                 return { command: 'update-settings', payload: { error: 'No settings provided' } };
             }
 
@@ -26,16 +37,32 @@ registerCommand<WSRequest_UpdateSettings>(
                 return { command: 'update-settings', payload: { error: 'Invalid theme' } };
             }
 
+            // Validate notif fields are booleans
+            for (const k of NOTIF_KEYS) {
+                if (data[k] !== undefined && typeof data[k] !== 'boolean') {
+                    return { command: 'update-settings', payload: { error: `Invalid value for ${k}` } };
+                }
+            }
+
+            const notifUpdate: Record<string, boolean> = {};
+            for (const k of NOTIF_KEYS) {
+                if (data[k] !== undefined) {
+                    notifUpdate[k] = data[k] as boolean;
+                }
+            }
+
             const updated = await db.settings.upsert({
                 where: { userId: client.userId },
                 update: {
                     ...(data.language !== undefined && { language: data.language }),
-                    ...(data.theme !== undefined && { theme: data.theme })
+                    ...(data.theme !== undefined && { theme: data.theme }),
+                    ...notifUpdate
                 },
                 create: {
                     userId: client.userId,
                     language: data.language ?? 'fr',
-                    theme: data.theme ?? 'light'
+                    theme: data.theme ?? 'light',
+                    ...notifUpdate
                 }
             });
 
@@ -45,7 +72,12 @@ registerCommand<WSRequest_UpdateSettings>(
                 payload: {
                     settings: {
                         language: updated.language as Language,
-                        theme: updated.theme as Theme
+                        theme: updated.theme as Theme,
+                        notifNewMatch: updated.notifNewMatch,
+                        notifLikes: updated.notifLikes,
+                        notifMessages: updated.notifMessages,
+                        notifNearbyPeople: updated.notifNearbyPeople,
+                        notifActivityReminders: updated.notifActivityReminders
                     }
                 }
             };

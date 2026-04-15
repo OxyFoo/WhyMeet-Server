@@ -80,11 +80,15 @@ registerCommand<WSRequest_Star>('star', async (client: Client, payload): Promise
 
                 if (!candidateOnline) {
                     const lang = await getUserLanguage(candidateId);
-                    pushToUser(candidateId, {
-                        title: t(lang, 'match_title'),
-                        body: t(lang, 'match_body', { name: currentUser.name }),
-                        data: { type: 'match', conversationId: conversation.id }
-                    });
+                    pushToUser(
+                        candidateId,
+                        {
+                            title: t(lang, 'match_title'),
+                            body: t(lang, 'match_body', { name: currentUser.name }),
+                            data: { type: 'match', conversationId: conversation.id }
+                        },
+                        'match'
+                    );
                 }
             }
 
@@ -97,6 +101,52 @@ registerCommand<WSRequest_Star>('star', async (client: Client, payload): Promise
             where: { userId: candidateId },
             data: { statVibes: { increment: 1 } }
         });
+
+        // Create a "star received" notification (shown like a like)
+        const starrerName =
+            (await db.user.findUnique({ where: { id: client.userId }, select: { name: true } }))?.name ?? 'Someone';
+        const starLang = await getUserLanguage(candidateId);
+        const starNotif = await db.notification.create({
+            data: {
+                userId: candidateId,
+                type: 'like',
+                title: t(starLang, 'like_title'),
+                body: t(starLang, 'like_body', { name: starrerName })
+            }
+        });
+
+        const onlineClients = getConnectedClients();
+        let starredUserOnline = false;
+        for (const c of onlineClients.values()) {
+            if (c.userId === candidateId) {
+                starredUserOnline = true;
+                c.send({
+                    event: 'notification',
+                    payload: {
+                        notification: {
+                            id: starNotif.id,
+                            type: 'like' as const,
+                            title: starNotif.title,
+                            body: starNotif.body,
+                            read: false,
+                            createdAt: starNotif.createdAt.toISOString()
+                        }
+                    }
+                });
+            }
+        }
+
+        if (!starredUserOnline) {
+            pushToUser(
+                candidateId,
+                {
+                    title: starNotif.title,
+                    body: starNotif.body,
+                    data: { type: 'like' }
+                },
+                'like'
+            );
+        }
 
         logger.debug(`[Discovery] User ${client.userId} starred ${candidateId}`);
         return { command: 'star', payload: { success: true } };

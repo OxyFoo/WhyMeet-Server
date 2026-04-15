@@ -58,6 +58,17 @@ registerCommand<WSRequest_AcceptRequest>(
             });
 
             if (currentUser) {
+                // Create persistent notification for the sender
+                const lang = await getUserLanguage(senderId);
+                const notification = await db.notification.create({
+                    data: {
+                        userId: senderId,
+                        type: 'match',
+                        title: t(lang, 'match_title'),
+                        body: t(lang, 'match_body', { name: currentUser.name })
+                    }
+                });
+
                 let senderOnline = false;
                 for (const c of connectedClients.values()) {
                     if (c.userId === senderId) {
@@ -69,16 +80,32 @@ registerCommand<WSRequest_AcceptRequest>(
                                 participant: mapUserToProfile(currentUser)
                             }
                         });
+                        c.send({
+                            event: 'notification',
+                            payload: {
+                                notification: {
+                                    id: notification.id,
+                                    type: 'match' as const,
+                                    title: notification.title,
+                                    body: notification.body,
+                                    read: false,
+                                    createdAt: notification.createdAt.toISOString()
+                                }
+                            }
+                        });
                     }
                 }
 
                 if (!senderOnline) {
-                    const lang = await getUserLanguage(senderId);
-                    pushToUser(senderId, {
-                        title: t(lang, 'match_title'),
-                        body: t(lang, 'match_body', { name: currentUser.name }),
-                        data: { type: 'match', conversationId: conversation.id }
-                    });
+                    pushToUser(
+                        senderId,
+                        {
+                            title: notification.title,
+                            body: notification.body,
+                            data: { type: 'match', conversationId: conversation.id }
+                        },
+                        'match'
+                    );
                 }
             }
 

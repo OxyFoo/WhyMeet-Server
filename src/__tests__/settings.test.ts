@@ -43,12 +43,30 @@ describe('get-settings command', () => {
 
         expect(result).toEqual({
             command: 'get-settings',
-            payload: { settings: { language: 'fr', theme: 'light' } }
+            payload: {
+                settings: {
+                    language: 'fr',
+                    theme: 'light',
+                    notifNewMatch: true,
+                    notifLikes: true,
+                    notifMessages: true,
+                    notifNearbyPeople: true,
+                    notifActivityReminders: false
+                }
+            }
         });
     });
 
     it('returns existing settings from the database', async () => {
-        mockSettingsFindUnique.mockResolvedValue({ language: 'en', theme: 'dark' });
+        mockSettingsFindUnique.mockResolvedValue({
+            language: 'en',
+            theme: 'dark',
+            notifNewMatch: true,
+            notifLikes: false,
+            notifMessages: true,
+            notifNearbyPeople: true,
+            notifActivityReminders: false
+        });
 
         const result = await routeCommand(fakeClient(), {
             command: 'get-settings',
@@ -57,7 +75,17 @@ describe('get-settings command', () => {
 
         expect(result).toEqual({
             command: 'get-settings',
-            payload: { settings: { language: 'en', theme: 'dark' } }
+            payload: {
+                settings: {
+                    language: 'en',
+                    theme: 'dark',
+                    notifNewMatch: true,
+                    notifLikes: false,
+                    notifMessages: true,
+                    notifNearbyPeople: true,
+                    notifActivityReminders: false
+                }
+            }
         });
     });
 
@@ -83,7 +111,15 @@ describe('update-settings command', () => {
     });
 
     it('updates language only', async () => {
-        mockSettingsUpsert.mockResolvedValue({ language: 'en', theme: 'light' });
+        mockSettingsUpsert.mockResolvedValue({
+            language: 'en',
+            theme: 'light',
+            notifNewMatch: true,
+            notifLikes: true,
+            notifMessages: true,
+            notifNearbyPeople: true,
+            notifActivityReminders: false
+        });
 
         const result = await routeCommand(fakeClient(), {
             command: 'update-settings',
@@ -98,12 +134,30 @@ describe('update-settings command', () => {
         );
         expect(result).toEqual({
             command: 'update-settings',
-            payload: { settings: { language: 'en', theme: 'light' } }
+            payload: {
+                settings: {
+                    language: 'en',
+                    theme: 'light',
+                    notifNewMatch: true,
+                    notifLikes: true,
+                    notifMessages: true,
+                    notifNearbyPeople: true,
+                    notifActivityReminders: false
+                }
+            }
         });
     });
 
     it('updates theme only', async () => {
-        mockSettingsUpsert.mockResolvedValue({ language: 'fr', theme: 'dark' });
+        mockSettingsUpsert.mockResolvedValue({
+            language: 'fr',
+            theme: 'dark',
+            notifNewMatch: true,
+            notifLikes: true,
+            notifMessages: true,
+            notifNearbyPeople: true,
+            notifActivityReminders: false
+        });
 
         const result = await routeCommand(fakeClient(), {
             command: 'update-settings',
@@ -118,12 +172,30 @@ describe('update-settings command', () => {
         );
         expect(result).toEqual({
             command: 'update-settings',
-            payload: { settings: { language: 'fr', theme: 'dark' } }
+            payload: {
+                settings: {
+                    language: 'fr',
+                    theme: 'dark',
+                    notifNewMatch: true,
+                    notifLikes: true,
+                    notifMessages: true,
+                    notifNearbyPeople: true,
+                    notifActivityReminders: false
+                }
+            }
         });
     });
 
     it('updates both language and theme', async () => {
-        mockSettingsUpsert.mockResolvedValue({ language: 'en', theme: 'dark' });
+        mockSettingsUpsert.mockResolvedValue({
+            language: 'en',
+            theme: 'dark',
+            notifNewMatch: true,
+            notifLikes: true,
+            notifMessages: true,
+            notifNearbyPeople: true,
+            notifActivityReminders: false
+        });
 
         const result = await routeCommand(fakeClient(), {
             command: 'update-settings',
@@ -132,7 +204,17 @@ describe('update-settings command', () => {
 
         expect(result).toEqual({
             command: 'update-settings',
-            payload: { settings: { language: 'en', theme: 'dark' } }
+            payload: {
+                settings: {
+                    language: 'en',
+                    theme: 'dark',
+                    notifNewMatch: true,
+                    notifLikes: true,
+                    notifMessages: true,
+                    notifNearbyPeople: true,
+                    notifActivityReminders: false
+                }
+            }
         });
     });
 

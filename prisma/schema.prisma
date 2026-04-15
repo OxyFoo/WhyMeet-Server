@@ -123,6 +123,13 @@ model Settings {
     visibilityMaxDistance Int      @default(50)
     visibilityRemoteMode  Boolean  @default(false)
 
+    // Notification preferences
+    notifNewMatch          Boolean @default(true)
+    notifLikes             Boolean @default(true)
+    notifMessages          Boolean @default(true)
+    notifNearbyPeople      Boolean @default(true)
+    notifActivityReminders Boolean @default(false)
+
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
     @@map("settings")

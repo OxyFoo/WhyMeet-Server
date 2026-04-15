@@ -32,21 +32,42 @@ function isUserOnline(userId: string): boolean {
     return false;
 }
 
+export type NotifType = 'match' | 'like' | 'message';
+
 interface PushPayload {
     title: string;
     body: string;
     data?: Record<string, string>;
 }
 
+const NOTIF_TYPE_TO_SETTING: Record<NotifType, string> = {
+    match: 'notifNewMatch',
+    like: 'notifLikes',
+    message: 'notifMessages'
+};
+
 /**
  * Send push notification to an offline user's devices.
- * Skips if user is currently connected via WS.
+ * Skips if user is currently connected via WS or has disabled the notification type.
  */
-export async function pushToUser(userId: string, payload: PushPayload): Promise<void> {
+export async function pushToUser(userId: string, payload: PushPayload, notifType?: NotifType): Promise<void> {
     if (isUserOnline(userId)) return;
     if (!ensureInitialized()) return;
 
     const db = getDatabase();
+
+    // Check user notification preferences
+    if (notifType) {
+        const settingKey = NOTIF_TYPE_TO_SETTING[notifType];
+        const settings = await db.settings.findUnique({
+            where: { userId },
+            select: { [settingKey]: true }
+        });
+        if (settings && settings[settingKey] === false) {
+            logger.debug(`[Push] Skipped (${notifType} disabled) for user ${userId}`);
+            return;
+        }
+    }
 
     const devices = await db.device.findMany({
         where: {
