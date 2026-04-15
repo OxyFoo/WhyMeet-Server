@@ -19,6 +19,8 @@ model User {
     banned            Boolean   @default(false)
     suspended         Boolean   @default(false)
     suspendedAt       DateTime?
+    deleted           Boolean   @default(false)
+    deletedAt         DateTime?
     appealMessage     String?   @db.VarChar(500)
     appealRequestedAt DateTime?
     preferredPeriod   String    @default("any")

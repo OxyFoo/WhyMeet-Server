@@ -38,7 +38,7 @@ registerCommand<WSRequest_GetConversations>(
             const conversations = participations
                 .filter((p) => {
                     const other = p.conversation.participants[0]?.user;
-                    return !other || (!other.banned && !other.suspended);
+                    return !other || (!other.banned && !other.suspended && !other.deleted);
                 })
                 .map((p) => {
                     const other = p.conversation.participants[0]?.user;

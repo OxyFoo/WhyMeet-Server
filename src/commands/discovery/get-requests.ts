@@ -40,7 +40,7 @@ registerCommand<WSRequest_GetRequests>('get-requests', async (client: Client): P
 
         const requests = receivedMatches
             .filter((m) => !actedOnIds.has(m.senderId))
-            .filter((m) => !m.sender.banned && !m.sender.suspended)
+            .filter((m) => !m.sender.banned && !m.sender.suspended && !m.sender.deleted)
             .map((m) => ({
                 id: m.id,
                 sender: {

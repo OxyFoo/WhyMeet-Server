@@ -2,7 +2,6 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_DeleteAccount, WSResponse_DeleteAccount } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
-import { deleteFile } from '@/services/storageService';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_DeleteAccount>(
@@ -14,8 +13,7 @@ registerCommand<WSRequest_DeleteAccount>(
         try {
             // Fetch the user's email for confirmation check
             const user = await db.user.findUnique({
-                where: { id: client.userId },
-                include: { photos: true }
+                where: { id: client.userId }
             });
             if (!user) {
                 return { command: 'delete-account', payload: { error: 'User not found' } };
@@ -26,15 +24,13 @@ registerCommand<WSRequest_DeleteAccount>(
                 return { command: 'delete-account', payload: { error: 'Confirmation does not match' } };
             }
 
-            // Delete all photos from S3
-            for (const photo of user.photos) {
-                deleteFile(photo.key).catch(() => {});
-            }
+            // Soft-delete: archive the account (data kept for moderation)
+            await db.user.update({
+                where: { id: client.userId },
+                data: { deleted: true, deletedAt: new Date() }
+            });
 
-            // Cascade delete: Prisma onDelete: Cascade handles all relations
-            await db.user.delete({ where: { id: client.userId } });
-
-            logger.info(`[Account] User deleted: ${client.userId} (${user.email})`);
+            logger.info(`[Account] User archived: ${client.userId} (${user.email})`);
 
             // Disconnect the client
             client.close(1000, 'Account deleted');

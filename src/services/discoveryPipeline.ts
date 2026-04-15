@@ -145,6 +145,7 @@ export async function runPipelineQuery(
         id: { notIn: setup.excludeIds },
         banned: false,
         suspended: false,
+        deleted: false,
         birthDate: { not: null },
         photos: { some: {} },
         tags: { some: {} },
