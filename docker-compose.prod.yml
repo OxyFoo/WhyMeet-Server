@@ -12,7 +12,7 @@ services:
       oxyfoo-network:
         ipv4_address: 172.16.0.10
       network-server-web:
-        ipv4_address: 170.16.0.20
+        ipv4_address: 170.16.0.40
     user: node
     volumes:
       - ./logs:/app/logs
