@@ -61,6 +61,7 @@ function prismaUser(id: string, overrides: Record<string, unknown> = {}) {
             spokenLanguages: ['fr']
         },
         tags: [{ type: 'interest', tag: { id: 't1', label: 'Hiking' } }],
+        _count: { receivedReports: 0 },
         ...overrides
     };
 }
@@ -89,6 +90,7 @@ describe('search command', () => {
         const where = mockFindMany.mock.calls[0][0].where;
         expect(where.id).toEqual({ notIn: ['me'] });
         expect(where.banned).toBe(false);
+        expect(where.suspended).toBe(false);
     });
 
     it('passes verified filter to query', async () => {

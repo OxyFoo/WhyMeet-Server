@@ -40,7 +40,7 @@ registerCommand<WSRequest_GetRequests>('get-requests', async (client: Client): P
 
         const requests = receivedMatches
             .filter((m) => !actedOnIds.has(m.senderId))
-            .filter((m) => !m.sender.banned)
+            .filter((m) => !m.sender.banned && !m.sender.suspended)
             .map((m) => ({
                 id: m.id,
                 sender: {
@@ -57,6 +57,8 @@ registerCommand<WSRequest_GetRequests>('get-requests', async (client: Client): P
                     })) as ProfilePhoto[],
                     city: m.sender.city,
                     verified: m.sender.verified,
+                    suspended: m.sender.suspended ?? false,
+                    banned: m.sender.banned ?? false,
                     preferredPeriod: (m.sender.preferredPeriod ?? 'any') as PreferredPeriod,
                     isPremium: false,
                     isBoosted: false

@@ -88,6 +88,8 @@ export function mapUserToProfile(user: {
     gender: string;
     city: string;
     verified: boolean;
+    suspended?: boolean;
+    banned?: boolean;
     preferredPeriod?: string;
     photos?: { id: string; key: string; description: string; position: number }[];
     profile?: {
@@ -120,6 +122,8 @@ export function mapUserToProfile(user: {
         })) as ProfilePhoto[],
         city: user.city,
         verified: user.verified,
+        suspended: user.suspended ?? false,
+        banned: user.banned ?? false,
         preferredPeriod: (user.preferredPeriod ?? 'any') as PreferredPeriod,
         isPremium: false,
         isBoosted: false,
@@ -195,6 +199,8 @@ export function mapUserToCandidate(
             })) as ProfilePhoto[],
             city: user.city,
             verified: user.verified,
+            suspended: user.suspended ?? false,
+            banned: user.banned ?? false,
             preferredPeriod: (user.preferredPeriod ?? 'any') as PreferredPeriod,
             isPremium: flags?.isPremium ?? false,
             isBoosted: flags?.isBoosted ?? false

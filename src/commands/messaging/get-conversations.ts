@@ -35,48 +35,57 @@ registerCommand<WSRequest_GetConversations>(
                 }
             });
 
-            const conversations = participations.map((p) => {
-                const other = p.conversation.participants[0]?.user;
-                const lastMsg = p.conversation.messages[0];
-                return {
-                    id: p.conversation.id,
-                    participant: other
-                        ? {
-                              id: other.id,
-                              name: other.name,
-                              age: computeAge(other.birthDate),
-                              birthDate: other.birthDate?.toISOString() ?? null,
-                              gender: (other.gender || 'male') as Gender,
-                              photos: (other.photos ?? []).map((p) => ({
-                                  id: p.id,
-                                  key: p.key,
-                                  description: p.description,
-                                  position: p.position
-                              })) as ProfilePhoto[],
-                              city: other.city,
-                              verified: other.verified,
-                              preferredPeriod: (other.preferredPeriod ?? 'any') as PreferredPeriod,
-                              isPremium: false,
-                              isBoosted: false
-                          }
-                        : {
-                              id: '',
-                              name: 'Unknown',
-                              age: 0,
-                              birthDate: null,
-                              gender: 'male' as Gender,
-                              photos: [] as ProfilePhoto[],
-                              city: '',
-                              verified: false,
-                              preferredPeriod: 'any' as PreferredPeriod,
-                              isPremium: false,
-                              isBoosted: false
-                          },
-                    lastMessage: lastMsg?.text,
-                    lastMessageTime: lastMsg?.timestamp.toISOString(),
-                    unreadCount: p.unreadCount
-                };
-            });
+            const conversations = participations
+                .filter((p) => {
+                    const other = p.conversation.participants[0]?.user;
+                    return !other || (!other.banned && !other.suspended);
+                })
+                .map((p) => {
+                    const other = p.conversation.participants[0]?.user;
+                    const lastMsg = p.conversation.messages[0];
+                    return {
+                        id: p.conversation.id,
+                        participant: other
+                            ? {
+                                  id: other.id,
+                                  name: other.name,
+                                  age: computeAge(other.birthDate),
+                                  birthDate: other.birthDate?.toISOString() ?? null,
+                                  gender: (other.gender || 'male') as Gender,
+                                  photos: (other.photos ?? []).map((p) => ({
+                                      id: p.id,
+                                      key: p.key,
+                                      description: p.description,
+                                      position: p.position
+                                  })) as ProfilePhoto[],
+                                  city: other.city,
+                                  verified: other.verified,
+                                  suspended: other.suspended ?? false,
+                                  banned: other.banned ?? false,
+                                  preferredPeriod: (other.preferredPeriod ?? 'any') as PreferredPeriod,
+                                  isPremium: false,
+                                  isBoosted: false
+                              }
+                            : {
+                                  id: '',
+                                  name: 'Unknown',
+                                  age: 0,
+                                  birthDate: null,
+                                  gender: 'male' as Gender,
+                                  photos: [] as ProfilePhoto[],
+                                  city: '',
+                                  verified: false,
+                                  suspended: false,
+                                  banned: false,
+                                  preferredPeriod: 'any' as PreferredPeriod,
+                                  isPremium: false,
+                                  isBoosted: false
+                              },
+                        lastMessage: lastMsg?.text,
+                        lastMessageTime: lastMsg?.timestamp.toISOString(),
+                        unreadCount: p.unreadCount
+                    };
+                });
 
             return { command: 'get-conversations', payload: { conversations } };
         } catch (error) {

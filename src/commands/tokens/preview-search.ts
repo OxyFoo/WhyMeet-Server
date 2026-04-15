@@ -82,6 +82,7 @@ registerCommand<WSRequest_PreviewSearch>(
             const where: Record<string, unknown> = {
                 id: { not: client.userId },
                 banned: false,
+                suspended: false,
                 birthDate: { not: null },
                 photos: { some: {} },
                 tags: { some: {} },
@@ -153,7 +154,7 @@ registerCommand<WSRequest_PreviewSearch>(
 
             const users = await db.user.findMany({
                 where,
-                include: candidateInclude,
+                include: { ...candidateInclude, _count: { select: { receivedReports: true } } },
                 take: 1000
             });
             const targetIntentions = filters.intentions ?? [];
@@ -192,7 +193,8 @@ registerCommand<WSRequest_PreviewSearch>(
                         verified: u.verified,
                         tagCount: (u.tags ?? []).length,
                         preferredPeriod: (u.preferredPeriod ?? 'any') as PreferredPeriod,
-                        socialVibe: (u.profile?.socialVibe ?? 'balanced') as SocialVibe
+                        socialVibe: (u.profile?.socialVibe ?? 'balanced') as SocialVibe,
+                        reportCount: u._count.receivedReports
                     };
                     const breakdown = computeMatchScore(scoringCtx, scoringCandidate);
                     candidate.score = breakdown.total;

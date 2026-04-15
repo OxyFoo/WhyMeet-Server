@@ -144,6 +144,7 @@ export async function runPipelineQuery(
     const where: Record<string, unknown> = {
         id: { notIn: setup.excludeIds },
         banned: false,
+        suspended: false,
         birthDate: { not: null },
         photos: { some: {} },
         tags: { some: {} },
@@ -209,7 +210,7 @@ export async function runPipelineQuery(
     // ── Fetch candidates (deterministic order for consistent results) ─
     const users = await db.user.findMany({
         where,
-        include: { ...candidateInclude },
+        include: { ...candidateInclude, _count: { select: { receivedReports: true } } },
         orderBy: { createdAt: 'desc' },
         take: fetchLimit
     });
@@ -249,7 +250,8 @@ export async function runPipelineQuery(
                 verified: u.verified,
                 tagCount: (u.tags ?? []).length,
                 preferredPeriod: (u.preferredPeriod ?? 'any') as PreferredPeriod,
-                socialVibe: (u.profile?.socialVibe ?? 'balanced') as SocialVibe
+                socialVibe: (u.profile?.socialVibe ?? 'balanced') as SocialVibe,
+                reportCount: u._count.receivedReports
             };
 
             const breakdown = computeMatchScore(scoringCtx, candidate);

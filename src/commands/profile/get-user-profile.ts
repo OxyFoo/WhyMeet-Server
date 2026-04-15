@@ -2,7 +2,7 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_GetUserProfile, WSResponse_GetUserProfile } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
-import { mapUserToCandidate, candidateInclude, profileInclude } from '@/services/userMapper';
+import { mapUserToCandidate, candidateInclude } from '@/services/userMapper';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_GetUserProfile>(

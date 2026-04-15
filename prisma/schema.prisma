@@ -9,17 +9,21 @@ datasource db {
 // ─── Auth & Users ───────────────────────────────────────────────────
 
 model User {
-    id              String    @id @default(cuid())
-    email           String    @unique
-    name            String    @default("")
-    birthDate       DateTime?
-    gender          String    @default("")
-    city            String    @default("")
-    verified        Boolean   @default(false)
-    banned          Boolean   @default(false)
-    preferredPeriod String    @default("any")
-    createdAt       DateTime  @default(now())
-    updatedAt       DateTime  @updatedAt
+    id                String    @id @default(cuid())
+    email             String    @unique
+    name              String    @default("")
+    birthDate         DateTime?
+    gender            String    @default("")
+    city              String    @default("")
+    verified          Boolean   @default(false)
+    banned            Boolean   @default(false)
+    suspended         Boolean   @default(false)
+    suspendedAt       DateTime?
+    appealMessage     String?   @db.VarChar(500)
+    appealRequestedAt DateTime?
+    preferredPeriod   String    @default("any")
+    createdAt         DateTime  @default(now())
+    updatedAt         DateTime  @updatedAt
 
     profile         Profile?
     settings        Settings?
@@ -35,6 +39,7 @@ model User {
     blockedBy       Block[]                   @relation("Blocked")
     sentReports     Report[]                  @relation("Reporter")
     receivedReports Report[]                  @relation("Reported")
+    ipLogs          IpLog[]
     subscription    Subscription?
     activeBoost     ActiveBoost?
     tokenBalance    TokenBalance?
@@ -53,11 +58,14 @@ model Device {
     os               String   @default("")
     pushToken        String?
     pushProvider     String? // "fcm"
+    lastIp           String?
     createdAt        DateTime @default(now())
     lastSeenAt       DateTime @default(now())
 
     userId String?
     user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    ipLogs IpLog[]
 
     @@index([userId])
     @@map("devices")
@@ -270,17 +278,35 @@ model Report {
     id         String   @id @default(cuid())
     reporterId String
     reportedId String
-    reason     String // "inappropriate" | "spam" | "harassment" | "fake" | "other"
-    details    String   @default("")
-    status     String   @default("pending") // "pending" | "reviewed" | "resolved"
+    reason     String // "spam" | "fake_profile" | "inappropriate" | "hate_speech" | "underage" | "other"
+    sourceType String   @default("profile") // "profile" | "conversation" | "activity"
+    sourceId   String?
+    message    String   @default("") @db.VarChar(500)
+    status     String   @default("pending") // "pending" | "reviewing" | "resolved_action_taken" | "resolved_no_action"
     createdAt  DateTime @default(now())
 
     reporter User @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
     reported User @relation("Reported", fields: [reportedId], references: [id], onDelete: Cascade)
 
+    @@unique([reporterId, reportedId])
     @@index([reportedId])
     @@index([status])
     @@map("reports")
+}
+
+model IpLog {
+    id        String   @id @default(cuid())
+    ip        String
+    userId    String
+    deviceId  String
+    createdAt DateTime @default(now())
+
+    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+    device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+    @@index([ip])
+    @@index([userId])
+    @@map("ip_logs")
 }
 
 // ─── Subscription & Monetization ────────────────────────────────────

@@ -75,6 +75,8 @@ function prismaUser(id: string, intentions: string[] = ['dating'], tagLabels: st
         photos: [],
         city: 'Paris',
         verified: true,
+        suspended: false,
+        banned: false,
         preferredPeriod: 'any',
         profile: {
             bio: 'bio',
@@ -90,7 +92,8 @@ function prismaUser(id: string, intentions: string[] = ['dating'], tagLabels: st
             intentions,
             spokenLanguages: ['fr']
         },
-        tags: tagLabels.map((label, i) => ({ type: 'interest', tag: { id: `t${i}`, label } }))
+        tags: tagLabels.map((label, i) => ({ type: 'interest', tag: { id: `t${i}`, label } })),
+        _count: { receivedReports: 0 }
     };
 }
 

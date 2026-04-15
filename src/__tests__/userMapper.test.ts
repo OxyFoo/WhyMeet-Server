@@ -56,6 +56,8 @@ describe('mapUserToProfile', () => {
             photos: [{ id: 'photo-1', key: 'photos/user-1/abc.webp', description: '', position: 0 }],
             city: 'Paris',
             verified: true,
+            suspended: false,
+            banned: false,
             preferredPeriod: 'any',
             isPremium: false,
             isBoosted: false,
@@ -138,6 +140,8 @@ describe('mapUserToCandidate', () => {
                 photos: [{ id: 'photo-1', key: 'photos/user-1/abc.webp', description: '', position: 0 }],
                 city: 'Paris',
                 verified: true,
+                suspended: false,
+                banned: false,
                 preferredPeriod: 'any',
                 isPremium: false,
                 isBoosted: false

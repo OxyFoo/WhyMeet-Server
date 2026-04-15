@@ -22,6 +22,7 @@ import './notifications/register-push-token';
 import './moderation/block-user';
 import './moderation/report-user';
 import './moderation/unmatch';
+import './moderation/appeal-suspension';
 import './settings/get-settings';
 import './settings/update-settings';
 import './settings/get-preferences';

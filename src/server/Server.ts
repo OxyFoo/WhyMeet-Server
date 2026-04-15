@@ -67,6 +67,13 @@ function onConnection(ws: WebSocket, req: http.IncomingMessage): void {
     const client = new Client(id, ws, ip, userId, deviceId);
     clients.set(id, client);
 
+    // Log IP asynchronously (non-blocking)
+    const db = getDatabase();
+    db.ipLog.create({ data: { ip, userId, deviceId } }).catch((err) => logger.warn('[Server] Failed to log IP', err));
+    db.device
+        .update({ where: { id: deviceId }, data: { lastIp: ip, lastSeenAt: new Date() } })
+        .catch((err) => logger.warn('[Server] Failed to update device IP', err));
+
     logger.info(`[Server] Client connected: ${id} (${ip}) — Total: ${clients.size}`);
 
     ws.on('message', async (raw: Buffer) => {
@@ -119,6 +126,24 @@ export function startServer(port: number): Promise<void> {
                     const device = await db.device.findUnique({ where: { id: payload.deviceId } });
                     if (!device || device.status !== 'active' || device.userId !== payload.userId) {
                         callback(false, 401, 'Device revoked or invalid');
+                        return;
+                    }
+
+                    // Check if the user is banned
+                    const user = await db.user.findUnique({ where: { id: payload.userId }, select: { banned: true } });
+                    if (user?.banned) {
+                        callback(false, 4003, 'Account banned');
+                        return;
+                    }
+
+                    // Check if this IP is associated with a banned user
+                    const clientIp = getClientIp(info.req);
+                    const bannedIpLog = await db.ipLog.findFirst({
+                        where: { ip: clientIp, user: { banned: true } }
+                    });
+                    if (bannedIpLog) {
+                        logger.warn(`[Server] Blocked connection from banned IP ${clientIp} (user ${payload.userId})`);
+                        callback(false, 4003, 'IP banned');
                         return;
                     }
 

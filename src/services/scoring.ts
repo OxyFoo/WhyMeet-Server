@@ -17,6 +17,7 @@ export interface ScoringCandidate {
     tagCount: number;
     preferredPeriod: PreferredPeriod;
     socialVibe: SocialVibe;
+    reportCount: number;
 }
 
 export interface ScoringContext {
@@ -118,6 +119,9 @@ function scoreAvailability(mine: PreferredPeriod, theirs: PreferredPeriod): numb
 }
 
 function scoreProfileQuality(candidate: ScoringCandidate): number {
+    // 5+ unique reports → quality score is 0
+    if (candidate.reportCount >= 5) return 0;
+
     let parts = 0; // out of 10
     if (candidate.bio.length >= 30) parts += 2;
     if (candidate.photoCount > 0) parts += 2;
