@@ -20,6 +20,8 @@ import './notifications/get-notifications';
 import './notifications/mark-notification-read';
 import './notifications/register-push-token';
 import './moderation/block-user';
+import './moderation/get-blocked-users';
+import './moderation/unblock-user';
 import './moderation/report-user';
 import './moderation/unmatch';
 import './moderation/appeal-suspension';
