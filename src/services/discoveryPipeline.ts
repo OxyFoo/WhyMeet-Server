@@ -126,21 +126,15 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
 }
 
 /**
- * Run the SQL query + scoring pipeline using a pre-built context.
- * `filters` override stored preferences (intentions, distance, remote, languages).
+ * Build the Prisma WHERE clause for the discovery pipeline.
+ * Extracted so it can be reused for both full queries and COUNT-only queries.
  */
-export async function runPipelineQuery(
+function buildPipelineWhere(
     setup: PipelineSetup,
     filters?: SearchFilters,
-    fetchLimit: number = 100
-): Promise<{ qualified: QualifiedCandidate[]; ctx: PipelineContext }> {
-    const db = getDatabase();
-
-    const prefMaxDistance = filters?.maxDistance ?? setup.storedMaxDistance;
-    const prefRemote = filters?.remote ?? setup.storedRemote;
-    const prefIntentions = filters?.intentions ?? (setup.storedIntentions?.length ? setup.storedIntentions : undefined);
-
-    // ── Hard filters (SQL) ───────────────────────────────────────
+    prefIntentions?: IntentionKey[],
+    prefRemote?: boolean
+): Record<string, unknown> {
     const where: Record<string, unknown> = {
         id: { notIn: setup.excludeIds },
         banned: false,
@@ -229,9 +223,42 @@ export async function runPipelineQuery(
                 }
             }
         ];
-        // Remove profile from root where to avoid conflict with the OR above
         delete where.profile;
     }
+
+    return where;
+}
+
+/**
+ * COUNT-only variant: returns the number of users matching the pipeline filters
+ * without fetching rows or running JS scoring. ~20-50× cheaper than runPipelineQuery.
+ * Counts may be slightly higher than qualified.length (no JS distance/score filtering)
+ * but are accurate enough for badge/indicator purposes.
+ */
+export async function countPipelineQuery(setup: PipelineSetup, filters?: SearchFilters): Promise<number> {
+    const db = getDatabase();
+    const prefIntentions = filters?.intentions ?? (setup.storedIntentions?.length ? setup.storedIntentions : undefined);
+    const prefRemote = filters?.remote ?? setup.storedRemote;
+    const where = buildPipelineWhere(setup, filters, prefIntentions, prefRemote);
+    return db.user.count({ where });
+}
+
+/**
+ * Run the SQL query + scoring pipeline using a pre-built context.
+ * `filters` override stored preferences (intentions, distance, remote, languages).
+ */
+export async function runPipelineQuery(
+    setup: PipelineSetup,
+    filters?: SearchFilters,
+    fetchLimit: number = 100
+): Promise<{ qualified: QualifiedCandidate[]; ctx: PipelineContext }> {
+    const db = getDatabase();
+
+    const prefMaxDistance = filters?.maxDistance ?? setup.storedMaxDistance;
+    const prefRemote = filters?.remote ?? setup.storedRemote;
+    const prefIntentions = filters?.intentions ?? (setup.storedIntentions?.length ? setup.storedIntentions : undefined);
+
+    const where = buildPipelineWhere(setup, filters, prefIntentions, prefRemote);
 
     // ── Fetch candidates (deterministic order for consistent results) ─
     const users = await db.user.findMany({
