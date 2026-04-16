@@ -5,11 +5,17 @@ import { getDatabase } from '@/services/database';
 import { getConnectedClients } from '@/server/Server';
 import { pushToUser } from '@/services/pushService';
 import { logger } from '@/config/logger';
+import { sendMessageSchema } from '@/config/validation';
 
 registerCommand<WSRequest_SendMessage>(
     'send-message',
     async (client: Client, payload): Promise<WSResponse_SendMessage> => {
-        const { conversationId, text } = payload;
+        const parsed = sendMessageSchema.safeParse(payload);
+        if (!parsed.success) {
+            const msg = parsed.error.errors[0]?.message ?? 'Invalid payload';
+            return { command: 'send-message', payload: { error: msg } };
+        }
+        const { conversationId, text } = parsed.data;
         const db = getDatabase();
 
         try {

@@ -187,6 +187,15 @@ uploadRouter.post('/reorder-photos', uploadLimiter, async (req, res) => {
         return;
     }
 
+    // Validate positions: must be non-negative integers, unique, and cover [0, n-1]
+    const positions = photos.map((p) => p.position);
+    const validPositions = positions.every((pos) => Number.isInteger(pos) && pos >= 0 && pos < photos.length);
+    const uniquePositions = new Set(positions).size === positions.length;
+    if (!validPositions || !uniquePositions) {
+        res.status(400).json({ error: 'Invalid photo positions' });
+        return;
+    }
+
     try {
         // Verify all photos belong to user
         const userPhotos = await db.profilePhoto.findMany({ where: { userId } });

@@ -7,6 +7,7 @@ import { mapUserToProfile, profileInclude, computeAge } from '@/services/userMap
 import { ensureTagEmbedding } from '@/services/embedding';
 import { discretizePosition } from '@/services/geoUtils';
 import { logger } from '@/config/logger';
+import { validateProfileData } from '@/config/validation';
 
 const TAG_MAX_LENGTH = 40;
 
@@ -85,11 +86,18 @@ registerCommand<WSRequest_UpdateProfile>(
         const { data } = payload;
         const db = getDatabase();
 
+        // ─── Input validation ─────────────────────────────────────────────────
+        const validationError = validateProfileData(data as Record<string, unknown>);
+        if (validationError) {
+            return { command: 'update-profile', payload: { error: validationError } };
+        }
+        // ─────────────────────────────────────────────────────────────────────
+
         try {
             await db.$transaction(async (tx) => {
                 // Update user base fields
                 const userData: Record<string, unknown> = {};
-                if (data.name !== undefined) userData.name = data.name;
+                if (data.name !== undefined) userData.name = (data.name as string).trim();
                 if (data.birthDate !== undefined) {
                     if (data.birthDate === null) {
                         userData.birthDate = null;
