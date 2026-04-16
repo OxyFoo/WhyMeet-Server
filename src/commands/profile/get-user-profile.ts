@@ -40,17 +40,22 @@ registerCommand<WSRequest_GetUserProfile>(
                 return { command: 'get-user-profile', payload: { error: 'User not found' } };
             }
 
-            // Fetch current user's profile for distance calculation
-            const currentUser = await db.user.findUnique({
-                where: { id: client.userId },
-                include: { profile: true }
-            });
+            // Parallel: current user profile (distance) + interaction checks
+            const [currentUser, existingMatch, existingReport] = await Promise.all([
+                db.user.findUnique({ where: { id: client.userId }, include: { profile: true } }),
+                db.match.findFirst({ where: { senderId: client.userId, receiverId: userId } }),
+                db.report.findFirst({ where: { reporterId: client.userId, reportedId: userId } })
+            ]);
 
             const refLatLng = currentUser?.profile
                 ? { latitude: currentUser.profile.latitude, longitude: currentUser.profile.longitude }
                 : undefined;
 
             const candidate = mapUserToCandidate(targetUser, undefined, refLatLng);
+
+            if (existingMatch || existingReport) {
+                candidate.alreadyInteracted = true;
+            }
 
             return { command: 'get-user-profile', payload: { candidate } };
         } catch (error) {
