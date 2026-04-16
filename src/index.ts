@@ -5,6 +5,7 @@ import { connectDatabase, disconnectDatabase } from '@/services/database';
 import { initStorage } from '@/services/storageService';
 import { startServer, stopServer } from '@/server/Server';
 import { getRegisteredCommands } from '@/server/Router';
+import { startActivityNotifScheduler, stopActivityNotifScheduler } from '@/services/activityNotifScheduler';
 
 // Register all commands
 import '@/commands';
@@ -28,6 +29,10 @@ async function main(): Promise<void> {
 
     // Start WebSocket server
     await startServer(env.LISTEN_PORT_WS);
+
+    // Start activity notification scheduler
+    startActivityNotifScheduler();
+
     logger.success(`[Main] All services started successfully`);
 }
 
@@ -38,6 +43,7 @@ async function onExit(): Promise<void> {
     exited = true;
 
     logger.info('[Main] Shutting down...');
+    stopActivityNotifScheduler();
     await stopServer();
     await disconnectDatabase();
     logger.info('[Main] Goodbye');

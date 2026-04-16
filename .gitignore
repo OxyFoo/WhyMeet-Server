@@ -2,8 +2,6 @@
 node_modules/
 dist/
 logs/
-.env
-.env.dev
-.env.prod
-.env.local
+.env*
+!.env.template
 *.tsbuildinfo

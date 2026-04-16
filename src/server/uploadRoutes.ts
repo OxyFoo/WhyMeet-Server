@@ -253,6 +253,73 @@ uploadRouter.patch('/photo/:id', uploadLimiter, async (req, res) => {
     }
 });
 
+const MAX_ACTIVITY_PHOTOS = 5;
+
+/**
+ * POST /upload/activity-photo
+ * Headers: x-device-uuid, x-session-token
+ * Body: multipart form-data with "photo" field + "activityId" text field
+ * Returns: { photo: { id, key, position } }
+ */
+uploadRouter.post('/activity-photo', uploadLimiter, upload.single('photo'), async (req, res) => {
+    const auth = await authenticateDevice(req, res);
+    if (!auth) return;
+    const { userId, db } = auth;
+
+    const activityId = typeof req.body.activityId === 'string' ? req.body.activityId : '';
+    if (!activityId) {
+        res.status(400).json({ error: 'Missing activityId' });
+        return;
+    }
+
+    if (!req.file) {
+        res.status(400).json({ error: 'No file provided' });
+        return;
+    }
+
+    try {
+        // Verify user is the activity host
+        const activity = await db.activity.findUnique({ where: { id: activityId } });
+        if (!activity || activity.hostId !== userId) {
+            res.status(403).json({ error: 'Only the host can upload photos' });
+            return;
+        }
+
+        const count = await db.activityPhoto.count({ where: { activityId } });
+        if (count >= MAX_ACTIVITY_PHOTOS) {
+            res.status(400).json({ error: `Maximum ${MAX_ACTIVITY_PHOTOS} photos allowed` });
+            return;
+        }
+
+        const processed = await sharp(req.file.buffer)
+            .resize(1200, 800, { fit: 'cover', withoutEnlargement: true })
+            .webp({ quality: 80 })
+            .toBuffer();
+
+        const key = `activities/${activityId}/${crypto.randomUUID()}.webp`;
+
+        const storedKey = await uploadFile(processed, key, 'image/webp');
+        if (!storedKey) {
+            res.status(503).json({ error: 'Storage service unavailable' });
+            return;
+        }
+
+        const photo = await db.activityPhoto.create({
+            data: {
+                activityId,
+                key: storedKey,
+                position: count
+            }
+        });
+
+        logger.info(`[Upload] Activity photo added for activity ${activityId} by user ${userId}`);
+        res.json({ photo: { id: photo.id, key: photo.key, position: photo.position } });
+    } catch (error) {
+        logger.error('[Upload] Activity photo upload error', error);
+        res.status(500).json({ error: 'Upload failed' });
+    }
+});
+
 // Handle multer errors (file too large, etc.)
 uploadRouter.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof multer.MulterError) {

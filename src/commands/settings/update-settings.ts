@@ -12,7 +12,8 @@ const NOTIF_KEYS = [
     'notifLikes',
     'notifMessages',
     'notifNearbyPeople',
-    'notifActivityReminders'
+    'notifActivityReminder24h',
+    'notifActivityReminder1h'
 ] as const;
 
 registerCommand<WSRequest_UpdateSettings>(
@@ -77,7 +78,8 @@ registerCommand<WSRequest_UpdateSettings>(
                         notifLikes: updated.notifLikes,
                         notifMessages: updated.notifMessages,
                         notifNearbyPeople: updated.notifNearbyPeople,
-                        notifActivityReminders: updated.notifActivityReminders
+                        notifActivityReminder24h: updated.notifActivityReminder24h,
+                        notifActivityReminder1h: updated.notifActivityReminder1h
                     }
                 }
             };

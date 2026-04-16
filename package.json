@@ -10,7 +10,7 @@
         "build": "tsc && tsc-alias",
         "dev": "npx prisma db push && tsx src/index.ts",
         "typecheck": "tsc --noEmit",
-        "lint": "eslint ./src/",
+        "lint": "eslint ./src/ ./prisma/",
         "lint:fix": "eslint ./src/ --fix",
         "format": "prettier --check 'src/**/*.{ts,tsx}'",
         "format:fix": "prettier --write 'src/**/*.{ts,tsx}'",

@@ -27,25 +27,28 @@ model User {
     createdAt         DateTime  @default(now())
     updatedAt         DateTime  @updatedAt
 
-    profile         Profile?
-    settings        Settings?
-    devices         Device[]
-    photos          ProfilePhoto[]
-    tags            UserTag[]
-    sentMatches     Match[]                   @relation("MatchSender")
-    receivedMatches Match[]                   @relation("MatchReceiver")
-    messages        Message[]
-    notifications   Notification[]
-    conversations   ConversationParticipant[]
-    blockedUsers    Block[]                   @relation("Blocker")
-    blockedBy       Block[]                   @relation("Blocked")
-    sentReports     Report[]                  @relation("Reporter")
-    receivedReports Report[]                  @relation("Reported")
-    ipLogs          IpLog[]
-    subscription    Subscription?
-    activeBoost     ActiveBoost?
-    tokenBalance    TokenBalance?
-    swipeQuota      SwipeQuota?
+    profile                Profile?
+    settings               Settings?
+    devices                Device[]
+    photos                 ProfilePhoto[]
+    tags                   UserTag[]
+    sentMatches            Match[]                   @relation("MatchSender")
+    receivedMatches        Match[]                   @relation("MatchReceiver")
+    messages               Message[]
+    notifications          Notification[]
+    conversations          ConversationParticipant[]
+    blockedUsers           Block[]                   @relation("Blocker")
+    blockedBy              Block[]                   @relation("Blocked")
+    sentReports            Report[]                  @relation("Reporter")
+    receivedReports        Report[]                  @relation("Reported")
+    ipLogs                 IpLog[]
+    subscription           Subscription?
+    activeBoost            ActiveBoost?
+    tokenBalance           TokenBalance?
+    swipeQuota             SwipeQuota?
+    hostedActivities       Activity[]                @relation("ActivityHost")
+    activityParticipations ActivityParticipant[]
+    activityReports        ActivityReport[]
 
     @@map("users")
 }
@@ -126,11 +129,12 @@ model Settings {
     visibilityRemoteMode  Boolean  @default(false)
 
     // Notification preferences
-    notifNewMatch          Boolean @default(true)
-    notifLikes             Boolean @default(true)
-    notifMessages          Boolean @default(true)
-    notifNearbyPeople      Boolean @default(true)
-    notifActivityReminders Boolean @default(false)
+    notifNewMatch            Boolean @default(true)
+    notifLikes               Boolean @default(true)
+    notifMessages            Boolean @default(true)
+    notifNearbyPeople        Boolean @default(true)
+    notifActivityReminder24h Boolean @default(true)
+    notifActivityReminder1h  Boolean @default(true)
 
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -212,10 +216,12 @@ model Match {
 
 model Conversation {
     id        String   @id @default(cuid())
+    isGroup   Boolean  @default(false)
     createdAt DateTime @default(now())
 
     participants ConversationParticipant[]
     messages     Message[]
+    activity     Activity?
 
     @@map("conversations")
 }
@@ -253,13 +259,14 @@ model Message {
 // ─── Notifications ──────────────────────────────────────────────────
 
 model Notification {
-    id        String   @id @default(cuid())
-    userId    String
-    type      String // match, message, like, system
-    title     String
-    body      String
-    read      Boolean  @default(false)
-    createdAt DateTime @default(now())
+    id         String   @id @default(cuid())
+    userId     String
+    type       String // match, message, like, system, activity_reminder
+    title      String
+    body       String
+    read       Boolean  @default(false)
+    activityId String?
+    createdAt  DateTime @default(now())
 
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -369,4 +376,95 @@ model SwipeQuota {
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
     @@map("swipe_quotas")
+}
+
+// ─── Activities ─────────────────────────────────────────────────────
+
+model Activity {
+    id              String    @id @default(cuid())
+    hostId          String
+    title           String
+    description     String    @default("")
+    category        String // InterestCategoryKey
+    dateTime        DateTime?
+    locationName    String    @default("")
+    latitude        Float?
+    longitude       Float?
+    maxParticipants Int?
+    isCancelled     Boolean   @default(false)
+    isArchived      Boolean   @default(false)
+    conversationId  String?   @unique
+    createdAt       DateTime  @default(now())
+    updatedAt       DateTime  @updatedAt
+
+    host            User                     @relation("ActivityHost", fields: [hostId], references: [id], onDelete: Cascade)
+    conversation    Conversation?            @relation(fields: [conversationId], references: [id])
+    participants    ActivityParticipant[]
+    photos          ActivityPhoto[]
+    reports         ActivityReport[]
+    scheduledNotifs ActivityScheduledNotif[]
+
+    @@index([hostId])
+    @@index([category])
+    @@index([dateTime])
+    @@map("activities")
+}
+
+model ActivityParticipant {
+    id         String   @id @default(cuid())
+    activityId String
+    userId     String
+    joinedAt   DateTime @default(now())
+
+    activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+    user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@unique([activityId, userId])
+    @@index([userId])
+    @@map("activity_participants")
+}
+
+model ActivityPhoto {
+    id         String   @id @default(cuid())
+    activityId String
+    key        String // S3 object key
+    position   Int      @default(0)
+    createdAt  DateTime @default(now())
+
+    activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+    @@index([activityId])
+    @@map("activity_photos")
+}
+
+model ActivityReport {
+    id         String   @id @default(cuid())
+    reporterId String
+    activityId String
+    reason     String // ReportReason
+    message    String   @default("") @db.VarChar(500)
+    status     String   @default("pending")
+    createdAt  DateTime @default(now())
+
+    reporter User     @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+    activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+    @@unique([reporterId, activityId])
+    @@index([activityId])
+    @@map("activity_reports")
+}
+
+model ActivityScheduledNotif {
+    id          String    @id @default(cuid())
+    activityId  String
+    type        String // "24h" | "1h"
+    scheduledAt DateTime
+    sent        Boolean   @default(false)
+    sentAt      DateTime?
+
+    activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+    @@unique([activityId, type])
+    @@index([scheduledAt, sent])
+    @@map("activity_scheduled_notifs")
 }

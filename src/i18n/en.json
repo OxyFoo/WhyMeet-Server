@@ -2,5 +2,11 @@
     "match_title": "New Match!",
     "match_body": "You matched with {name}",
     "like_title": "Someone likes you!",
-    "like_body": "{name} liked your profile"
+    "like_body": "{name} liked your profile",
+    "activity_reminder_24h_title": "Activity reminder – tomorrow",
+    "activity_reminder_24h_body": "{title} is in 24 hours",
+    "activity_reminder_1h_title": "Activity starting soon!",
+    "activity_reminder_1h_body": "{title} starts in 1 hour",
+    "activity_cancelled_title": "Activity cancelled",
+    "activity_cancelled_body": "{title} has been cancelled by the host"
 }

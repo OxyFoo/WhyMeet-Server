@@ -51,7 +51,8 @@ describe('get-settings command', () => {
                     notifLikes: true,
                     notifMessages: true,
                     notifNearbyPeople: true,
-                    notifActivityReminders: false
+                    notifActivityReminder24h: true,
+                    notifActivityReminder1h: true
                 }
             }
         });
@@ -65,7 +66,8 @@ describe('get-settings command', () => {
             notifLikes: false,
             notifMessages: true,
             notifNearbyPeople: true,
-            notifActivityReminders: false
+            notifActivityReminder24h: true,
+            notifActivityReminder1h: true
         });
 
         const result = await routeCommand(fakeClient(), {
@@ -83,7 +85,8 @@ describe('get-settings command', () => {
                     notifLikes: false,
                     notifMessages: true,
                     notifNearbyPeople: true,
-                    notifActivityReminders: false
+                    notifActivityReminder24h: true,
+                    notifActivityReminder1h: true
                 }
             }
         });
@@ -118,7 +121,8 @@ describe('update-settings command', () => {
             notifLikes: true,
             notifMessages: true,
             notifNearbyPeople: true,
-            notifActivityReminders: false
+            notifActivityReminder24h: true,
+            notifActivityReminder1h: true
         });
 
         const result = await routeCommand(fakeClient(), {
@@ -142,7 +146,8 @@ describe('update-settings command', () => {
                     notifLikes: true,
                     notifMessages: true,
                     notifNearbyPeople: true,
-                    notifActivityReminders: false
+                    notifActivityReminder24h: true,
+                    notifActivityReminder1h: true
                 }
             }
         });
@@ -156,7 +161,8 @@ describe('update-settings command', () => {
             notifLikes: true,
             notifMessages: true,
             notifNearbyPeople: true,
-            notifActivityReminders: false
+            notifActivityReminder24h: true,
+            notifActivityReminder1h: true
         });
 
         const result = await routeCommand(fakeClient(), {
@@ -180,7 +186,8 @@ describe('update-settings command', () => {
                     notifLikes: true,
                     notifMessages: true,
                     notifNearbyPeople: true,
-                    notifActivityReminders: false
+                    notifActivityReminder24h: true,
+                    notifActivityReminder1h: true
                 }
             }
         });
@@ -194,7 +201,8 @@ describe('update-settings command', () => {
             notifLikes: true,
             notifMessages: true,
             notifNearbyPeople: true,
-            notifActivityReminders: false
+            notifActivityReminder24h: true,
+            notifActivityReminder1h: true
         });
 
         const result = await routeCommand(fakeClient(), {
@@ -212,7 +220,8 @@ describe('update-settings command', () => {
                     notifLikes: true,
                     notifMessages: true,
                     notifNearbyPeople: true,
-                    notifActivityReminders: false
+                    notifActivityReminder24h: true,
+                    notifActivityReminder1h: true
                 }
             }
         });

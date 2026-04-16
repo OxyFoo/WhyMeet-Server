@@ -22,7 +22,8 @@ registerCommand<WSRequest_GetSettings>('get-settings', async (client: Client): P
                     notifLikes: settings?.notifLikes ?? true,
                     notifMessages: settings?.notifMessages ?? true,
                     notifNearbyPeople: settings?.notifNearbyPeople ?? true,
-                    notifActivityReminders: settings?.notifActivityReminders ?? false
+                    notifActivityReminder24h: settings?.notifActivityReminder24h ?? true,
+                    notifActivityReminder1h: settings?.notifActivityReminder1h ?? true
                 }
             }
         };

@@ -467,7 +467,154 @@ async function main() {
         }
     }
 
-    console.log(`\n🎉 Seed complete: ${created} users created`);
+    console.log(`\n🎉 User seed complete: ${created} users created`);
+
+    // 4. Create sample activities
+    const ACTIVITY_TEMPLATES: { title: string; category: string; description: string }[] = [
+        {
+            title: 'Foot au parc',
+            category: 'sports',
+            description: "Match amical au parc de la Tête d'Or, tous niveaux bienvenus !"
+        },
+        { title: 'Session running', category: 'sports', description: 'On court 5-10km, rythme modéré. RDV à 8h.' },
+        {
+            title: 'Jam session acoustique',
+            category: 'music',
+            description: 'Ramène ta guitare ou ton ukulélé, on joue ensemble !'
+        },
+        {
+            title: 'Concert indie',
+            category: 'music',
+            description: 'On va voir un concert au Transbordeur, qui vient ?'
+        },
+        { title: 'Soirée bar', category: 'nightlife', description: 'Apéro décontracté dans le Vieux Lyon.' },
+        {
+            title: 'Soirée salsa',
+            category: 'nightlife',
+            description: "Cours de salsa pour débutants suivi d'une soirée dansante."
+        },
+        {
+            title: 'Tournoi Mario Kart',
+            category: 'gaming',
+            description: 'Switch + écran géant, 8 joueurs max. Bring your joy-cons !'
+        },
+        {
+            title: 'Session D&D',
+            category: 'gaming',
+            description: 'One-shot pour joueurs débutants ou expérimentés. MJ fourni.'
+        },
+        {
+            title: 'Brunch découverte',
+            category: 'food',
+            description: 'On teste un nouveau brunch spot chaque weekend.'
+        },
+        {
+            title: 'Atelier cuisine thaï',
+            category: 'food',
+            description: 'On prépare un pad thaï ensemble, ingrédients partagés.'
+        },
+        { title: 'Visite musée', category: 'culture', description: 'Exposition temporaire au musée des Beaux-Arts.' },
+        { title: 'Ciné-club', category: 'culture', description: 'Film + discussion après, thème: cinéma coréen.' },
+        {
+            title: 'Randonnée Mont Pilat',
+            category: 'outdoors',
+            description: 'Rando de 15km, dénivelé modéré. Vue magnifique !'
+        },
+        {
+            title: 'Escalade en salle',
+            category: 'outdoors',
+            description: 'Session bloc à Climbing District, tous niveaux.'
+        },
+        { title: 'Yoga au parc', category: 'wellness', description: 'Hatha yoga en plein air, apporte ton tapis.' },
+        {
+            title: 'Méditation guidée',
+            category: 'wellness',
+            description: 'Session de 45min pour débutants, ambiance zen.'
+        },
+        { title: 'Weekend Annecy', category: 'travel', description: 'Covoiturage pour un weekend au bord du lac.' },
+        { title: 'Exploration urbaine', category: 'travel', description: 'Découverte de spots cachés dans la ville.' },
+        { title: 'Atelier aquarelle', category: 'creative', description: 'Peinture en plein air, matériel fourni.' },
+        { title: 'Photo walk', category: 'creative', description: 'Balade photo streetart, tous appareils bienvenus.' },
+        { title: 'Meetup dev', category: 'learning', description: 'Talk + live coding, thème: React Native.' },
+        { title: 'Échange linguistique', category: 'learning', description: 'FR/EN conversation exchange, bar sympa.' }
+    ];
+
+    // Fetch some seed users to be activity hosts
+    const seedUsers = await prisma.user.findMany({
+        where: { email: { endsWith: '@seed.whymeet.dev' } },
+        select: { id: true, city: true },
+        take: 100
+    });
+
+    if (seedUsers.length > 0) {
+        let activityCount = 0;
+        for (const template of ACTIVITY_TEMPLATES) {
+            const host = pick(seedUsers);
+            const coords = CITY_COORDS[host.city] ?? { lat: 45.75, lng: 4.85 };
+            const lat = coords.lat + (Math.random() - 0.5) * 0.05;
+            const lng = coords.lng + (Math.random() - 0.5) * 0.05;
+            const date = new Date(Date.now() + (1 + Math.floor(Math.random() * 14)) * 86400000);
+            const maxParticipants = 4 + Math.floor(Math.random() * 16);
+
+            // Create group conversation first
+            const conversation = await prisma.conversation.create({
+                data: {
+                    isGroup: true,
+                    participants: { create: { userId: host.id } }
+                }
+            });
+
+            const activity = await prisma.activity.create({
+                data: {
+                    title: template.title,
+                    description: template.description,
+                    category: template.category,
+                    locationName: host.city,
+                    latitude: lat,
+                    longitude: lng,
+                    dateTime: date,
+                    maxParticipants,
+                    hostId: host.id,
+                    conversationId: conversation.id,
+                    participants: {
+                        create: {
+                            userId: host.id
+                        }
+                    }
+                }
+            });
+
+            // Add 1-5 random participants
+            const participantCount = 1 + Math.floor(Math.random() * 5);
+            const otherUsers = seedUsers.filter((u) => u.id !== host.id);
+            const participants = pickN(
+                otherUsers.map((u) => u.id),
+                1,
+                Math.min(participantCount, otherUsers.length)
+            );
+            for (const userId of participants) {
+                await prisma.activityParticipant
+                    .create({
+                        data: { activityId: activity.id, userId }
+                    })
+                    .catch(() => {}); // skip if already exists
+
+                // Also add to group conversation
+                await prisma.conversationParticipant
+                    .create({
+                        data: { conversationId: conversation.id, userId }
+                    })
+                    .catch(() => {});
+            }
+
+            activityCount++;
+        }
+        console.log(`  ✅ ${activityCount} activities created`);
+    } else {
+        console.log('  ⚠️  No seed users found, skipping activities');
+    }
+
+    console.log('\n🎉 Seed complete!');
 }
 
 main()

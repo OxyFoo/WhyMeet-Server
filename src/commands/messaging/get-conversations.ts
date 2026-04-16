@@ -3,13 +3,56 @@ import type { Client } from '@/server/Client';
 import type {
     WSRequest_GetConversations,
     WSResponse_GetConversations,
+    Conversation,
     Gender,
     PreferredPeriod,
     ProfilePhoto
 } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
+import type { Prisma } from '@prisma/client';
 import { computeAge } from '@/services/userMapper';
 import { logger } from '@/config/logger';
+
+type UserWithPhotos = Prisma.UserGetPayload<{ include: { photos: true } }>;
+
+function mapUser(u: UserWithPhotos) {
+    return {
+        id: u.id,
+        name: u.name,
+        age: computeAge(u.birthDate),
+        birthDate: u.birthDate?.toISOString() ?? null,
+        gender: (u.gender || 'male') as Gender,
+        photos: (u.photos ?? []).map((p) => ({
+            id: p.id,
+            key: p.key,
+            description: p.description,
+            position: p.position
+        })),
+        city: u.city,
+        verified: u.verified,
+        suspended: u.suspended ?? false,
+        banned: u.banned ?? false,
+        preferredPeriod: (u.preferredPeriod ?? 'any') as PreferredPeriod,
+        isPremium: false,
+        isBoosted: false
+    };
+}
+
+const UNKNOWN_USER = {
+    id: '',
+    name: 'Unknown',
+    age: 0,
+    birthDate: null,
+    gender: 'male' as Gender,
+    photos: [] as ProfilePhoto[],
+    city: '',
+    verified: false,
+    suspended: false,
+    banned: false,
+    preferredPeriod: 'any' as PreferredPeriod,
+    isPremium: false,
+    isBoosted: false
+};
 
 registerCommand<WSRequest_GetConversations>(
     'get-conversations',
@@ -23,67 +66,57 @@ registerCommand<WSRequest_GetConversations>(
                     conversation: {
                         include: {
                             participants: {
-                                where: { userId: { not: client.userId } },
                                 include: { user: { include: { photos: { orderBy: { position: 'asc' } } } } }
                             },
                             messages: {
                                 orderBy: { timestamp: 'desc' },
                                 take: 1
+                            },
+                            activity: {
+                                select: { id: true, title: true, isCancelled: true }
                             }
                         }
                     }
                 }
             });
 
-            const conversations = participations
+            const conversations: Conversation[] = participations
                 .filter((p) => {
-                    const other = p.conversation.participants[0]?.user;
+                    if (p.conversation.isGroup) return true;
+                    const other = p.conversation.participants.find((pp) => pp.userId !== client.userId)?.user;
                     return !other || (!other.banned && !other.suspended && !other.deleted);
                 })
                 .map((p) => {
-                    const other = p.conversation.participants[0]?.user;
-                    const lastMsg = p.conversation.messages[0];
-                    return {
-                        id: p.conversation.id,
-                        participant: other
-                            ? {
-                                  id: other.id,
-                                  name: other.name,
-                                  age: computeAge(other.birthDate),
-                                  birthDate: other.birthDate?.toISOString() ?? null,
-                                  gender: (other.gender || 'male') as Gender,
-                                  photos: (other.photos ?? []).map((p) => ({
-                                      id: p.id,
-                                      key: p.key,
-                                      description: p.description,
-                                      position: p.position
-                                  })) as ProfilePhoto[],
-                                  city: other.city,
-                                  verified: other.verified,
-                                  suspended: other.suspended ?? false,
-                                  banned: other.banned ?? false,
-                                  preferredPeriod: (other.preferredPeriod ?? 'any') as PreferredPeriod,
-                                  isPremium: false,
-                                  isBoosted: false
-                              }
-                            : {
-                                  id: '',
-                                  name: 'Unknown',
-                                  age: 0,
-                                  birthDate: null,
-                                  gender: 'male' as Gender,
-                                  photos: [] as ProfilePhoto[],
-                                  city: '',
-                                  verified: false,
-                                  suspended: false,
-                                  banned: false,
-                                  preferredPeriod: 'any' as PreferredPeriod,
-                                  isPremium: false,
-                                  isBoosted: false
-                              },
+                    const conv = p.conversation;
+                    const lastMsg = conv.messages[0];
+                    const isGroup = conv.isGroup;
+
+                    const base = {
+                        id: conv.id,
                         lastMessage: lastMsg?.text,
                         lastMessageTime: lastMsg?.timestamp.toISOString(),
-                        unreadCount: p.unreadCount
+                        unreadCount: p.unreadCount,
+                        isGroup
+                    };
+
+                    if (isGroup) {
+                        const others = conv.participants
+                            .filter((pp) => pp.userId !== client.userId)
+                            .map((pp) => mapUser(pp.user));
+                        return {
+                            ...base,
+                            participant: others[0] ?? UNKNOWN_USER,
+                            participants: others,
+                            activityId: conv.activity?.id,
+                            activityTitle: conv.activity?.title,
+                            participantCount: conv.participants.length
+                        };
+                    }
+
+                    const other = conv.participants.find((pp) => pp.userId !== client.userId)?.user;
+                    return {
+                        ...base,
+                        participant: other ? mapUser(other) : UNKNOWN_USER
                     };
                 });
 
