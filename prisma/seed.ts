@@ -103,12 +103,12 @@ const SOCIAL_VIBES = ['reserved', 'calm', 'balanced', 'outgoing', 'very_social']
 
 const INTENTION_KEYS = [
     'dating',
-    'serious_relationship',
+    'dating',
     'friendship',
     'networking',
-    'activity_partner',
-    'group_activity',
-    'casual_chat'
+    'activities',
+    'activities',
+    'discussion'
 ] as const;
 
 const INTEREST_LABELS = [

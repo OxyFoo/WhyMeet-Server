@@ -208,6 +208,31 @@ export async function runPipelineQuery(
         where.settings = { AND: visibilityFilter };
     }
 
+    // ── Tags filter (user must have at least one matching tag) ───
+    if (filters?.tags && filters.tags.length > 0) {
+        where.tags = {
+            some: {
+                tag: { label: { in: filters.tags } }
+            }
+        };
+    }
+
+    // ── Free-text query filter (name or bio contains text) ───────
+    if (filters?.query && filters.query.trim() !== '') {
+        const q = filters.query.trim();
+        where.OR = [
+            { name: { contains: q, mode: 'insensitive' } },
+            {
+                profile: {
+                    ...profileWhere,
+                    bio: { contains: q, mode: 'insensitive' }
+                }
+            }
+        ];
+        // Remove profile from root where to avoid conflict with the OR above
+        delete where.profile;
+    }
+
     // ── Fetch candidates (deterministic order for consistent results) ─
     const users = await db.user.findMany({
         where,
