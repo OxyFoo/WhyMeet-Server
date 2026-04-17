@@ -50,8 +50,8 @@ services:
 
   whymeet-server-prod:
     build:
-      context: ..
-      dockerfile: WhyMeet-Server/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     container_name: oxyfoo-whymeet-server-prod
     ports:
       - "0.0.0.0:7600:7600"

@@ -5,9 +5,9 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: whymeet
-      POSTGRES_PASSWORD: whymeet
-      POSTGRES_DB: whymeet
+      POSTGRES_USER: ${POSTGRESQL_USERNAME}
+      POSTGRES_PASSWORD: ${POSTGRESQL_PASSWORD}
+      POSTGRES_DB: ${POSTGRESQL_DATABASE}
     volumes:
       - whymeet-db-dev-data:/var/lib/postgresql/data
     healthcheck:
@@ -23,11 +23,11 @@ services:
     ports:
       - "5433:5432" # 5433 exposé localement pour debug (psql -p 5433)
     environment:
-      DB_HOST: whymeet-db-dev
-      DB_PORT: "5432"
-      DB_USER: whymeet
-      DB_PASSWORD: whymeet
-      DB_NAME: whymeet
+      DB_HOST: ${POSTGRES_HOST}
+      DB_PORT: ${POSTGRES_PORT:-5432}
+      DB_USER: ${POSTGRESQL_USERNAME}
+      DB_PASSWORD: ${POSTGRESQL_PASSWORD}
+      DB_NAME: ${POSTGRESQL_DATABASE}
       POOL_MODE: session
       DEFAULT_POOL_SIZE: "20"
       MAX_CLIENT_CONN: "200"
