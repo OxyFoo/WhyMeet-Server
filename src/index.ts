@@ -6,6 +6,7 @@ import { initStorage } from '@/services/storageService';
 import { startServer, stopServer } from '@/server/Server';
 import { getRegisteredCommands } from '@/server/Router';
 import { startActivityNotifScheduler, stopActivityNotifScheduler } from '@/services/activityNotifScheduler';
+import { connectRedis, disconnectRedis } from '@/services/redisService';
 
 // Register all commands
 import '@/commands';
@@ -23,6 +24,9 @@ async function main(): Promise<void> {
     // Log registered commands
     const commands = getRegisteredCommands();
     logger.info(`[Main] Registered ${commands.length} commands: ${commands.join(', ')}`);
+
+    // Connect to Redis (optional, cache degrades gracefully if unavailable)
+    await connectRedis();
 
     // Initialize S3 storage
     await initStorage();
@@ -45,6 +49,7 @@ async function onExit(): Promise<void> {
     logger.info('[Main] Shutting down...');
     stopActivityNotifScheduler();
     await stopServer();
+    await disconnectRedis();
     await disconnectDatabase();
     logger.info('[Main] Goodbye');
 }

@@ -7,6 +7,7 @@ import { pushToUser } from '@/services/pushService';
 import { t, getUserLanguage } from '@/services/notifI18n';
 import { mapUserToProfile, profileInclude } from '@/services/userMapper';
 import { useSwipe } from '@/services/swipeQuotaService';
+import { addExcluded } from '@/services/excludeCache';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_Star>('star', async (client: Client, payload): Promise<WSResponse_Star> => {
@@ -23,6 +24,9 @@ registerCommand<WSRequest_Star>('star', async (client: Client, payload): Promise
             }
             throw err;
         }
+        // Track in exclusion cache
+        addExcluded(client.userId, candidateId).catch(() => {});
+
         // Star is like a super-like
         const match = await db.match.upsert({
             where: {

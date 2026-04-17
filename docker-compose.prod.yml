@@ -1,4 +1,34 @@
 services:
+  whymeet-pgbouncer-prod:
+    image: edoburu/pgbouncer:latest
+    container_name: whymeet-pgbouncer-prod
+    environment:
+      # Set these via the host .env or Docker secrets:
+      # POSTGRES_HOST, POSTGRES_PORT (default 5432), POSTGRESQL_USERNAME,
+      # POSTGRESQL_PASSWORD, POSTGRESQL_DATABASE
+      DB_HOST: ${POSTGRES_HOST}
+      DB_PORT: ${POSTGRES_PORT:-5432}
+      DB_USER: ${POSTGRESQL_USERNAME}
+      DB_PASSWORD: ${POSTGRESQL_PASSWORD}
+      DB_NAME: ${POSTGRESQL_DATABASE}
+      POOL_MODE: session
+      DEFAULT_POOL_SIZE: "20"
+      MAX_CLIENT_CONN: "300"
+      AUTH_TYPE: md5
+    networks:
+      oxyfoo-network:
+        ipv4_address: 172.16.0.11
+    restart: unless-stopped
+
+  whymeet-redis-prod:
+    image: redis:7-alpine
+    container_name: whymeet-redis-prod
+    command: redis-server --save '' --appendonly no --maxmemory 512mb --maxmemory-policy allkeys-lru
+    networks:
+      oxyfoo-network:
+        ipv4_address: 172.16.0.12
+    restart: unless-stopped
+
   whymeet-server-prod:
     build:
       context: ..
@@ -6,14 +36,20 @@ services:
     container_name: whymeet-server-prod
     ports:
       - "0.0.0.0:7600:7600"
+    env_file: .env.server
     environment:
       NODE_ENV: production
+      # DATABASE_URL overrides .env.server to route through PgBouncer (uses host .env vars):
+      DATABASE_URL: postgresql://${POSTGRESQL_USERNAME}:${POSTGRESQL_PASSWORD}@whymeet-pgbouncer-prod:5432/${POSTGRESQL_DATABASE}?schema=public
     networks:
       oxyfoo-network:
         ipv4_address: 172.16.0.10
       network-server-web:
         ipv4_address: 170.16.0.40
     user: node
+    depends_on:
+      - whymeet-pgbouncer-prod
+      - whymeet-redis-prod
     volumes:
       - ./logs:/app/logs
       - /etc/ssl/whymeet-certs/fullchain.pem:/etc/letsencrypt/live/whymeet/fullchain.pem:ro

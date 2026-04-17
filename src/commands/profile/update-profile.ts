@@ -8,6 +8,8 @@ import { ensureTagEmbedding } from '@/services/embedding';
 import { discretizePosition } from '@/services/geoUtils';
 import { logger } from '@/config/logger';
 import { validateProfileData } from '@/config/validation';
+import { invalidateCandidate } from '@/services/candidateCache';
+import { invalidatePipelineSetup } from '@/services/pipelineSetupCache';
 
 const TAG_MAX_LENGTH = 40;
 
@@ -168,6 +170,10 @@ registerCommand<WSRequest_UpdateProfile>(
             });
 
             logger.info(`[Profile] Updated profile for user: ${client.userId}`);
+
+            // Invalidate caches so discovery reflects updated profile immediately
+            invalidateCandidate(client.userId).catch(() => {});
+            invalidatePipelineSetup(client.userId).catch(() => {});
 
             // Re-fetch and return updated profile
             const updated = await db.user.findUnique({

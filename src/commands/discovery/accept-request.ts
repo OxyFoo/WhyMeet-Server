@@ -6,6 +6,7 @@ import { getConnectedClients } from '@/server/Server';
 import { pushToUser } from '@/services/pushService';
 import { t, getUserLanguage } from '@/services/notifI18n';
 import { mapUserToProfile, profileInclude } from '@/services/userMapper';
+import { addExcluded } from '@/services/excludeCache';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_AcceptRequest>(
@@ -15,6 +16,8 @@ registerCommand<WSRequest_AcceptRequest>(
         const db = getDatabase();
 
         try {
+            addExcluded(client.userId, senderId).catch(() => {});
+
             // Create a like from current user → sender (this makes it mutual)
             await db.match.upsert({
                 where: {

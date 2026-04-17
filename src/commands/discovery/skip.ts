@@ -3,6 +3,7 @@ import type { Client } from '@/server/Client';
 import type { WSRequest_Skip, WSResponse_Skip } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
 import { useSwipe } from '@/services/swipeQuotaService';
+import { addExcluded } from '@/services/excludeCache';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_Skip>('skip', async (client: Client, payload): Promise<WSResponse_Skip> => {
@@ -19,6 +20,7 @@ registerCommand<WSRequest_Skip>('skip', async (client: Client, payload): Promise
             }
             throw err;
         }
+        addExcluded(client.userId, candidateId).catch(() => {});
         await db.match.upsert({
             where: {
                 senderId_receiverId_category: { senderId: client.userId, receiverId: candidateId, category: 'skip' }

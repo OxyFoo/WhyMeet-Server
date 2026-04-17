@@ -2,6 +2,7 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_BlockUser, WSResponse_BlockUser } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
+import { addExcluded } from '@/services/excludeCache';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_BlockUser>('block-user', async (client: Client, payload): Promise<WSResponse_BlockUser> => {
@@ -40,6 +41,9 @@ registerCommand<WSRequest_BlockUser>('block-user', async (client: Client, payloa
         }
 
         logger.info(`[Moderation] User ${client.userId} blocked ${blockedId}`);
+        // Update exclusion caches both ways
+        addExcluded(client.userId, blockedId).catch(() => {});
+        addExcluded(blockedId, client.userId).catch(() => {});
         return { command: 'block-user', payload: { success: true } };
     } catch (error) {
         logger.error('[Moderation] Block error', error);

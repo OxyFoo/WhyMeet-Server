@@ -2,6 +2,7 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_DeclineRequest, WSResponse_DeclineRequest } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
+import { addExcluded } from '@/services/excludeCache';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_DeclineRequest>(
@@ -11,6 +12,8 @@ registerCommand<WSRequest_DeclineRequest>(
         const db = getDatabase();
 
         try {
+            addExcluded(client.userId, senderId).catch(() => {});
+
             // Create a skip from current user → sender (so they won't appear again)
             await db.match.upsert({
                 where: {

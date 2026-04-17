@@ -1,65 +1,101 @@
 services:
-    whymeet-db-dev:
-        image: postgres:16-alpine
-        container_name: whymeet-db-dev
-        ports:
-            - '5432:5432'
-        environment:
-            POSTGRES_USER: whymeet
-            POSTGRES_PASSWORD: whymeet
-            POSTGRES_DB: whymeet
-        volumes:
-            - whymeet-db-dev-data:/var/lib/postgresql/data
-        healthcheck:
-            test: ['CMD-SHELL', 'pg_isready -U whymeet']
-            interval: 2s
-            timeout: 5s
-            retries: 10
-        restart: unless-stopped
+  whymeet-db-dev:
+    image: postgres:16-alpine
+    container_name: whymeet-db-dev
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: whymeet
+      POSTGRES_PASSWORD: whymeet
+      POSTGRES_DB: whymeet
+    volumes:
+      - whymeet-db-dev-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U whymeet"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
 
-    whymeet-minio-dev:
-        image: minio/minio:latest
-        container_name: whymeet-minio-dev
-        ports:
-            - '9000:9000'
-            - '9001:9001'
-        environment:
-            MINIO_ROOT_USER: whymeet
-            MINIO_ROOT_PASSWORD: whymeet123
-        command: server /data --console-address ":9001"
-        volumes:
-            - whymeet-minio-dev-data:/data
-        healthcheck:
-            test: ['CMD', 'mc', 'ready', 'local']
-            interval: 5s
-            timeout: 5s
-            retries: 5
-        restart: unless-stopped
+  whymeet-pgbouncer-dev:
+    image: edoburu/pgbouncer:latest
+    container_name: whymeet-pgbouncer-dev
+    ports:
+      - "5433:5432" # 5433 exposé localement pour debug (psql -p 5433)
+    environment:
+      DB_HOST: whymeet-db-dev
+      DB_PORT: "5432"
+      DB_USER: whymeet
+      DB_PASSWORD: whymeet
+      DB_NAME: whymeet
+      POOL_MODE: session
+      DEFAULT_POOL_SIZE: "20"
+      MAX_CLIENT_CONN: "200"
+      AUTH_TYPE: plain
+    depends_on:
+      whymeet-db-dev:
+        condition: service_healthy
+    restart: unless-stopped
 
-    whymeet-server-dev:
-        image: node:22-alpine
-        container_name: whymeet-server-dev
-        user: '1000:1000'
-        working_dir: /app
-        command: ['sh', '-c', 'npm install && npm run dev']
-        ports:
-            - '0.0.0.0:4600:4600'
-        environment:
-            NODE_ENV: development
-            DATABASE_URL: postgresql://whymeet:whymeet@whymeet-db-dev:5432/whymeet?schema=public
-            S3_ENDPOINT: http://whymeet-minio-dev:9000
-            S3_BUCKET: whymeet-uploads
-            S3_ACCESS_KEY: whymeet
-            S3_SECRET_KEY: whymeet123
-            S3_PUBLIC_URL: http://10.0.2.2:9000/whymeet-uploads
-        depends_on:
-            whymeet-db-dev:
-                condition: service_healthy
-        volumes:
-            - .:/app:z
-            - ../WhyMeet-Types/dist:/WhyMeet-Types/dist:ro,z
-        restart: unless-stopped
+  whymeet-redis-dev:
+    image: redis:7-alpine
+    container_name: whymeet-redis-dev
+    ports:
+      - "6379:6379"
+    command: redis-server --save '' --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  whymeet-minio-dev:
+    image: minio/minio:latest
+    container_name: whymeet-minio-dev
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: whymeet
+      MINIO_ROOT_PASSWORD: whymeet123
+    command: server /data --console-address ":9001"
+    volumes:
+      - whymeet-minio-dev-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  whymeet-server-dev:
+    image: node:22-alpine
+    container_name: whymeet-server-dev
+    user: "1000:1000"
+    working_dir: /app
+    command: ["sh", "-c", "npm install && npm run dev"]
+    ports:
+      - "0.0.0.0:4600:4600"
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://whymeet:whymeet@whymeet-pgbouncer-dev:5432/whymeet?schema=public
+      REDIS_URL: redis://whymeet-redis-dev:6379
+      S3_ENDPOINT: http://whymeet-minio-dev:9000
+      S3_BUCKET: whymeet-uploads
+      S3_ACCESS_KEY: whymeet
+      S3_SECRET_KEY: whymeet123
+      S3_PUBLIC_URL: http://10.0.2.2:9000/whymeet-uploads
+    depends_on:
+      whymeet-db-dev:
+        condition: service_healthy
+      whymeet-redis-dev:
+        condition: service_healthy
+    volumes:
+      - .:/app:z
+      - ../WhyMeet-Types/dist:/WhyMeet-Types/dist:ro,z
+    restart: unless-stopped
 
 volumes:
-    whymeet-db-dev-data:
-    whymeet-minio-dev-data:
+  whymeet-db-dev-data:
+  whymeet-minio-dev-data:

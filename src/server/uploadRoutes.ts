@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import { getDatabase } from '@/services/database';
 import { tokenManager } from '@/services/tokenManager';
 import { uploadFile, deleteFile } from '@/services/storageService';
+import { invalidateCandidate } from '@/services/candidateCache';
 import { logger } from '@/config/logger';
 import { env } from '@/config/env';
 
@@ -116,6 +117,7 @@ uploadRouter.post('/photo', uploadLimiter, upload.single('photo'), async (req, r
         });
 
         logger.info(`[Upload] Photo added for user ${userId} (position ${count})`);
+        invalidateCandidate(userId).catch(() => {});
         res.json({ photo: { id: photo.id, key: photo.key, description: photo.description, position: photo.position } });
     } catch (error) {
         logger.error('[Upload] Photo upload error', error);
@@ -164,6 +166,7 @@ uploadRouter.delete('/photo/:id', uploadLimiter, async (req, res) => {
         }
 
         logger.info(`[Upload] Photo ${photo.id} deleted for user ${userId}`);
+        invalidateCandidate(userId).catch(() => {});
         res.json({ success: true });
     } catch (error) {
         logger.error('[Upload] Photo delete error', error);

@@ -2,6 +2,7 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_ReportUser, WSResponse_ReportUser, ReportReason, ReportSourceType } from '@whymeet/types';
 import { getDatabase } from '@/services/database';
+import { addExcluded } from '@/services/excludeCache';
 import { logger } from '@/config/logger';
 import { getConnectedClients } from '@/server/Server';
 
@@ -57,6 +58,7 @@ registerCommand<WSRequest_ReportUser>(
             });
 
             logger.info(`[Moderation] User ${client.userId} reported ${reportedId} (${reason}, ${sourceType})`);
+            addExcluded(client.userId, reportedId).catch(() => {});
 
             // Check if the reported user should be suspended
             const reportCount = await db.report.count({

@@ -1,15 +1,24 @@
 import type { Client } from '@/server/Client';
 import type { IntentionKey, PreferredPeriod, SearchFilters, SocialVibe } from '@whymeet/types';
+import type { Prisma } from '@prisma/client';
 import { getDatabase } from '@/services/database';
 import { candidateInclude, getDistanceKm, computeAge, ageToBirthDateRange } from '@/services/userMapper';
 import { computeMatchScore, MIN_SCORE_THRESHOLD } from '@/services/scoring';
 import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
+import { getExcludeIds } from '@/services/excludeCache';
+import { getCandidates, setCandidates } from '@/services/candidateCache';
+import { getPipelineSetup, setPipelineSetup } from '@/services/pipelineSetupCache';
 import { logger } from '@/config/logger';
 
 const DEFAULT_MAX_DISTANCE = 50; // km
 
-// Prisma user type inferred from candidateInclude
-type CandidateUser = Awaited<ReturnType<ReturnType<typeof getDatabase>['user']['findMany']>>[number];
+// Full include used for candidate DB queries
+const candidateQueryInclude = {
+    ...candidateInclude,
+    _count: { select: { receivedReports: true } }
+} as const;
+
+type CandidateUser = Prisma.UserGetPayload<{ include: typeof candidateQueryInclude }>;
 
 export interface QualifiedCandidate {
     user: CandidateUser;
@@ -53,6 +62,14 @@ export interface PipelineSetup {
  * Call once, then pass the result to `runPipelineQuery` for each intention / filter set.
  */
 export async function buildPipelineContext(client: Client): Promise<PipelineSetup> {
+    // ── Level 2 cache: PipelineSetup (user + settings, excludeIds NOT cached) ─
+    const cached = await getPipelineSetup(client.userId);
+    if (cached) {
+        const excludeIds = await getExcludeIds(client.userId);
+        logger.debug(`[Pipeline] Setup cache hit for ${client.userId} (${excludeIds.length} excluded)`);
+        return { ...cached, excludeIds };
+    }
+
     const db = getDatabase();
 
     const [currentUser, settings] = await Promise.all([
@@ -85,26 +102,14 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
     const storedRemote = settings?.discoveryRemoteMode ?? false;
     const storedIntentions = settings?.discoveryIntentions as IntentionKey[] | undefined;
 
-    // Exclusion list: self, seen, blocked, reported
-    const [seenMatches, blocks, reports] = await Promise.all([
-        db.match.findMany({ where: { senderId: client.userId }, select: { receiverId: true } }),
-        db.block.findMany({
-            where: { OR: [{ blockerId: client.userId }, { blockedId: client.userId }] },
-            select: { blockerId: true, blockedId: true }
-        }),
-        db.report.findMany({ where: { reporterId: client.userId }, select: { reportedId: true } })
-    ]);
-
-    const seenIds = seenMatches.map((m) => m.receiverId);
-    const blockedIds = blocks.map((b) => (b.blockerId === client.userId ? b.blockedId : b.blockerId));
-    const reportedIds = reports.map((r) => r.reportedId);
-    const excludeIds = [...new Set([client.userId, ...seenIds, ...blockedIds, ...reportedIds])];
+    // ── Level 3 cache: excludeIds via Redis Set ──────────────────────────
+    const excludeIds = await getExcludeIds(client.userId);
 
     logger.debug(
         `[Pipeline] Context for ${client.userId}: ${myIntentions.length} intentions, ${excludeIds.length} excluded, profileComplete=${myProfileComplete}`
     );
 
-    return {
+    const setup: PipelineSetup = {
         myIntentions,
         myTagLabels,
         myLatLng,
@@ -123,6 +128,11 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
         storedIntentions,
         excludeIds
     };
+
+    // Store setup in cache (without excludeIds — those are always fresh from Redis Set)
+    await setPipelineSetup(client.userId, { ...setup, excludeIds: [] });
+
+    return setup;
 }
 
 /**
@@ -260,13 +270,36 @@ export async function runPipelineQuery(
 
     const where = buildPipelineWhere(setup, filters, prefIntentions, prefRemote);
 
-    // ── Fetch candidates (deterministic order for consistent results) ─
-    const users = await db.user.findMany({
+    // ── Level 1 cache: candidate profiles ───────────────────────────────────
+    // Step 1: lightweight ID scan (no JOINs)
+    const idRows = await db.user.findMany({
         where,
-        include: { ...candidateInclude, _count: { select: { receivedReports: true } } },
+        select: { id: true },
         orderBy: { createdAt: 'desc' },
         take: fetchLimit
     });
+    const ids = idRows.map((r) => r.id);
+
+    // Step 2: cache lookup
+    const cachedMap = await getCandidates(ids);
+    const missIds = ids.filter((id) => !cachedMap.has(id));
+
+    // Step 3: DB fetch for misses (full JOINs only for uncached rows)
+    if (missIds.length > 0) {
+        const freshUsers = await db.user.findMany({
+            where: { id: { in: missIds } },
+            include: candidateQueryInclude
+        });
+        await setCandidates(freshUsers as unknown as Record<string, unknown>[]);
+        freshUsers.forEach((u) => cachedMap.set(u.id, u as unknown as Record<string, unknown>));
+    }
+
+    // Step 4: reconstruct ordered list
+    const users = ids.map((id) => cachedMap.get(id)).filter(Boolean) as unknown as CandidateUser[];
+
+    logger.debug(
+        `[Pipeline] Candidates: ${ids.length} IDs, ${missIds.length} DB misses, ${ids.length - missIds.length} cache hits`
+    );
 
     // ── Score & post-filter ──────────────────────────────────────
     const scoringCtx: ScoringContext = {
