@@ -6,7 +6,6 @@ services:
       POSTGRES_USER: ${POSTGRESQL_USERNAME}
       POSTGRES_PASSWORD: ${POSTGRESQL_PASSWORD}
       POSTGRES_DB: ${POSTGRESQL_DATABASE}
-      POSTGRES_HOST_AUTH_METHOD: md5
     networks:
       oxyfoo-network:
         ipv4_address: 172.16.0.14
@@ -26,7 +25,7 @@ services:
       POOL_MODE: session
       DEFAULT_POOL_SIZE: "20"
       MAX_CLIENT_CONN: "300"
-      AUTH_TYPE: md5
+      AUTH_TYPE: scram-sha-256
     networks:
       oxyfoo-network:
         ipv4_address: 172.16.0.11
