@@ -29,6 +29,25 @@ services:
         ipv4_address: 172.16.0.12
     restart: unless-stopped
 
+  # [TEMPORAIRE - MVP] MinIO en self-hosted pour tester le stockage objet en conditions réelles
+  # À remplacer par S3/Backblaze B2/Cloudflare R2 avant une mise en prod sérieuse
+  whymeet-minio-prod:
+    image: minio/minio:latest
+    container_name: whymeet-minio-prod
+    ports:
+      - "0.0.0.0:9000:9000" # S3 API (accès public pour les uploads clients)
+      # 9001 (console admin) non exposé en prod — accès via tunnel SSH si besoin
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    command: server /data --console-address ":9001"
+    networks:
+      oxyfoo-network:
+        ipv4_address: 172.16.0.13
+    volumes:
+      - whymeet-minio-prod-data:/data
+    restart: unless-stopped
+
   whymeet-server-prod:
     build:
       context: ..
@@ -50,6 +69,7 @@ services:
     depends_on:
       - whymeet-pgbouncer-prod
       - whymeet-redis-prod
+      - whymeet-minio-prod
     volumes:
       - ./logs:/app/logs
       - /etc/ssl/whymeet-certs/fullchain.pem:/etc/letsencrypt/live/whymeet/fullchain.pem:ro
@@ -61,6 +81,9 @@ services:
         max_attempts: 5
         window: 120s
     restart: unless-stopped
+
+volumes:
+  whymeet-minio-prod-data:
 
 networks:
   oxyfoo-network:
