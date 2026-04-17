@@ -2,10 +2,8 @@
     "include": ["src/**/*", "src/**/*.json"],
     "exclude": ["node_modules", "dist"],
     "compilerOptions": {
-        "composite": true,
-        "target": "ES2024",
-        "module": "CommonJS",
-        "moduleResolution": "Bundler",
+        "target": "ES2022",
+        "module": "NodeNext",
         "rootDir": "./src",
         "paths": {
             "@/*": ["./src/*"]

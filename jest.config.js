@@ -10,7 +10,7 @@ module.exports = {
         'node_modules/(?!@oxyfoo/whymeet-types)',
     ],
     transform: {
-        '^.+\\.tsx?$': 'ts-jest',
+        '^.+\.tsx?$': ['ts-jest', { tsconfig: { module: 'CommonJS' } }],
         '^.+\\.jsx?$': ['ts-jest', { useESM: false }],
     },
 };

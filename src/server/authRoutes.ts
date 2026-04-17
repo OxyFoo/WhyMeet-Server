@@ -643,7 +643,7 @@ authRouter.post('/sign-out', async (req, res) => {
         });
 
         // Close any active WS connections for this device
-        const { getConnectedClients } = await import('./Server');
+        const { getConnectedClients } = await import('./Server.js');
         for (const client of getConnectedClients().values()) {
             if (client.deviceId === device.id) {
                 client.close(4002, 'Signed out');
