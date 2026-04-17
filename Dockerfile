@@ -10,7 +10,7 @@ COPY prisma ./prisma
 RUN npx prisma generate
 
 COPY . .
-RUN npm run build
+RUN rm -rf dist tsconfig.tsbuildinfo && npm run build
 
 ### Stage 2 — Runner
 FROM node:22-alpine
