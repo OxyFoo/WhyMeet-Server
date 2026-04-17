@@ -23,6 +23,7 @@ export async function connectRedis(): Promise<boolean> {
             maxRetriesPerRequest: 3,
             enableOfflineQueue: false
         });
+        await redis.connect();
         await redis.ping();
         logger.success('[Redis] Connected');
         return true;
