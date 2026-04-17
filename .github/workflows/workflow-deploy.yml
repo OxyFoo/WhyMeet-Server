@@ -6,20 +6,6 @@ permissions:
 
 on:
   workflow_dispatch:
-    inputs:
-      environment:
-        description: "Environment to archive & deploy"
-        required: true
-        type: choice
-        default: "Development"
-        options:
-          - Development
-          - Production
-      restore-on-failure:
-        description: "Restore the last successful deployment on failure"
-        required: false
-        type: boolean
-        default: true
 
 jobs:
   build:
@@ -36,13 +22,8 @@ jobs:
 
       - name: "Configure Environment Variables"
         run: |
-          if [ "${{ github.event.inputs.environment }}" == "Production" ]; then
-            echo "Copying Production Environment Variables"
-            echo "${{ secrets.ENV_FILE_PROD_BASE64 }}" | base64 -d > .env
-          else
-            echo "Copying Development Environment Variables"
-            echo "${{ secrets.ENV_FILE_DEV_BASE64 }}" | base64 -d > .env
-          fi
+          echo "Copying Development Environment Variables"
+          echo "${{ secrets.ENV_FILE_BASE64 }}" | base64 -d > .env
 
       - name: Upload Configuration Artifact
         uses: actions/upload-artifact@v6
@@ -58,11 +39,11 @@ jobs:
     secrets: inherit
     with:
       author: "oxyfoo"
-      environment: ${{ github.event.inputs.environment == 'Production' && 'production' || 'development' }}
+      environment: "production"
       artifact-name: "project-package"
-      docker-compose-file: ${{ github.event.inputs.environment == 'Production' && 'docker-compose.prod.yml' || 'docker-compose.dev.yml' }}
+      docker-compose-file: "docker-compose.prod.yml"
       docker-requires: "oxyfoo-server-web.service"
-      restore-on-failure: ${{ github.event.inputs.restore-on-failure == 'true' }}
+      restore-on-failure: false
       health-check-timeout: 600
 
       setup-steps: |
@@ -73,14 +54,5 @@ jobs:
         npm run build
 
       test-steps: |
-        GL_ENV=${{ github.event.inputs.environment }}
-        GL_VERSION=$(node -p "require('./package.json').version")
-        echo "Setting up the environment for '$GL_VERSION' on '$GL_ENV'"
-
-        if [ -z "$GL_ENV" ] || [ -z "$GL_VERSION" ]; then
-          echo "Error: GL_VERSION is empty"
-          exit 1
-        fi
-
         npm run test
         npm run lint
