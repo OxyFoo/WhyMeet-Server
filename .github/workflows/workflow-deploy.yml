@@ -50,6 +50,9 @@ jobs:
       setup-steps: |
         node -v
 
+        # Create .env.prod for the server container (same as .env for now)
+        cp .env .env.prod
+
         npm ci
         npx prisma generate
         npm run build

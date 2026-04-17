@@ -55,10 +55,10 @@ services:
     container_name: oxyfoo-whymeet-server-prod
     ports:
       - "0.0.0.0:7600:7600"
-    env_file: .env.server
+    env_file: .env.prod
     environment:
       NODE_ENV: production
-      # DATABASE_URL overrides .env.server to route through PgBouncer (uses host .env vars):
+      # DATABASE_URL overrides .env.prod to route through PgBouncer (uses host .env vars):
       DATABASE_URL: postgresql://${POSTGRESQL_USERNAME}:${POSTGRESQL_PASSWORD}@whymeet-pgbouncer-prod:5432/${POSTGRESQL_DATABASE}?schema=public
     networks:
       oxyfoo-network:
