@@ -1,4 +1,4 @@
-import type { WSClientCommand, WSClientRequest, WSServerResponse } from '@whymeet/types';
+import type { WSClientCommand, WSClientRequest, WSServerResponse } from '@oxyfoo/whymeet-types';
 import type { Client } from './Client';
 import { logger } from '@/config/logger';
 

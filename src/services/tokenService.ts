@@ -1,5 +1,5 @@
 import { getDatabase } from '@/services/database';
-import type { TokenBalance } from '@whymeet/types';
+import type { TokenBalance } from '@oxyfoo/whymeet-types';
 import { isPremium } from '@/services/subscriptionService';
 import { logger } from '@/config/logger';
 import { env } from '@/config/env';

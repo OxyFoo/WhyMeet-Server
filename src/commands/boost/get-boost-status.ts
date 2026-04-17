@@ -1,6 +1,6 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_GetBoostStatus, WSResponse_GetBoostStatus } from '@whymeet/types';
+import type { WSRequest_GetBoostStatus, WSResponse_GetBoostStatus } from '@oxyfoo/whymeet-types';
 import { getBoostStatus } from '@/services/boostService';
 import { logger } from '@/config/logger';
 

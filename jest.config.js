@@ -7,7 +7,7 @@ module.exports = {
         '^@/(.*)$': '<rootDir>/src/$1',
     },
     transformIgnorePatterns: [
-        'node_modules/(?!@whymeet/types)',
+        'node_modules/(?!@oxyfoo/whymeet-types)',
     ],
     transform: {
         '^.+\\.tsx?$': 'ts-jest',

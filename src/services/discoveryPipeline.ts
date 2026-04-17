@@ -1,5 +1,5 @@
 import type { Client } from '@/server/Client';
-import type { IntentionKey, PreferredPeriod, SearchFilters, SocialVibe } from '@whymeet/types';
+import type { IntentionKey, PreferredPeriod, SearchFilters, SocialVibe } from '@oxyfoo/whymeet-types';
 import type { Prisma } from '@prisma/client';
 import { getDatabase } from '@/services/database';
 import { candidateInclude, getDistanceKm, computeAge, ageToBirthDateRange } from '@/services/userMapper';

@@ -1,6 +1,6 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_CancelActivity, WSResponse_CancelActivity } from '@whymeet/types';
+import type { WSRequest_CancelActivity, WSResponse_CancelActivity } from '@oxyfoo/whymeet-types';
 import { cancelActivity } from '@/services/activityService';
 import { getDatabase } from '@/services/database';
 import { getConnectedClients } from '@/server/Server';

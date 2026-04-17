@@ -1,7 +1,7 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_UpdateProfile, WSResponse_UpdateProfile } from '@whymeet/types';
-import { GENDERS, PREFERRED_PERIODS } from '@whymeet/types';
+import type { WSRequest_UpdateProfile, WSResponse_UpdateProfile } from '@oxyfoo/whymeet-types';
+import { GENDERS, PREFERRED_PERIODS } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { mapUserToProfile, profileInclude, computeAge } from '@/services/userMapper';
 import { ensureTagEmbedding } from '@/services/embedding';

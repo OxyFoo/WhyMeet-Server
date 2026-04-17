@@ -7,7 +7,7 @@ import type {
     IntentionKey,
     PreferredPeriod,
     SocialVibe
-} from '@whymeet/types';
+} from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import {
     mapUserToCandidate,

@@ -13,7 +13,7 @@ jest.mock('@/config/logger', () => ({
 
 import { registerCommand, routeCommand, getRegisteredCommands } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSClientRequest } from '@whymeet/types';
+import type { WSClientRequest } from '@oxyfoo/whymeet-types';
 
 function fakeClient(userId = 'user-1'): Client {
     return { userId, id: 'client-1', ip: '127.0.0.1', deviceId: 'dev-1' } as Client;

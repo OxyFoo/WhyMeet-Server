@@ -1,5 +1,5 @@
 import { getDatabase } from '@/services/database';
-import type { UserSubscription, SubscriptionPlatform, SubscriptionPlan } from '@whymeet/types';
+import type { UserSubscription, SubscriptionPlatform, SubscriptionPlan } from '@oxyfoo/whymeet-types';
 import { grantSubscriptionBoost } from '@/services/boostService';
 import { logger } from '@/config/logger';
 

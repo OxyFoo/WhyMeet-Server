@@ -1,6 +1,6 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_RegisterPushToken, WSResponse_RegisterPushToken } from '@whymeet/types';
+import type { WSRequest_RegisterPushToken, WSResponse_RegisterPushToken } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { logger } from '@/config/logger';
 import { pushTokenSchema } from '@/config/validation';

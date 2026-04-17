@@ -1,8 +1,8 @@
-import type { ActivitySummary, ActivitySearchFilters, InterestCategoryKey } from '@whymeet/types';
+import type { ActivitySummary, ActivitySearchFilters, InterestCategoryKey } from '@oxyfoo/whymeet-types';
 import type { Prisma } from '@prisma/client';
 import { getDatabase } from '@/services/database';
 import { getDistanceKm, geoBoundingBox } from '@/services/userMapper';
-import { INTEREST_CATEGORY_KEYS } from '@whymeet/types';
+import { INTEREST_CATEGORY_KEYS } from '@oxyfoo/whymeet-types';
 
 // ─── Get Activities ──────────────────────────────────────────────────
 

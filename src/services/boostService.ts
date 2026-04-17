@@ -1,5 +1,5 @@
 import { getDatabase } from '@/services/database';
-import type { UserBoost, BoostSource } from '@whymeet/types';
+import type { UserBoost, BoostSource } from '@oxyfoo/whymeet-types';
 import { logger } from '@/config/logger';
 import { env } from '@/config/env';
 

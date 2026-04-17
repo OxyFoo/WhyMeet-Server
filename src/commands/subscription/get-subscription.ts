@@ -1,6 +1,6 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_GetSubscription, WSResponse_GetSubscription } from '@whymeet/types';
+import type { WSRequest_GetSubscription, WSResponse_GetSubscription } from '@oxyfoo/whymeet-types';
 import { getSubscription, isPremium } from '@/services/subscriptionService';
 import { logger } from '@/config/logger';
 

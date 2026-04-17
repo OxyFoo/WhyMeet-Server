@@ -1,6 +1,6 @@
 import { WebSocket } from 'ws';
 import { logger } from '@/config/logger';
-import type { WSClientRequest, WSEnvelope, WSServerResponse, WSServerEvent } from '@whymeet/types';
+import type { WSClientRequest, WSEnvelope, WSServerResponse, WSServerEvent } from '@oxyfoo/whymeet-types';
 
 export class Client {
     readonly id: string;

@@ -1,6 +1,6 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_DeleteAccount, WSResponse_DeleteAccount } from '@whymeet/types';
+import type { WSRequest_DeleteAccount, WSResponse_DeleteAccount } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { logger } from '@/config/logger';
 

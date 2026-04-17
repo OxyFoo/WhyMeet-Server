@@ -1,6 +1,6 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_TagSuggest, WSResponse_TagSuggest, TagSuggestion } from '@whymeet/types';
+import type { WSRequest_TagSuggest, WSResponse_TagSuggest, TagSuggestion } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { generateEmbedding, findSimilarTags } from '@/services/embedding';
 import { logger } from '@/config/logger';

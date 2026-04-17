@@ -6,7 +6,7 @@ import type {
     Gender,
     PreferredPeriod,
     ProfilePhoto
-} from '@whymeet/types';
+} from '@oxyfoo/whymeet-types';
 import type { Prisma } from '@prisma/client';
 import { getDatabase } from '@/services/database';
 import { getDistanceKm } from '@/services/userMapper';

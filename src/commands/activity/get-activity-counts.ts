@@ -1,6 +1,6 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_GetActivityCounts, WSResponse_GetActivityCounts } from '@whymeet/types';
+import type { WSRequest_GetActivityCounts, WSResponse_GetActivityCounts } from '@oxyfoo/whymeet-types';
 import { getActivityCounts } from '@/services/activityDiscoveryService';
 import { logger } from '@/config/logger';
 

@@ -1,4 +1,4 @@
-### Stage 1 — Build @whymeet/types
+### Stage 1 — Build @oxyfoo/whymeet-types
 FROM node:22-alpine AS types-builder
 
 WORKDIR /build/WhyMeet-Types
@@ -35,7 +35,7 @@ RUN addgroup -g 1002 whymeet \
  && adduser node whymeet
 
 COPY --from=builder /build/WhyMeet-Server ./
-COPY --from=types-builder /build/WhyMeet-Types/dist ./node_modules/@whymeet/types/
+COPY --from=types-builder /build/WhyMeet-Types/dist ./node_modules/@oxyfoo/whymeet-types/
 
 USER node
 

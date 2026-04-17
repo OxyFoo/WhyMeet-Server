@@ -1,7 +1,7 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_GetSubIntentionCounts, WSResponse_GetSubIntentionCounts } from '@whymeet/types';
-import { SUB_INTENTIONS } from '@whymeet/types';
+import type { WSRequest_GetSubIntentionCounts, WSResponse_GetSubIntentionCounts } from '@oxyfoo/whymeet-types';
+import { SUB_INTENTIONS } from '@oxyfoo/whymeet-types';
 import { buildPipelineContext, runPipelineQuery } from '@/services/discoveryPipeline';
 import { logger } from '@/config/logger';
 

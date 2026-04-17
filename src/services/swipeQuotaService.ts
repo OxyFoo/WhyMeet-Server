@@ -1,5 +1,5 @@
 import { getDatabase } from '@/services/database';
-import type { SwipeQuotaInfo } from '@whymeet/types';
+import type { SwipeQuotaInfo } from '@oxyfoo/whymeet-types';
 import { isPremium } from '@/services/subscriptionService';
 import { env } from '@/config/env';
 

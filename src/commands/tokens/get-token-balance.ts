@@ -1,6 +1,6 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_GetTokenBalance, WSResponse_GetTokenBalance } from '@whymeet/types';
+import type { WSRequest_GetTokenBalance, WSResponse_GetTokenBalance } from '@oxyfoo/whymeet-types';
 import { getBalance } from '@/services/tokenService';
 import { logger } from '@/config/logger';
 

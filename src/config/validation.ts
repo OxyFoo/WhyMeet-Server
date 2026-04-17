@@ -4,7 +4,7 @@
  */
 
 import { z } from 'zod';
-import { SOCIAL_VIBES, INTENTION_KEYS, INTEREST_CATEGORY_KEYS } from '@whymeet/types';
+import { SOCIAL_VIBES, INTENTION_KEYS, INTEREST_CATEGORY_KEYS } from '@oxyfoo/whymeet-types';
 
 // ─── Limits ───────────────────────────────────────────────────────────────────
 

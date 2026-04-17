@@ -1,6 +1,6 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_UpdateSettings, WSResponse_UpdateSettings, Language, Theme } from '@whymeet/types';
+import type { WSRequest_UpdateSettings, WSResponse_UpdateSettings, Language, Theme } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { logger } from '@/config/logger';
 

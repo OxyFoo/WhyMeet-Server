@@ -1,4 +1,4 @@
-import type { IntentionKey, PreferredPeriod, SocialVibe } from '@whymeet/types';
+import type { IntentionKey, PreferredPeriod, SocialVibe } from '@oxyfoo/whymeet-types';
 
 // Local copy of the ordinal vibe scale (avoids ESM value import in CJS test env)
 const VIBE_SCALE: readonly SocialVibe[] = ['reserved', 'calm', 'balanced', 'outgoing', 'very_social'];

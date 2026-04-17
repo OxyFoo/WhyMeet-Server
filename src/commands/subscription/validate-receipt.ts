@@ -1,6 +1,6 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_ValidateReceipt, WSResponse_ValidateReceipt } from '@whymeet/types';
+import type { WSRequest_ValidateReceipt, WSResponse_ValidateReceipt } from '@oxyfoo/whymeet-types';
 import { validateReceipt, isPremium } from '@/services/subscriptionService';
 import { getBoostStatus } from '@/services/boostService';
 import { logger } from '@/config/logger';

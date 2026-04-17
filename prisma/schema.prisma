@@ -92,7 +92,7 @@ model Profile {
     statMatches     Int @default(0)
     statVibes       Int @default(0)
 
-    // Intentions (static keys from @whymeet/types IntentionKey)
+    // Intentions (static keys from @oxyfoo/whymeet-types IntentionKey)
     intentions String[] @default([])
 
     // Spoken languages for remote matching

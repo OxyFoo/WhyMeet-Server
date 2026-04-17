@@ -1,6 +1,6 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_DeclineRequest, WSResponse_DeclineRequest } from '@whymeet/types';
+import type { WSRequest_DeclineRequest, WSResponse_DeclineRequest } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { addExcluded } from '@/services/excludeCache';
 import { logger } from '@/config/logger';

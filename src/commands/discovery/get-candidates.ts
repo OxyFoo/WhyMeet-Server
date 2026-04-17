@@ -1,6 +1,6 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_GetCandidates, WSResponse_GetCandidates } from '@whymeet/types';
+import type { WSRequest_GetCandidates, WSResponse_GetCandidates } from '@oxyfoo/whymeet-types';
 import { mapUserToCandidate } from '@/services/userMapper';
 import { getQuota } from '@/services/swipeQuotaService';
 import { getBoostedUserIds } from '@/services/boostService';

@@ -7,7 +7,7 @@ import type {
     VisibilityPreferences,
     Gender,
     IntentionKey
-} from '@whymeet/types';
+} from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { logger } from '@/config/logger';
 

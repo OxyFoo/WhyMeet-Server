@@ -1,4 +1,4 @@
-import type { Profile, ProfilePhoto, IntentionKey, Gender, PreferredPeriod } from '@whymeet/types';
+import type { Profile, ProfilePhoto, IntentionKey, Gender, PreferredPeriod } from '@oxyfoo/whymeet-types';
 
 /**
  * Compute age from a birth date. Returns 0 if null.
@@ -159,7 +159,7 @@ export const profileInclude = {
 
 // ─── MatchCandidate mapping ─────────────────────────────────────────
 
-import type { MatchCandidate } from '@whymeet/types';
+import type { MatchCandidate } from '@oxyfoo/whymeet-types';
 
 type PrismaUserWithProfile = Parameters<typeof mapUserToProfile>[0];
 

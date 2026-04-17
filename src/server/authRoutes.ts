@@ -10,7 +10,7 @@ import type {
     HTTPResponse_DeviceStatus,
     HTTPResponse_ResendEmail,
     HTTPResponse_SignOut
-} from '@whymeet/types';
+} from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { tokenManager } from '@/services/tokenManager';
 import { mapUserToProfile, profileInclude } from '@/services/userMapper';

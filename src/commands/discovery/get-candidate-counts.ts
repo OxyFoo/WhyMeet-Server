@@ -1,7 +1,7 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_GetCandidateCounts, WSResponse_GetCandidateCounts } from '@whymeet/types';
-import { INTENTION_KEYS } from '@whymeet/types';
+import type { WSRequest_GetCandidateCounts, WSResponse_GetCandidateCounts } from '@oxyfoo/whymeet-types';
+import { INTENTION_KEYS } from '@oxyfoo/whymeet-types';
 import { buildPipelineContext, runPipelineQuery } from '@/services/discoveryPipeline';
 import { logger } from '@/config/logger';
 

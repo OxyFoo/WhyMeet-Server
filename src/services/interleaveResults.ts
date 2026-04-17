@@ -1,4 +1,4 @@
-import type { MatchCandidate } from '@whymeet/types';
+import type { MatchCandidate } from '@oxyfoo/whymeet-types';
 
 /**
  * Interleave candidates using 60/40 boost distribution.

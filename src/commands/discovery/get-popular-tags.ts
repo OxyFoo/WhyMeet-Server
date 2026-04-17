@@ -1,7 +1,7 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_GetPopularTags, WSResponse_GetPopularTags } from '@whymeet/types';
-import { SUB_INTENTIONS } from '@whymeet/types';
+import type { WSRequest_GetPopularTags, WSResponse_GetPopularTags } from '@oxyfoo/whymeet-types';
+import { SUB_INTENTIONS } from '@oxyfoo/whymeet-types';
 import { buildPipelineContext, runPipelineQuery } from '@/services/discoveryPipeline';
 import { getDatabase } from '@/services/database';
 import { logger } from '@/config/logger';
@@ -34,19 +34,25 @@ registerCommand<WSRequest_GetPopularTags>(
             const qualifiedIds = qualified.map((q) => q.user.id);
 
             const db = getDatabase();
-            const tagCounts = await db.userTag.groupBy({
-                by: ['tagId'],
+            const tagCountsRaw = await db.userTag.findMany({
                 where: { userId: { in: qualifiedIds } },
-                _count: { tagId: true },
-                orderBy: { _count: { tagId: 'desc' } },
-                take: TOP_TAGS_LIMIT
+                select: { tagId: true }
             });
 
-            if (tagCounts.length === 0) {
+            const countMap = new Map<string, number>();
+            for (const { tagId } of tagCountsRaw) {
+                countMap.set(tagId, (countMap.get(tagId) ?? 0) + 1);
+            }
+
+            const tagIds = [...countMap.entries()]
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, TOP_TAGS_LIMIT)
+                .map(([id]) => id);
+
+            if (tagIds.length === 0) {
                 return { command: 'get-popular-tags', payload: { tags: scopeTags.slice(0, TOP_TAGS_LIMIT) } };
             }
 
-            const tagIds = tagCounts.map((t) => t.tagId);
             const tags = await db.tag.findMany({
                 where: { id: { in: tagIds } },
                 select: { id: true, label: true }
