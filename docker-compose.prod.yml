@@ -1,12 +1,23 @@
 services:
+  whymeet-db-prod:
+    image: postgres:17-alpine
+    container_name: whymeet-db-prod
+    environment:
+      POSTGRES_USER: ${POSTGRESQL_USERNAME}
+      POSTGRES_PASSWORD: ${POSTGRESQL_PASSWORD}
+      POSTGRES_DB: ${POSTGRESQL_DATABASE}
+    networks:
+      oxyfoo-network:
+        ipv4_address: 172.16.0.14
+    volumes:
+      - whymeet-db-prod-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
   whymeet-pgbouncer-prod:
     image: edoburu/pgbouncer:latest
     container_name: whymeet-pgbouncer-prod
     environment:
-      # Set these via the host .env or Docker secrets:
-      # POSTGRES_HOST, POSTGRES_PORT (default 5432), POSTGRESQL_USERNAME,
-      # POSTGRESQL_PASSWORD, POSTGRESQL_DATABASE
-      DB_HOST: ${POSTGRES_HOST}
+      DB_HOST: whymeet-db-prod
       DB_PORT: ${POSTGRES_PORT:-5432}
       DB_USER: ${POSTGRESQL_USERNAME}
       DB_PASSWORD: ${POSTGRESQL_PASSWORD}
@@ -18,6 +29,8 @@ services:
     networks:
       oxyfoo-network:
         ipv4_address: 172.16.0.11
+    depends_on:
+      - whymeet-db-prod
     restart: unless-stopped
 
   whymeet-redis-prod:
@@ -67,6 +80,7 @@ services:
         ipv4_address: 170.16.0.40
     user: node
     depends_on:
+      - whymeet-db-prod
       - whymeet-pgbouncer-prod
       - whymeet-redis-prod
       - whymeet-minio-prod
@@ -83,6 +97,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  whymeet-db-prod-data:
   whymeet-minio-prod-data:
 
 networks:
