@@ -1,5 +1,5 @@
 import type { Profile, ProfilePhoto, IntentionKey, Gender, PreferredPeriod, UserBadge } from '@oxyfoo/whymeet-types';
-import { getHostLevel } from '@oxyfoo/whymeet-types';
+import { getHostLevel, BADGE_DEFINITIONS } from '@oxyfoo/whymeet-types';
 
 /**
  * Compute age from a birth date. Returns 0 if null.
@@ -160,7 +160,6 @@ function mapBadges(
     badges?: { badgeKey: string; earned: boolean; earnedAt: Date | null; progress: number }[]
 ): UserBadge[] {
     if (!badges) return [];
-    const { BADGE_DEFINITIONS } = require('@oxyfoo/whymeet-types') as typeof import('@oxyfoo/whymeet-types');
     return badges
         .filter((b) => b.earned)
         .sort((a, b) => {

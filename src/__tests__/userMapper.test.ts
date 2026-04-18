@@ -79,7 +79,9 @@ describe('mapUserToProfile', () => {
                 latitude: 48.8566,
                 longitude: 2.3522
             },
-            stats: { connections: 10, matches: 5, vibes: 42 }
+            stats: { connections: 10, matches: 5, vibes: 42 },
+            badges: [],
+            hostLevel: null
         });
     });
 
@@ -146,7 +148,8 @@ describe('mapUserToCandidate', () => {
                 banned: false,
                 preferredPeriod: 'any',
                 isPremium: false,
-                isBoosted: false
+                isBoosted: false,
+                badges: []
             },
             intentions: ['dating', 'friendship'],
             bio: 'Hello world',
