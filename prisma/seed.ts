@@ -419,14 +419,12 @@ async function main() {
                                 discoveryAgeMin: visAgeMin,
                                 discoveryAgeMax: visAgeMax,
                                 discoveryGenders: [...GENDERS],
-                                discoveryIntentions: intentions,
                                 discoveryMaxDistance: 20 + Math.floor(Math.random() * 80),
                                 discoveryRemoteMode: Math.random() > 0.8,
                                 discoveryVerified: Math.random() > 0.7,
                                 visibilityAgeMin: visAgeMin,
                                 visibilityAgeMax: visAgeMax,
                                 visibilityGenders: visGenders as string[],
-                                visibilityIntentions: intentions,
                                 visibilityMaxDistance: 20 + Math.floor(Math.random() * 80),
                                 visibilityRemoteMode: Math.random() > 0.8
                             }
