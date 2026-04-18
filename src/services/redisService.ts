@@ -13,7 +13,6 @@ export function getRedis(): Redis {
 
 export async function connectRedis(): Promise<boolean> {
     if (!env.REDIS_URL) {
-        logger.warn('[Redis] No REDIS_URL configured — cache disabled');
         return false;
     }
 
@@ -25,7 +24,6 @@ export async function connectRedis(): Promise<boolean> {
         });
         await redis.connect();
         await redis.ping();
-        logger.success('[Redis] Connected');
         return true;
     } catch (error) {
         logger.warn('[Redis] Connection failed — cache disabled', error);
@@ -38,7 +36,6 @@ export async function disconnectRedis(): Promise<void> {
     if (redis) {
         await redis.quit();
         redis = null;
-        logger.info('[Redis] Disconnected');
     }
 }
 

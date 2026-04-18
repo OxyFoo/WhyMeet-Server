@@ -14,7 +14,6 @@ let s3: S3Client | null = null;
 function getS3Client(): S3Client | null {
     if (s3) return s3;
     if (!env.S3_ENDPOINT || !env.S3_ACCESS_KEY || !env.S3_SECRET_KEY) {
-        logger.warn('[Storage] S3 not configured — avatar uploads disabled');
         return null;
     }
 
@@ -24,7 +23,6 @@ function getS3Client(): S3Client | null {
         credentials: { accessKeyId: env.S3_ACCESS_KEY, secretAccessKey: env.S3_SECRET_KEY },
         forcePathStyle: true
     });
-    logger.info('[Storage] S3 client initialized');
     return s3;
 }
 
@@ -35,7 +33,7 @@ export async function initStorage(): Promise<void> {
     try {
         await client.send(new HeadBucketCommand({ Bucket: env.S3_BUCKET }));
     } catch {
-        logger.info(`[Storage] Bucket "${env.S3_BUCKET}" not found, creating...`);
+        logger.debug(`[Storage] Bucket "${env.S3_BUCKET}" not found, creating...`);
         await client.send(new CreateBucketCommand({ Bucket: env.S3_BUCKET }));
     }
 
@@ -53,7 +51,7 @@ export async function initStorage(): Promise<void> {
     });
     await client.send(new PutBucketPolicyCommand({ Bucket: env.S3_BUCKET, Policy: policy }));
 
-    logger.info(`[Storage] Bucket "${env.S3_BUCKET}" ready (public-read)`);
+    logger.debug(`[Storage] Bucket "${env.S3_BUCKET}" ready (public-read)`);
 }
 
 export async function uploadFile(buffer: Buffer, key: string, contentType: string): Promise<string | null> {

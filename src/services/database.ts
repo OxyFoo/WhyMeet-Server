@@ -17,7 +17,6 @@ export async function connectDatabase(): Promise<boolean> {
     try {
         const db = getDatabase();
         await db.$connect();
-        logger.success('[Database] Connected');
         return true;
     } catch (error) {
         logger.error('[Database] Connection failed', error);
@@ -29,6 +28,5 @@ export async function disconnectDatabase(): Promise<void> {
     if (prisma) {
         await prisma.$disconnect();
         prisma = undefined;
-        logger.info('[Database] Disconnected');
     }
 }

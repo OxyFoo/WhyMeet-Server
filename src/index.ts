@@ -1,6 +1,6 @@
 import { env } from '@/config/env';
 import { logger } from '@/config/logger';
-import { APP_VERSION } from '@/config/version';
+import { printBanner, printService, printReady } from '@/config/banner';
 import { connectDatabase, disconnectDatabase } from '@/services/database';
 import { initStorage } from '@/services/storageService';
 import { startServer, stopServer } from '@/server/Server';
@@ -12,32 +12,49 @@ import { connectRedis, disconnectRedis } from '@/services/redisService';
 import '@/commands';
 
 async function main(): Promise<void> {
-    logger.info(`[WhyMeet Server] v${APP_VERSION} (${env.ENVIRONMENT})`);
+    printBanner();
 
-    // Connect to database
+    // Connect to database (required)
     const dbConnected = await connectDatabase();
     if (!dbConnected) {
-        logger.error('[Main] Failed to connect to database. Exiting...');
+        printService('Database', 'fail', 'Connection failed');
         process.exit(1);
     }
+    printService('Database', 'ok', 'Connected');
 
-    // Log registered commands
-    const commands = getRegisteredCommands();
-    logger.info(`[Main] Registered ${commands.length} commands: ${commands.join(', ')}`);
+    // Connect to Redis (optional)
+    const redisConnected = await connectRedis();
+    printService('Redis', redisConnected ? 'ok' : 'warn', redisConnected ? 'Connected' : 'Not configured');
 
-    // Connect to Redis (optional, cache degrades gracefully if unavailable)
-    await connectRedis();
+    // Initialize S3 storage (optional)
+    const s3Configured = !!(env.S3_ENDPOINT && env.S3_ACCESS_KEY && env.S3_SECRET_KEY);
+    if (s3Configured) await initStorage();
+    printService(
+        'Storage (S3)',
+        s3Configured ? 'ok' : 'warn',
+        s3Configured ? `Bucket ${env.S3_BUCKET}` : 'Not configured'
+    );
 
-    // Initialize S3 storage
-    await initStorage();
+    // Check optional external services
+    printService('SMTP', env.SMTP_HOST ? 'ok' : 'warn', env.SMTP_HOST || 'Not configured');
+    printService(
+        'Firebase (FCM)',
+        env.FIREBASE_SERVICE_ACCOUNT ? 'ok' : 'warn',
+        env.FIREBASE_SERVICE_ACCOUNT ? 'Configured' : 'Not configured'
+    );
+    printService('OpenAI', env.OPENAI_API_KEY ? 'ok' : 'warn', env.OPENAI_API_KEY ? 'Configured' : 'Not configured');
 
     // Start WebSocket server
     await startServer(env.LISTEN_PORT_WS);
+    printService('WebSocket', 'ok', `Listening on :${env.LISTEN_PORT_WS}`);
 
     // Start activity notification scheduler
     startActivityNotifScheduler();
+    printService('Scheduler', 'ok', 'Started (900s interval)');
 
-    logger.success(`[Main] All services started successfully`);
+    // Final ready message
+    const commands = getRegisteredCommands();
+    printReady(commands.length);
 }
 
 // Graceful shutdown

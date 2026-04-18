@@ -48,19 +48,32 @@ async function processScheduledNotifs(): Promise<void> {
             }
 
             const settingKey = notif.type === '24h' ? 'notifActivityReminder24h' : 'notifActivityReminder1h';
-            const notifTitleKey = notif.type === '24h' ? 'activity_reminder_24h_title' : 'activity_reminder_1h_title';
-            const notifBodyKey = notif.type === '24h' ? 'activity_reminder_24h_body' : 'activity_reminder_1h_body';
+            const notifTitleKey =
+                notif.type === '24h'
+                    ? 'activity_reminder_24h_title'
+                    : notif.type === 'post_event'
+                      ? 'activity_post_event_title'
+                      : 'activity_reminder_1h_title';
+            const notifBodyKey =
+                notif.type === '24h'
+                    ? 'activity_reminder_24h_body'
+                    : notif.type === 'post_event'
+                      ? 'activity_post_event_body'
+                      : 'activity_reminder_1h_body';
+            const notifType = notif.type === 'post_event' ? 'activity_confirm' : 'activity_reminder';
 
             for (const participant of activity.participants) {
                 const { userId } = participant;
 
-                // Check user setting
-                const settings = await db.settings.findUnique({
-                    where: { userId },
-                    select: { [settingKey]: true }
-                });
+                // Check user setting (post_event always sends)
+                if (notif.type !== 'post_event') {
+                    const settings = await db.settings.findUnique({
+                        where: { userId },
+                        select: { [settingKey]: true }
+                    });
 
-                if (settings && settings[settingKey] === false) continue;
+                    if (settings && settings[settingKey] === false) continue;
+                }
 
                 const lang = await getUserLanguage(userId);
                 const title = t(lang, notifTitleKey, { title: activity.title });
@@ -70,7 +83,7 @@ async function processScheduledNotifs(): Promise<void> {
                 await db.notification.create({
                     data: {
                         userId,
-                        type: 'activity_reminder',
+                        type: notifType,
                         title,
                         body,
                         activityId: activity.id
@@ -81,7 +94,7 @@ async function processScheduledNotifs(): Promise<void> {
                 pushToUser(userId, {
                     title,
                     body,
-                    data: { type: 'activity_reminder', activityId: activity.id }
+                    data: { type: notifType, activityId: activity.id }
                 });
             }
 
@@ -105,7 +118,6 @@ async function processScheduledNotifs(): Promise<void> {
 export function startActivityNotifScheduler(): void {
     if (intervalId) return;
     intervalId = setInterval(processScheduledNotifs, CHECK_INTERVAL_MS);
-    logger.info(`[ActivityNotifScheduler] Started (interval: ${CHECK_INTERVAL_MS / 1000}s)`);
 
     // Also run once immediately
     processScheduledNotifs();
@@ -118,6 +130,5 @@ export function stopActivityNotifScheduler(): void {
     if (intervalId) {
         clearInterval(intervalId);
         intervalId = null;
-        logger.info('[ActivityNotifScheduler] Stopped');
     }
 }

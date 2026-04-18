@@ -168,7 +168,6 @@ export function startServer(port: number): Promise<void> {
         wss.on('connection', onConnection);
 
         httpServer.listen(port, () => {
-            logger.success(`[Server] Listening on port ${port}`);
             resolve();
         });
     });
