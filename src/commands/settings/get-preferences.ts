@@ -5,8 +5,7 @@ import type {
     WSResponse_GetPreferences,
     DiscoveryPreferences,
     VisibilityPreferences,
-    Gender,
-    IntentionKey
+    Gender
 } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { logger } from '@/config/logger';
@@ -24,7 +23,6 @@ registerCommand<WSRequest_GetPreferences>(
             const discovery: DiscoveryPreferences = {
                 ageRange: [settings?.discoveryAgeMin ?? 18, settings?.discoveryAgeMax ?? 99],
                 genders: (settings?.discoveryGenders ?? ['male', 'female', 'non_binary']) as Gender[],
-                intentions: (settings?.discoveryIntentions ?? []) as IntentionKey[],
                 maxDistance: settings?.discoveryMaxDistance ?? 50,
                 remoteMode: settings?.discoveryRemoteMode ?? false,
                 verifiedOnly: settings?.discoveryVerified ?? false,
@@ -34,7 +32,6 @@ registerCommand<WSRequest_GetPreferences>(
             const visibility: VisibilityPreferences = {
                 ageRange: [settings?.visibilityAgeMin ?? 18, settings?.visibilityAgeMax ?? 99],
                 genders: (settings?.visibilityGenders ?? ['male', 'female', 'non_binary']) as Gender[],
-                intentions: (settings?.visibilityIntentions ?? []) as IntentionKey[],
                 maxDistance: settings?.visibilityMaxDistance ?? 50,
                 remoteMode: settings?.visibilityRemoteMode ?? false
             };

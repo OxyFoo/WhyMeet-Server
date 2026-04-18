@@ -5,8 +5,7 @@ import type {
     WSResponse_UpdatePreferences,
     DiscoveryPreferences,
     VisibilityPreferences,
-    Gender,
-    IntentionKey
+    Gender
 } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { GENDERS } from '@oxyfoo/whymeet-types';
@@ -81,7 +80,6 @@ registerCommand<WSRequest_UpdatePreferences>(
                     data.discoveryAgeMax = discovery.ageRange[1];
                 }
                 if (discovery.genders !== undefined) data.discoveryGenders = discovery.genders;
-                if (discovery.intentions !== undefined) data.discoveryIntentions = discovery.intentions;
                 if (discovery.maxDistance !== undefined) data.discoveryMaxDistance = discovery.maxDistance;
                 if (discovery.remoteMode !== undefined) data.discoveryRemoteMode = discovery.remoteMode;
                 if (discovery.verifiedOnly !== undefined) data.discoveryVerified = discovery.verifiedOnly;
@@ -104,7 +102,6 @@ registerCommand<WSRequest_UpdatePreferences>(
                     data.visibilityAgeMax = discovery.ageRange[1];
                 }
                 if (discovery.genders !== undefined) data.visibilityGenders = discovery.genders;
-                if (discovery.intentions !== undefined) data.visibilityIntentions = discovery.intentions;
                 if (discovery.maxDistance !== undefined) data.visibilityMaxDistance = discovery.maxDistance;
                 if (discovery.remoteMode !== undefined) data.visibilityRemoteMode = discovery.remoteMode;
             } else if (visibility && !shouldSync) {
@@ -113,7 +110,6 @@ registerCommand<WSRequest_UpdatePreferences>(
                     data.visibilityAgeMax = visibility.ageRange[1];
                 }
                 if (visibility.genders !== undefined) data.visibilityGenders = visibility.genders;
-                if (visibility.intentions !== undefined) data.visibilityIntentions = visibility.intentions;
                 if (visibility.maxDistance !== undefined) data.visibilityMaxDistance = visibility.maxDistance;
                 if (visibility.remoteMode !== undefined) data.visibilityRemoteMode = visibility.remoteMode;
             }
@@ -130,7 +126,6 @@ registerCommand<WSRequest_UpdatePreferences>(
             const resDiscovery: DiscoveryPreferences = {
                 ageRange: [updated.discoveryAgeMin, updated.discoveryAgeMax],
                 genders: updated.discoveryGenders as Gender[],
-                intentions: updated.discoveryIntentions as IntentionKey[],
                 maxDistance: updated.discoveryMaxDistance,
                 remoteMode: updated.discoveryRemoteMode,
                 verifiedOnly: updated.discoveryVerified,
@@ -140,7 +135,6 @@ registerCommand<WSRequest_UpdatePreferences>(
             const resVisibility: VisibilityPreferences = {
                 ageRange: [updated.visibilityAgeMin, updated.visibilityAgeMax],
                 genders: updated.visibilityGenders as Gender[],
-                intentions: updated.visibilityIntentions as IntentionKey[],
                 maxDistance: updated.visibilityMaxDistance,
                 remoteMode: updated.visibilityRemoteMode
             };

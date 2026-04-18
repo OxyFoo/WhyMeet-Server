@@ -113,7 +113,6 @@ model Settings {
     discoveryAgeMin      Int      @default(18)
     discoveryAgeMax      Int      @default(99)
     discoveryGenders     String[] @default(["male", "female", "non_binary", "other", "prefer_not_to_say"])
-    discoveryIntentions  String[] @default([])
     discoveryMaxDistance Int      @default(50)
     discoveryRemoteMode  Boolean  @default(false)
     discoveryVerified    Boolean  @default(false)
@@ -124,7 +123,6 @@ model Settings {
     visibilityAgeMin      Int      @default(18)
     visibilityAgeMax      Int      @default(99)
     visibilityGenders     String[] @default(["male", "female", "non_binary", "other", "prefer_not_to_say"])
-    visibilityIntentions  String[] @default([])
     visibilityMaxDistance Int      @default(50)
     visibilityRemoteMode  Boolean  @default(false)
 

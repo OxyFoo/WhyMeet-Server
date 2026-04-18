@@ -53,7 +53,6 @@ export interface PipelineSetup {
     prefVerified: boolean;
     storedMaxDistance: number;
     storedRemote: boolean;
-    storedIntentions: IntentionKey[] | undefined;
     excludeIds: string[];
 }
 
@@ -100,7 +99,6 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
     const prefVerified = settings?.discoveryVerified ?? false;
     const storedMaxDistance = settings?.discoveryMaxDistance ?? DEFAULT_MAX_DISTANCE;
     const storedRemote = settings?.discoveryRemoteMode ?? false;
-    const storedIntentions = settings?.discoveryIntentions as IntentionKey[] | undefined;
 
     // ── Level 3 cache: excludeIds via Redis Set ──────────────────────────
     const excludeIds = await getExcludeIds(client.userId);
@@ -125,7 +123,6 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
         prefVerified,
         storedMaxDistance,
         storedRemote,
-        storedIntentions,
         excludeIds
     };
 
@@ -200,15 +197,6 @@ function buildPipelineWhere(
             visibilityFilter.push({ visibilityGenders: { hasSome: [setup.myGender] } });
         }
 
-        if (setup.myIntentions.length > 0) {
-            visibilityFilter.push({
-                OR: [
-                    { visibilityIntentions: { isEmpty: true } },
-                    { visibilityIntentions: { hasSome: setup.myIntentions } }
-                ]
-            });
-        }
-
         where.settings = { AND: visibilityFilter };
     }
 
@@ -247,7 +235,7 @@ function buildPipelineWhere(
  */
 export async function countPipelineQuery(setup: PipelineSetup, filters?: SearchFilters): Promise<number> {
     const db = getDatabase();
-    const prefIntentions = filters?.intentions ?? (setup.storedIntentions?.length ? setup.storedIntentions : undefined);
+    const prefIntentions = filters?.intentions;
     const prefRemote = filters?.remote ?? setup.storedRemote;
     const where = buildPipelineWhere(setup, filters, prefIntentions, prefRemote);
     return db.user.count({ where });
@@ -266,7 +254,7 @@ export async function runPipelineQuery(
 
     const prefMaxDistance = filters?.maxDistance ?? setup.storedMaxDistance;
     const prefRemote = filters?.remote ?? setup.storedRemote;
-    const prefIntentions = filters?.intentions ?? (setup.storedIntentions?.length ? setup.storedIntentions : undefined);
+    const prefIntentions = filters?.intentions;
 
     const where = buildPipelineWhere(setup, filters, prefIntentions, prefRemote);
 
