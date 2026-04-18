@@ -8,6 +8,7 @@ import type {
     Gender
 } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
+import { DEFAULT_DISCOVERY, DEFAULT_VISIBILITY } from '@oxyfoo/whymeet-types';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_GetPreferences>(
@@ -21,19 +22,25 @@ registerCommand<WSRequest_GetPreferences>(
             });
 
             const discovery: DiscoveryPreferences = {
-                ageRange: [settings?.discoveryAgeMin ?? 18, settings?.discoveryAgeMax ?? 99],
-                genders: (settings?.discoveryGenders ?? ['male', 'female', 'non_binary']) as Gender[],
-                maxDistance: settings?.discoveryMaxDistance ?? 50,
-                remoteMode: settings?.discoveryRemoteMode ?? false,
-                verifiedOnly: settings?.discoveryVerified ?? false,
-                photosOnly: settings?.discoveryPhotosOnly ?? false
+                ageRange: [
+                    settings?.discoveryAgeMin ?? DEFAULT_DISCOVERY.ageRange[0],
+                    settings?.discoveryAgeMax ?? DEFAULT_DISCOVERY.ageRange[1]
+                ],
+                genders: (settings?.discoveryGenders ?? DEFAULT_DISCOVERY.genders) as Gender[],
+                maxDistance: settings?.discoveryMaxDistance ?? DEFAULT_DISCOVERY.maxDistance,
+                remoteMode: settings?.discoveryRemoteMode ?? DEFAULT_DISCOVERY.remoteMode,
+                verifiedOnly: settings?.discoveryVerified ?? DEFAULT_DISCOVERY.verifiedOnly,
+                photosOnly: settings?.discoveryPhotosOnly ?? DEFAULT_DISCOVERY.photosOnly
             };
 
             const visibility: VisibilityPreferences = {
-                ageRange: [settings?.visibilityAgeMin ?? 18, settings?.visibilityAgeMax ?? 99],
-                genders: (settings?.visibilityGenders ?? ['male', 'female', 'non_binary']) as Gender[],
-                maxDistance: settings?.visibilityMaxDistance ?? 50,
-                remoteMode: settings?.visibilityRemoteMode ?? false
+                ageRange: [
+                    settings?.visibilityAgeMin ?? DEFAULT_VISIBILITY.ageRange[0],
+                    settings?.visibilityAgeMax ?? DEFAULT_VISIBILITY.ageRange[1]
+                ],
+                genders: (settings?.visibilityGenders ?? DEFAULT_VISIBILITY.genders) as Gender[],
+                maxDistance: settings?.visibilityMaxDistance ?? DEFAULT_VISIBILITY.maxDistance,
+                remoteMode: settings?.visibilityRemoteMode ?? DEFAULT_VISIBILITY.remoteMode
             };
 
             return {
