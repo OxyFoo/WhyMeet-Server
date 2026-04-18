@@ -129,13 +129,17 @@ export function startServer(port: number): Promise<void> {
                         return;
                     }
 
-                    // Check if the user is banned or deleted
+                    // Check if the user is banned, suspended, or deleted
                     const user = await db.user.findUnique({
                         where: { id: payload.userId },
-                        select: { banned: true, deleted: true }
+                        select: { banned: true, suspended: true, deleted: true }
                     });
                     if (user?.banned) {
                         callback(false, 4003, 'Account banned');
+                        return;
+                    }
+                    if (user?.suspended) {
+                        callback(false, 4003, 'Account suspended');
                         return;
                     }
                     if (user?.deleted) {

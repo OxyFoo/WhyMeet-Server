@@ -28,6 +28,15 @@ registerCommand<WSRequest_SendMessage>(
                 return { command: 'send-message', payload: { error: 'Not a participant' } };
             }
 
+            // Verify sender is not banned/suspended/deleted
+            const sender = await db.user.findUnique({
+                where: { id: client.userId },
+                select: { banned: true, suspended: true, deleted: true }
+            });
+            if (!sender || sender.banned || sender.suspended || sender.deleted) {
+                return { command: 'send-message', payload: { error: 'Account unavailable' } };
+            }
+
             // Create message
             const message = await db.message.create({
                 data: {

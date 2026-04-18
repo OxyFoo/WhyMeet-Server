@@ -27,6 +27,15 @@ registerCommand<WSRequest_Star>('star', async (client: Client, payload): Promise
         // Track in exclusion cache
         addExcluded(client.userId, candidateId).catch(() => {});
 
+        // Verify candidate is still active
+        const candidateUser = await db.user.findUnique({
+            where: { id: candidateId },
+            select: { banned: true, suspended: true, deleted: true }
+        });
+        if (!candidateUser || candidateUser.banned || candidateUser.suspended || candidateUser.deleted) {
+            return { command: 'star', payload: { error: 'User not found' } };
+        }
+
         // Star is like a super-like
         const match = await db.match.upsert({
             where: {

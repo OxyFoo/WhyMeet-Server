@@ -40,6 +40,10 @@ registerCommand<WSRequest_GetUserProfile>(
                 return { command: 'get-user-profile', payload: { error: 'User not found' } };
             }
 
+            if (targetUser.banned || targetUser.suspended || targetUser.deleted) {
+                return { command: 'get-user-profile', payload: { error: 'User not found' } };
+            }
+
             // Parallel: current user profile (distance) + interaction checks
             const [currentUser, existingMatch, existingReport] = await Promise.all([
                 db.user.findUnique({ where: { id: client.userId }, include: { profile: true } }),

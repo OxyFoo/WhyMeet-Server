@@ -510,6 +510,11 @@ authRouter.post('/refresh-ws-token', refreshLimiter, async (req, res) => {
             return;
         }
 
+        if (user.banned || user.suspended || user.deleted) {
+            res.status(403).json({ error: 'Account unavailable' });
+            return;
+        }
+
         const newSessionToken = await tokenManager.session.cycle(device.id);
         const wsToken = tokenManager.ws.generate(device.userId, device.id);
 

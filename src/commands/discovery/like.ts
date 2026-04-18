@@ -27,6 +27,15 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
         // Track in exclusion cache so candidate won't reappear in discovery
         addExcluded(client.userId, candidateId).catch(() => {});
 
+        // Verify candidate is still active
+        const candidate = await db.user.findUnique({
+            where: { id: candidateId },
+            select: { banned: true, suspended: true, deleted: true }
+        });
+        if (!candidate || candidate.banned || candidate.suspended || candidate.deleted) {
+            return { command: 'like', payload: { error: 'User not found' } };
+        }
+
         // Create or update the match record
         const match = await db.match.upsert({
             where: {

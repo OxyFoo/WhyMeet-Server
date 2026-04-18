@@ -18,6 +18,15 @@ registerCommand<WSRequest_AcceptRequest>(
         try {
             addExcluded(client.userId, senderId).catch(() => {});
 
+            // Verify sender is still active
+            const senderUser = await db.user.findUnique({
+                where: { id: senderId },
+                select: { banned: true, suspended: true, deleted: true }
+            });
+            if (!senderUser || senderUser.banned || senderUser.suspended || senderUser.deleted) {
+                return { command: 'accept-request', payload: { error: 'User not found' } };
+            }
+
             // Create a like from current user → sender (this makes it mutual)
             await db.match.upsert({
                 where: {
