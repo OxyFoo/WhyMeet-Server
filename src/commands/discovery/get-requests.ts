@@ -61,7 +61,8 @@ registerCommand<WSRequest_GetRequests>('get-requests', async (client: Client): P
                     banned: m.sender.banned ?? false,
                     preferredPeriod: (m.sender.preferredPeriod ?? 'any') as PreferredPeriod,
                     isPremium: false,
-                    isBoosted: false
+                    isBoosted: false,
+                    badges: []
                 },
                 intentions: (m.sender.profile?.intentions ?? []) as IntentionKey[],
                 matchContext: m.matchContext,

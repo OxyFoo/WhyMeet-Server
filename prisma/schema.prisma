@@ -49,6 +49,7 @@ model User {
     hostedActivities       Activity[]                @relation("ActivityHost")
     activityParticipations ActivityParticipant[]
     activityReports        ActivityReport[]
+    badges                 UserBadge[]
 
     @@map("users")
 }
@@ -97,6 +98,11 @@ model Profile {
 
     // Spoken languages for remote matching
     spokenLanguages String[] @default(["fr"])
+
+    // Trust & hosting stats (denormalized)
+    trustScore           Int @default(0)
+    completedHostedCount Int @default(0)
+    cancelledHostedCount Int @default(0)
 
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -289,15 +295,16 @@ model Block {
 }
 
 model Report {
-    id         String   @id @default(cuid())
-    reporterId String
-    reportedId String
-    reason     String // "spam" | "fake_profile" | "inappropriate" | "hate_speech" | "underage" | "other"
-    sourceType String   @default("profile") // "profile" | "conversation" | "activity"
-    sourceId   String?
-    message    String   @default("") @db.VarChar(500)
-    status     String   @default("pending") // "pending" | "reviewing" | "resolved_action_taken" | "resolved_no_action"
-    createdAt  DateTime @default(now())
+    id           String   @id @default(cuid())
+    reporterId   String
+    reportedId   String
+    reason       String // "spam" | "fake_profile" | "inappropriate" | "hate_speech" | "underage" | "other"
+    sourceType   String   @default("profile") // "profile" | "conversation" | "activity"
+    sourceId     String?
+    message      String   @default("") @db.VarChar(500)
+    status       String   @default("pending") // "pending" | "reviewing" | "resolved_action_taken" | "resolved_no_action"
+    isLegitimate Boolean  @default(true)
+    createdAt    DateTime @default(now())
 
     reporter User @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
     reported User @relation("Reported", fields: [reportedId], references: [id], onDelete: Cascade)
@@ -379,21 +386,24 @@ model SwipeQuota {
 // ─── Activities ─────────────────────────────────────────────────────
 
 model Activity {
-    id              String    @id @default(cuid())
-    hostId          String
-    title           String
-    description     String    @default("")
-    category        String // InterestCategoryKey
-    dateTime        DateTime?
-    locationName    String    @default("")
-    latitude        Float?
-    longitude       Float?
-    maxParticipants Int?
-    isCancelled     Boolean   @default(false)
-    isArchived      Boolean   @default(false)
-    conversationId  String?   @unique
-    createdAt       DateTime  @default(now())
-    updatedAt       DateTime  @updatedAt
+    id                    String    @id @default(cuid())
+    hostId                String
+    title                 String
+    description           String    @default("")
+    category              String // InterestCategoryKey
+    dateTime              DateTime?
+    locationName          String    @default("")
+    latitude              Float?
+    longitude             Float?
+    maxParticipants       Int?
+    isCancelled           Boolean   @default(false)
+    isArchived            Boolean   @default(false)
+    isCompleted           Boolean   @default(false)
+    hostConfirmedAt       DateTime?
+    hostReportedAttendees Int?
+    conversationId        String?   @unique
+    createdAt             DateTime  @default(now())
+    updatedAt             DateTime  @updatedAt
 
     host            User                     @relation("ActivityHost", fields: [hostId], references: [id], onDelete: Cascade)
     conversation    Conversation?            @relation(fields: [conversationId], references: [id])
@@ -409,10 +419,11 @@ model Activity {
 }
 
 model ActivityParticipant {
-    id         String   @id @default(cuid())
-    activityId String
-    userId     String
-    joinedAt   DateTime @default(now())
+    id                  String   @id @default(cuid())
+    activityId          String
+    userId              String
+    joinedAt            DateTime @default(now())
+    confirmedAttendance Boolean?
 
     activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
     user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -436,13 +447,14 @@ model ActivityPhoto {
 }
 
 model ActivityReport {
-    id         String   @id @default(cuid())
-    reporterId String
-    activityId String
-    reason     String // ReportReason
-    message    String   @default("") @db.VarChar(500)
-    status     String   @default("pending")
-    createdAt  DateTime @default(now())
+    id           String   @id @default(cuid())
+    reporterId   String
+    activityId   String
+    reason       String // ReportReason
+    message      String   @default("") @db.VarChar(500)
+    status       String   @default("pending")
+    isLegitimate Boolean  @default(true)
+    createdAt    DateTime @default(now())
 
     reporter User     @relation(fields: [reporterId], references: [id], onDelete: Cascade)
     activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
@@ -455,7 +467,7 @@ model ActivityReport {
 model ActivityScheduledNotif {
     id          String    @id @default(cuid())
     activityId  String
-    type        String // "24h" | "1h"
+    type        String // "24h" | "1h" | "post_event"
     scheduledAt DateTime
     sent        Boolean   @default(false)
     sentAt      DateTime?
@@ -465,4 +477,21 @@ model ActivityScheduledNotif {
     @@unique([activityId, type])
     @@index([scheduledAt, sent])
     @@map("activity_scheduled_notifs")
+}
+
+// ─── Badges ─────────────────────────────────────────────────────────
+
+model UserBadge {
+    id       String    @id @default(cuid())
+    userId   String
+    badgeKey String
+    progress Int       @default(0)
+    earned   Boolean   @default(false)
+    earnedAt DateTime?
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@unique([userId, badgeKey])
+    @@index([userId, earned])
+    @@map("user_badges")
 }

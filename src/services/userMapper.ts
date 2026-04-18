@@ -1,4 +1,5 @@
-import type { Profile, ProfilePhoto, IntentionKey, Gender, PreferredPeriod } from '@oxyfoo/whymeet-types';
+import type { Profile, ProfilePhoto, IntentionKey, Gender, PreferredPeriod, UserBadge } from '@oxyfoo/whymeet-types';
+import { getHostLevel } from '@oxyfoo/whymeet-types';
 
 /**
  * Compute age from a birth date. Returns 0 if null.
@@ -105,8 +106,11 @@ export function mapUserToProfile(user: {
         statVibes: number;
         intentions: string[];
         spokenLanguages: string[];
+        trustScore: number;
+        completedHostedCount: number;
     } | null;
     tags?: { type: string; tag: { id: string; label: string } }[];
+    badges?: { badgeKey: string; earned: boolean; earnedAt: Date | null; progress: number }[];
 }): Profile {
     return {
         id: user.id,
@@ -127,6 +131,7 @@ export function mapUserToProfile(user: {
         preferredPeriod: (user.preferredPeriod ?? 'any') as PreferredPeriod,
         isPremium: false,
         isBoosted: false,
+        badges: mapBadges(user.badges),
         bio: user.profile?.bio ?? '',
         socialVibe: (user.profile?.socialVibe ?? 'chill') as Profile['socialVibe'],
         interests: (user.tags ?? [])
@@ -146,15 +151,42 @@ export function mapUserToProfile(user: {
             connections: user.profile?.statConnections ?? 0,
             matches: user.profile?.statMatches ?? 0,
             vibes: user.profile?.statVibes ?? 0
-        }
+        },
+        hostLevel: getHostLevel(user.profile?.trustScore ?? 0, user.profile?.completedHostedCount ?? 0)
     };
+}
+
+function mapBadges(
+    badges?: { badgeKey: string; earned: boolean; earnedAt: Date | null; progress: number }[]
+): UserBadge[] {
+    if (!badges) return [];
+    const { BADGE_DEFINITIONS } = require('@oxyfoo/whymeet-types') as typeof import('@oxyfoo/whymeet-types');
+    return badges
+        .filter((b) => b.earned)
+        .sort((a, b) => {
+            const defA = BADGE_DEFINITIONS.find((d: { key: string }) => d.key === a.badgeKey);
+            const defB = BADGE_DEFINITIONS.find((d: { key: string }) => d.key === b.badgeKey);
+            return (defA?.displayOrder ?? 99) - (defB?.displayOrder ?? 99);
+        })
+        .slice(0, 3)
+        .map((b) => {
+            const def = BADGE_DEFINITIONS.find((d: { key: string }) => d.key === b.badgeKey);
+            return {
+                key: b.badgeKey as UserBadge['key'],
+                earned: b.earned,
+                earnedAt: b.earnedAt?.toISOString() ?? null,
+                progress: b.progress,
+                threshold: def?.threshold ?? null
+            };
+        });
 }
 
 /** Prisma include clause to fetch everything needed for mapUserToProfile */
 export const profileInclude = {
     profile: true,
     photos: { orderBy: { position: 'asc' as const } },
-    tags: { include: { tag: true } }
+    tags: { include: { tag: true } },
+    badges: { where: { earned: true }, orderBy: { earnedAt: 'asc' as const } }
 } as const;
 
 // ─── MatchCandidate mapping ─────────────────────────────────────────
@@ -203,7 +235,8 @@ export function mapUserToCandidate(
             banned: user.banned ?? false,
             preferredPeriod: (user.preferredPeriod ?? 'any') as PreferredPeriod,
             isPremium: flags?.isPremium ?? false,
-            isBoosted: flags?.isBoosted ?? false
+            isBoosted: flags?.isBoosted ?? false,
+            badges: mapBadges(user.badges)
         },
         intentions: sorted,
         bio: user.profile?.bio ?? '',

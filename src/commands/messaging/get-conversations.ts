@@ -34,7 +34,8 @@ function mapUser(u: UserWithPhotos) {
         banned: u.banned ?? false,
         preferredPeriod: (u.preferredPeriod ?? 'any') as PreferredPeriod,
         isPremium: false,
-        isBoosted: false
+        isBoosted: false,
+        badges: []
     };
 }
 
@@ -51,7 +52,8 @@ const UNKNOWN_USER = {
     banned: false,
     preferredPeriod: 'any' as PreferredPeriod,
     isPremium: false,
-    isBoosted: false
+    isBoosted: false,
+    badges: []
 };
 
 registerCommand<WSRequest_GetConversations>(

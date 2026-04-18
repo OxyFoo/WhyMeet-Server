@@ -8,5 +8,7 @@
     "activity_reminder_1h_title": "Activité bientôt !",
     "activity_reminder_1h_body": "{title} commence dans 1h",
     "activity_cancelled_title": "Activité annulée",
-    "activity_cancelled_body": "{title} a été annulée par l'organisateur"
+    "activity_cancelled_body": "{title} a été annulée par l'organisateur",
+    "activity_post_event_title": "Comment s'est passée l'activité ?",
+    "activity_post_event_body": "Confirmez votre participation à {title}"
 }

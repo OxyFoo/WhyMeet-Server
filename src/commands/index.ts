@@ -51,3 +51,7 @@ import './activity/get-activities';
 import './activity/get-activity-counts';
 import './activity/search-activities';
 import './activity/report-activity';
+import './activity/confirm-host-attendance';
+import './activity/confirm-participation';
+import './badges/get-badges';
+import './badges/get-user-badges';

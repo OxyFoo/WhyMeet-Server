@@ -3,6 +3,7 @@ import type {
     ActivityPhoto,
     InterestCategoryKey,
     User,
+    ActivityParticipantInfo,
     Gender,
     PreferredPeriod,
     ProfilePhoto
@@ -13,6 +14,7 @@ import { getDistanceKm } from '@/services/userMapper';
 import { computeAge } from '@/services/userMapper';
 import { discretizePosition } from '@/services/geoUtils';
 import { logger } from '@/config/logger';
+import { checkAndAwardBadges } from '@/services/badgeService';
 
 const ACTIVITY_ARCHIVE_THRESHOLD = 4;
 
@@ -39,7 +41,8 @@ function mapPrismaUserToUser(u: UserWithPhotos): User {
         banned: u.banned ?? false,
         preferredPeriod: (u.preferredPeriod ?? 'any') as PreferredPeriod,
         isPremium: false,
-        isBoosted: false
+        isBoosted: false,
+        badges: []
     };
 }
 
@@ -58,7 +61,14 @@ interface PrismaActivityWithRelations {
     conversationId: string | null;
     isCancelled: boolean;
     isArchived: boolean;
-    participants: { userId: string; user: Parameters<typeof mapPrismaUserToUser>[0] }[];
+    isCompleted: boolean;
+    hostConfirmedAt: Date | null;
+    hostReportedAttendees: number | null;
+    participants: {
+        userId: string;
+        confirmedAttendance: boolean | null;
+        user: Parameters<typeof mapPrismaUserToUser>[0];
+    }[];
     photos: { id: string; key: string; position: number }[];
     createdAt: Date;
     updatedAt: Date;
@@ -85,8 +95,11 @@ function mapToActivity(
         longitude: a.longitude,
         maxParticipants: a.maxParticipants,
         participantCount: a.participants?.length ?? 0,
-        participants: (a.participants ?? []).map((p: { user: Parameters<typeof mapPrismaUserToUser>[0] }) =>
-            mapPrismaUserToUser(p.user)
+        participants: (a.participants ?? []).map(
+            (p): ActivityParticipantInfo => ({
+                ...mapPrismaUserToUser(p.user),
+                confirmedAttendance: p.confirmedAttendance ?? null
+            })
         ),
         photos: (a.photos ?? []).map(
             (p: { id: string; key: string; position: number }): ActivityPhoto => ({
@@ -98,6 +111,9 @@ function mapToActivity(
         conversationId: a.conversationId,
         isCancelled: a.isCancelled,
         isArchived: a.isArchived,
+        isCompleted: a.isCompleted,
+        hostConfirmedAt: a.hostConfirmedAt?.toISOString() ?? null,
+        hostReportedAttendees: a.hostReportedAttendees,
         isParticipant: (a.participants ?? []).some((p: { userId: string }) => p.userId === viewerId),
         isHost: a.hostId === viewerId,
         distance: distStr,
@@ -356,6 +372,9 @@ export async function joinActivity(
         select: { latitude: true, longitude: true }
     });
 
+    // Check badge progress after joining
+    checkAndAwardBadges(userId).catch((e) => logger.error('[Badges] post-join check failed', e));
+
     return {
         activity: mapToActivity(fullActivity!, userId, viewerProfile?.latitude, viewerProfile?.longitude),
         conversationId: activity.conversationId!
@@ -428,7 +447,7 @@ export async function reportActivity(
     logger.info(`[Activity] User ${reporterId} reported activity ${activityId} (${reason})`);
 
     // Auto-archive if threshold reached
-    const reportCount = await db.activityReport.count({ where: { activityId } });
+    const reportCount = await db.activityReport.count({ where: { activityId, isLegitimate: true } });
     if (reportCount >= ACTIVITY_ARCHIVE_THRESHOLD && !activity.isArchived) {
         await db.activity.update({
             where: { id: activityId },
@@ -463,6 +482,16 @@ async function scheduleActivityNotifs(activityId: string, dateTime: Date): Promi
             where: { activityId_type: { activityId, type: '1h' } },
             create: { activityId, type: '1h', scheduledAt: h1Before },
             update: { scheduledAt: h1Before, sent: false, sentAt: null }
+        });
+    }
+
+    // Schedule post-event confirmation reminder (1h after event)
+    const h1After = new Date(dateTime.getTime() + 1 * 60 * 60 * 1000);
+    if (h1After > now) {
+        await db.activityScheduledNotif.upsert({
+            where: { activityId_type: { activityId, type: 'post_event' } },
+            create: { activityId, type: 'post_event', scheduledAt: h1After },
+            update: { scheduledAt: h1After, sent: false, sentAt: null }
         });
     }
 }

@@ -67,7 +67,7 @@ registerCommand<WSRequest_ReportUser>(
 
             // Check if the reported user should be suspended
             const reportCount = await db.report.count({
-                where: { reportedId }
+                where: { reportedId, isLegitimate: true }
             });
 
             if (reportCount >= SUSPENSION_THRESHOLD) {

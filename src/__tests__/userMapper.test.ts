@@ -30,7 +30,9 @@ function baseUser() {
             statMatches: 5,
             statVibes: 42,
             intentions: ['dating', 'friendship'],
-            spokenLanguages: ['fr', 'en']
+            spokenLanguages: ['fr', 'en'],
+            trustScore: 0,
+            completedHostedCount: 0
         },
         tags: [
             { type: 'interest', tag: { id: 'tag-1', label: 'Photographie' } },
