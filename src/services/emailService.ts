@@ -13,9 +13,7 @@ const transporter = env.SMTP_HOST
     : null;
 
 function buildValidationUrl(token: string): string {
-    const scheme = env.SSL_PRIVATE_KEY_PATH ? 'https' : 'http';
-    const port = env.ENVIRONMENT === 'prod' ? '' : `:${env.LISTEN_PORT_WS}`;
-    return `${scheme}://${env.DOMAIN}${port}/auth/validate-email/${encodeURIComponent(token)}`;
+    return `${env.PUBLIC_APP_URL}/auth/validate-email/${encodeURIComponent(token)}`;
 }
 
 export async function sendConfirmationEmail(to: string, mailToken: string): Promise<void> {
