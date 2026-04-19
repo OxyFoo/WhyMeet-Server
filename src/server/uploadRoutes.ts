@@ -332,6 +332,58 @@ uploadRouter.post('/activity-photo', uploadLimiter, upload.single('photo'), asyn
     }
 });
 
+/**
+ * DELETE /upload/activity-photo/:id
+ * Headers: x-device-uuid, x-session-token
+ * Body: { activityId: string }
+ */
+uploadRouter.delete('/activity-photo/:id', uploadLimiter, async (req, res) => {
+    const auth = await authenticateDevice(req, res);
+    if (!auth) return;
+    const { userId, db } = auth;
+
+    const activityId = typeof req.body?.activityId === 'string' ? req.body.activityId : '';
+    if (!activityId) {
+        res.status(400).json({ error: 'Missing activityId' });
+        return;
+    }
+
+    try {
+        const activity = await db.activity.findUnique({ where: { id: activityId } });
+        if (!activity || activity.hostId !== userId) {
+            res.status(403).json({ error: 'Only the host can delete activity photos' });
+            return;
+        }
+
+        const photo = await db.activityPhoto.findUnique({ where: { id: req.params.id as string } });
+        if (!photo || photo.activityId !== activityId) {
+            res.status(404).json({ error: 'Photo not found' });
+            return;
+        }
+
+        deleteFile(photo.key).catch(() => {});
+
+        await db.activityPhoto.delete({ where: { id: photo.id } });
+
+        // Re-normalize positions
+        const remaining = await db.activityPhoto.findMany({
+            where: { activityId },
+            orderBy: { position: 'asc' }
+        });
+        for (let i = 0; i < remaining.length; i++) {
+            if (remaining[i].position !== i) {
+                await db.activityPhoto.update({ where: { id: remaining[i].id }, data: { position: i } });
+            }
+        }
+
+        logger.info(`[Upload] Activity photo ${photo.id} deleted for activity ${activityId} by user ${userId}`);
+        res.json({ success: true });
+    } catch (error) {
+        logger.error('[Upload] Activity photo delete error', error);
+        res.status(500).json({ error: 'Delete failed' });
+    }
+});
+
 // Handle multer errors (file too large, etc.)
 uploadRouter.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof multer.MulterError) {
