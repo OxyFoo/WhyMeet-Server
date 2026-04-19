@@ -12,6 +12,10 @@ const transporter = env.SMTP_HOST
       })
     : null;
 
+export function isSmtpConfigured(): boolean {
+    return transporter !== null;
+}
+
 function buildValidationUrl(token: string): string {
     return `${env.PUBLIC_APP_URL}/auth/validate-email/${encodeURIComponent(token)}`;
 }

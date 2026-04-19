@@ -144,3 +144,50 @@ export async function searchActivities(
     // Search reuses getActivities with the filters
     return getActivities(userId, filters);
 }
+
+// ─── Get My Activities ──────────────────────────────────────────────
+
+export async function getMyActivities(userId: string, role: 'host' | 'participant'): Promise<ActivitySummary[]> {
+    const db = getDatabase();
+
+    const viewerProfile = await db.profile.findUnique({
+        where: { userId },
+        select: { latitude: true, longitude: true }
+    });
+
+    const where: Prisma.ActivityWhereInput = {
+        isCancelled: false,
+        isArchived: false,
+        ...(role === 'host' ? { hostId: userId } : { participants: { some: { userId } } })
+    };
+
+    const activities = await db.activity.findMany({
+        where,
+        include: {
+            host: { select: { name: true } },
+            participants: { select: { userId: true } },
+            photos: { orderBy: { position: 'asc' }, take: 1 }
+        },
+        orderBy: [{ dateTime: 'asc' }, { createdAt: 'desc' }],
+        take: 50
+    });
+
+    return activities.map((a) => {
+        const distKm = getDistanceKm(viewerProfile?.latitude, viewerProfile?.longitude, a.latitude, a.longitude);
+        const distStr = distKm != null ? (distKm < 1 ? '< 1 km' : `${Math.round(distKm)} km`) : undefined;
+
+        return {
+            id: a.id,
+            title: a.title,
+            category: a.category as InterestCategoryKey,
+            dateTime: a.dateTime?.toISOString() ?? null,
+            locationName: a.locationName,
+            participantCount: a.participants.length,
+            maxParticipants: a.maxParticipants,
+            photoKey: a.photos[0]?.key ?? null,
+            hostName: a.host.name,
+            distance: distStr,
+            distanceKm: distKm ?? undefined
+        };
+    });
+}

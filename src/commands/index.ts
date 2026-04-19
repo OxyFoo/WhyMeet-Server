@@ -50,6 +50,7 @@ import './activity/leave-activity';
 import './activity/get-activities';
 import './activity/get-activity-counts';
 import './activity/search-activities';
+import './activity/get-my-activities';
 import './activity/report-activity';
 import './activity/confirm-host-attendance';
 import './activity/confirm-participation';

@@ -14,7 +14,7 @@ import type {
 import { getDatabase } from '@/services/database';
 import { tokenManager } from '@/services/tokenManager';
 import { mapUserToProfile, profileInclude } from '@/services/userMapper';
-import { sendConfirmationEmail } from '@/services/emailService';
+import { sendConfirmationEmail, isSmtpConfigured } from '@/services/emailService';
 import { renderTemplate } from '@/services/templateService';
 import { logger } from '@/config/logger';
 import { env } from '@/config/env';
@@ -101,8 +101,19 @@ const signOutSchema = z.object({
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-async function linkDeviceAndSendMail(userId: string, deviceId: string, email: string): Promise<void> {
+async function linkDeviceAndSendMail(userId: string, deviceId: string, email: string): Promise<boolean> {
     const db = getDatabase();
+
+    // If SMTP is not configured, auto-activate the device (skip email verification)
+    if (!isSmtpConfigured()) {
+        await db.device.update({
+            where: { id: deviceId },
+            data: { userId, status: 'active' }
+        });
+        logger.warn(`[Auth] SMTP not configured — device ${deviceId} auto-activated for user ${userId}`);
+        return true; // emailSkipped
+    }
+
     const mailToken = tokenManager.mail.generate(userId, deviceId);
     if (mailToken) {
         await db.device.update({
@@ -115,6 +126,7 @@ async function linkDeviceAndSendMail(userId: string, deviceId: string, email: st
         });
         await sendConfirmationEmail(email, mailToken);
     }
+    return false; // emailSkipped = false
 }
 
 // ─── POST /auth/device ──────────────────────────────────────────────
@@ -238,7 +250,23 @@ authRouter.post('/enter', enterLimiter, async (req, res) => {
             }
 
             // Device not yet linked to this user, or pending → link & send mail
-            await linkDeviceAndSendMail(existingUser.id, device.id, existingUser.email);
+            const emailSkipped = await linkDeviceAndSendMail(existingUser.id, device.id, existingUser.email);
+
+            if (emailSkipped) {
+                // SMTP not configured → authenticate directly
+                const newSessionToken = await tokenManager.session.cycle(device.id);
+                const wsToken = tokenManager.ws.generate(existingUser.id, device.id);
+
+                logger.info(`[Auth] Enter authenticated (email skipped): user=${existingUser.id}, device=${device.id}`);
+                const response: HTTPResponse_Enter = {
+                    status: 'authenticated',
+                    wsToken,
+                    newSessionToken,
+                    user: mapUserToProfile(existingUser)
+                };
+                res.json(response);
+                return;
+            }
 
             logger.info(`[Auth] Enter wait-mail: user=${existingUser.id}, device=${device.id}`);
             const response: HTTPResponse_Enter = {
@@ -276,7 +304,27 @@ authRouter.post('/enter', enterLimiter, async (req, res) => {
             db.swipeQuota.create({ data: { userId: newUser.id, swipesUsed: 0, resetAt: nextMidnight } })
         ]);
 
-        await linkDeviceAndSendMail(newUser.id, device.id, email);
+        const emailSkippedSignup = await linkDeviceAndSendMail(newUser.id, device.id, email);
+
+        if (emailSkippedSignup) {
+            // SMTP not configured → authenticate directly after sign-up
+            const newUserFull = await db.user.findUnique({
+                where: { id: newUser.id },
+                include: profileInclude
+            });
+            const newSessionToken = await tokenManager.session.cycle(device.id);
+            const wsToken = tokenManager.ws.generate(newUser.id, device.id);
+
+            logger.info(`[Auth] Enter sign-up authenticated (email skipped): user=${newUser.id}, device=${device.id}`);
+            const response: HTTPResponse_Enter = {
+                status: 'authenticated',
+                wsToken,
+                newSessionToken,
+                user: mapUserToProfile(newUserFull!)
+            };
+            res.json(response);
+            return;
+        }
 
         logger.info(`[Auth] Enter sign-up: user=${newUser.id}, device=${device.id}, email=${email}`);
         const response: HTTPResponse_Enter = {
