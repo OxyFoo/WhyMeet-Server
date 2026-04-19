@@ -59,6 +59,11 @@ services:
         ipv4_address: 172.16.0.13
     volumes:
       - whymeet-minio-prod-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   whymeet-server-prod:
@@ -81,10 +86,14 @@ services:
         ipv4_address: 170.16.0.40
     user: node
     depends_on:
-      - whymeet-db-prod
-      - whymeet-pgbouncer-prod
-      - whymeet-redis-prod
-      - whymeet-minio-prod
+      whymeet-db-prod:
+        condition: service_started
+      whymeet-pgbouncer-prod:
+        condition: service_started
+      whymeet-redis-prod:
+        condition: service_started
+      whymeet-minio-prod:
+        condition: service_healthy
     volumes:
       - ./logs:/app/logs
       - /etc/ssl/whymeet-certs/fullchain.pem:/etc/letsencrypt/live/whymeet/fullchain.pem:ro
