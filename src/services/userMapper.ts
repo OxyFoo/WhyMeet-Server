@@ -1,5 +1,13 @@
-import type { Profile, ProfilePhoto, IntentionKey, Gender, PreferredPeriod, UserBadge } from '@oxyfoo/whymeet-types';
-import { getHostLevel, BADGE_DEFINITIONS } from '@oxyfoo/whymeet-types';
+import type {
+    Profile,
+    ProfilePhoto,
+    IntentionKey,
+    Gender,
+    PreferredPeriod,
+    UserBadge,
+    BadgeKey
+} from '@oxyfoo/whymeet-types';
+import { getHostLevel } from '@oxyfoo/whymeet-types';
 
 /**
  * Compute age from a birth date. Returns 0 if null.
@@ -110,7 +118,20 @@ export function mapUserToProfile(user: {
         completedHostedCount: number;
     } | null;
     tags?: { type: string; tag: { id: string; label: string } }[];
-    badges?: { badgeKey: string; earned: boolean; earnedAt: Date | null; progress: number }[];
+    badges?: {
+        badgeKey: string;
+        earned: boolean;
+        earnedAt: Date | null;
+        progress: number;
+        rewardClaimedAt: Date | null;
+        definition: {
+            emoji: string;
+            displayOrder: number;
+            threshold: number | null;
+            rewardType: string | null;
+            rewardDescription: string | null;
+        };
+    }[];
 }): Profile {
     return {
         id: user.id,
@@ -157,27 +178,37 @@ export function mapUserToProfile(user: {
 }
 
 function mapBadges(
-    badges?: { badgeKey: string; earned: boolean; earnedAt: Date | null; progress: number }[]
+    badges?: {
+        badgeKey: string;
+        earned: boolean;
+        earnedAt: Date | null;
+        progress: number;
+        rewardClaimedAt: Date | null;
+        definition: {
+            emoji: string;
+            displayOrder: number;
+            threshold: number | null;
+            rewardType: string | null;
+            rewardDescription: string | null;
+        };
+    }[]
 ): UserBadge[] {
     if (!badges) return [];
     return badges
         .filter((b) => b.earned)
-        .sort((a, b) => {
-            const defA = BADGE_DEFINITIONS.find((d: { key: string }) => d.key === a.badgeKey);
-            const defB = BADGE_DEFINITIONS.find((d: { key: string }) => d.key === b.badgeKey);
-            return (defA?.displayOrder ?? 99) - (defB?.displayOrder ?? 99);
-        })
+        .sort((a, b) => (a.definition.displayOrder ?? 99) - (b.definition.displayOrder ?? 99))
         .slice(0, 3)
-        .map((b) => {
-            const def = BADGE_DEFINITIONS.find((d: { key: string }) => d.key === b.badgeKey);
-            return {
-                key: b.badgeKey as UserBadge['key'],
-                earned: b.earned,
-                earnedAt: b.earnedAt?.toISOString() ?? null,
-                progress: b.progress,
-                threshold: def?.threshold ?? null
-            };
-        });
+        .map((b) => ({
+            key: b.badgeKey as BadgeKey,
+            emoji: b.definition.emoji,
+            earned: b.earned,
+            earnedAt: b.earnedAt?.toISOString() ?? null,
+            progress: b.progress,
+            threshold: b.definition.threshold,
+            rewardType: b.definition.rewardType,
+            rewardDescription: b.definition.rewardDescription,
+            rewardClaimedAt: b.rewardClaimedAt?.toISOString() ?? null
+        }));
 }
 
 /** Prisma include clause to fetch everything needed for mapUserToProfile */
@@ -185,7 +216,7 @@ export const profileInclude = {
     profile: true,
     photos: { orderBy: { position: 'asc' as const } },
     tags: { include: { tag: true } },
-    badges: { where: { earned: true }, orderBy: { earnedAt: 'asc' as const } }
+    badges: { where: { earned: true }, orderBy: { earnedAt: 'asc' as const }, include: { definition: true } }
 } as const;
 
 // ─── MatchCandidate mapping ─────────────────────────────────────────

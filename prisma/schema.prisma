@@ -481,15 +481,33 @@ model ActivityScheduledNotif {
 
 // ─── Badges ─────────────────────────────────────────────────────────
 
-model UserBadge {
-    id       String    @id @default(cuid())
-    userId   String
-    badgeKey String
-    progress Int       @default(0)
-    earned   Boolean   @default(false)
-    earnedAt DateTime?
+model BadgeDefinition {
+    key                 String  @id
+    emoji               String
+    category            String // verification | seniority | hosting | participation
+    threshold           Int?
+    displayOrder        Int
+    rewardType          String? // null | promotional_offer
+    rewardOfferIdApple  String?
+    rewardOfferIdGoogle String?
+    rewardDescription   String?
 
-    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+    userBadges UserBadge[]
+
+    @@map("badge_definitions")
+}
+
+model UserBadge {
+    id              String    @id @default(cuid())
+    userId          String
+    badgeKey        String
+    progress        Int       @default(0)
+    earned          Boolean   @default(false)
+    earnedAt        DateTime?
+    rewardClaimedAt DateTime?
+
+    user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+    definition BadgeDefinition @relation(fields: [badgeKey], references: [key])
 
     @@unique([userId, badgeKey])
     @@index([userId, earned])

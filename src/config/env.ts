@@ -30,14 +30,6 @@ const envSchema = z.object({
     SMTP_PASS: z.string().default(''),
     EMAIL_FROM: z.string().default('noreply@whymeet.app'),
 
-    GOOGLE_CLIENT_ID: z.string().default(''),
-    APPLE_CLIENT_ID: z.string().default(''),
-    APPLE_TEAM_ID: z.string().default(''),
-    APPLE_KEY_ID: z.string().default(''),
-    APPLE_PRIVATE_KEY: z.string().default(''),
-
-    OPENAI_API_KEY: z.string().default(''),
-
     // S3 / Minio Storage
     S3_ENDPOINT: z.string().default(''),
     S3_BUCKET: z.string().default('whymeet-uploads'),
@@ -47,13 +39,28 @@ const envSchema = z.object({
     S3_PUBLIC_URL: z.string().default(''),
     UPLOAD_MAX_SIZE: z.coerce.number().int().positive().default(5_242_880),
 
-    // Firebase Cloud Messaging
-    FIREBASE_SERVICE_ACCOUNT: z.string().default(''),
-
     // Redis
     REDIS_URL: z.string().default(''),
     REDIS_TTL_CANDIDATE_S: z.coerce.number().int().positive().default(300),
     REDIS_TTL_SETUP_S: z.coerce.number().int().positive().default(60),
+
+    // Firebase Cloud Messaging
+    FIREBASE_SERVICE_ACCOUNT: z.string().default(''),
+
+    // OAuth providers
+    GOOGLE_CLIENT_ID: z.string().default(''),
+    APPLE_CLIENT_ID: z.string().default(''),
+    APPLE_TEAM_ID: z.string().default(''),
+    APPLE_KEY_ID: z.string().default(''),
+    APPLE_PRIVATE_KEY: z.string().default(''),
+
+    // OpenAI API Key for GPT-based features
+    OPENAI_API_KEY: z.string().default(''),
+
+    // Apple IAP Promotional Offer signing
+    APPLE_IAP_KEY_ID: z.string().default(''),
+    APPLE_IAP_PRIVATE_KEY: z.string().default(''),
+    APP_BUNDLE_ID: z.string().default('com.whymeet.app'),
 
     // Subscription / token / swipe tuning
     FREE_DAILY_SWIPE_LIMIT: z.coerce.number().int().positive().default(20),
