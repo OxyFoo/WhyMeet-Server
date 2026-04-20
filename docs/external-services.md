@@ -161,3 +161,20 @@ npm run dev
 ```
 
 Tous les autres services (Redis, S3, SMTP, Firebase, OpenAI, Google, Apple) sont optionnels et se désactivent automatiquement.
+
+---
+
+## Device Integrity (optionnel)
+
+Vérifie que l'app tourne sur un vrai appareil (pas émulateur/root/jailbreak).
+
+| Plateforme | API                   | Variables d'env                                             |
+| ---------- | --------------------- | ----------------------------------------------------------- |
+| Android    | Google Play Integrity | `GOOGLE_CLOUD_PROJECT_NUMBER`, `GOOGLE_SERVICE_ACCOUNT_KEY` |
+| iOS        | Apple App Attest      | `APPLE_APP_ATTEST_ENVIRONMENT`                              |
+
+| Variable                  | Rôle                                                  |
+| ------------------------- | ----------------------------------------------------- |
+| `INTEGRITY_CHECK_ENABLED` | Active/désactive la vérification (`false` par défaut) |
+
+> Guide de configuration complet : [`docs/integrity-setup.md`](./integrity-setup.md)

@@ -5,6 +5,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
+import { rateLimit } from 'express-rate-limit';
 
 import { env } from '@/config/env';
 import { logger } from '@/config/logger';
@@ -14,11 +15,41 @@ import { authRouter } from './authRoutes';
 import { uploadRouter } from './uploadRoutes';
 import { tokenManager } from '@/services/tokenManager';
 import { getDatabase } from '@/services/database';
+import { isMaintenanceMode } from '@/services/maintenanceService';
+import { renderTemplate } from '@/services/templateService';
 
 const clients = new Map<string, Client>();
 
 let httpServer: http.Server | https.Server;
 let wss: WebSocketServer;
+
+// ─── Rate limiting ──────────────────────────────────────────────────
+
+const globalLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 100,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false
+});
+
+const healthLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 10,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false
+});
+
+const uploadLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 10,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false
+});
+
+// WS: 60 messages/min per client, disconnect if 3× the limit (180/min)
+const WS_RATE_WINDOW_MS = 60_000;
+const WS_RATE_LIMIT = 60;
+const WS_RATE_DISCONNECT_THRESHOLD = 180;
 
 function createHttpServer(): http.Server | https.Server {
     const app = express();
@@ -26,15 +57,42 @@ function createHttpServer(): http.Server | https.Server {
     app.use(cors());
     app.use(express.json());
 
-    app.get('/health', (_req, res) => {
-        res.json({ status: 'ok', uptime: process.uptime(), clients: clients.size });
+    // Global rate limit (per IP)
+    app.use(globalLimiter);
+
+    app.get('/health', healthLimiter, (_req, res) => {
+        const maintenance = isMaintenanceMode();
+        res.json({
+            status: maintenance ? 'maintenance' : 'ok',
+            uptime: process.uptime(),
+            clients: clients.size
+        });
+    });
+
+    // Maintenance mode middleware (blocks all routes except /health)
+    app.use((req, res, next) => {
+        if (isMaintenanceMode()) {
+            const accept = req.headers.accept ?? '';
+            if (accept.includes('text/html')) {
+                const html = renderTemplate('status-page.html', {
+                    title: 'Maintenance',
+                    message: "WhyMeet is under maintenance. We'll be back shortly.",
+                    icon: '🔧'
+                });
+                res.status(503).type('html').send(html);
+            } else {
+                res.status(503).json({ error: 'maintenance' });
+            }
+            return;
+        }
+        next();
     });
 
     // HTTP auth routes
     app.use('/auth', authRouter);
 
     // HTTP upload routes
-    app.use('/upload', uploadRouter);
+    app.use('/upload', uploadLimiter, uploadRouter);
 
     if (env.SSL_PRIVATE_KEY_PATH && env.SSL_CERTIFICATE_PATH) {
         try {
@@ -77,6 +135,31 @@ function onConnection(ws: WebSocket, req: http.IncomingMessage): void {
     logger.info(`[Server] Client connected: ${id} (${ip}) — Total: ${clients.size}`);
 
     ws.on('message', async (raw: Buffer) => {
+        // ── WS rate limiting ──
+        const now = Date.now();
+        if (now - client.messageWindowStart > WS_RATE_WINDOW_MS) {
+            client.messageCount = 0;
+            client.messageWindowStart = now;
+            client.rateLimitWarnings = 0;
+        }
+        client.messageCount++;
+
+        if (client.messageCount > WS_RATE_DISCONNECT_THRESHOLD) {
+            logger.warn(
+                `[Server] Client ${id} exceeded WS abuse threshold (${client.messageCount} msgs), disconnecting`
+            );
+            client.close(4029, 'Rate limit exceeded');
+            return;
+        }
+
+        if (client.messageCount > WS_RATE_LIMIT) {
+            client.rateLimitWarnings++;
+            if (client.rateLimitWarnings <= 1) {
+                client.send({ event: 'rate-limited', payload: { message: 'Too many requests, slow down' } });
+            }
+            return;
+        }
+
         const envelope = client.parseMessage(raw.toString());
         if (!envelope) {
             logger.warn(`[Server] Invalid message from ${id}`);
@@ -107,6 +190,12 @@ export function startServer(port: number): Promise<void> {
             server: httpServer,
             verifyClient: async (info, callback) => {
                 try {
+                    // Reject all WS connections during maintenance
+                    if (isMaintenanceMode()) {
+                        callback(false, 503, 'Server under maintenance');
+                        return;
+                    }
+
                     const url = new URL(info.req.url ?? '', `http://${info.req.headers.host}`);
                     const token = url.searchParams.get('token');
 

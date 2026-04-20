@@ -9,7 +9,9 @@ import type {
     HTTPResponse_RefreshWSToken,
     HTTPResponse_DeviceStatus,
     HTTPResponse_ResendEmail,
-    HTTPResponse_SignOut
+    HTTPResponse_SignOut,
+    HTTPResponse_IntegrityChallenge,
+    HTTPResponse_IntegrityVerify
 } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { tokenManager } from '@/services/tokenManager';
@@ -18,6 +20,14 @@ import { sendConfirmationEmail, isSmtpConfigured } from '@/services/emailService
 import { renderTemplate } from '@/services/templateService';
 import { logger } from '@/config/logger';
 import { env } from '@/config/env';
+import { isDisposableEmail, normalizeEmail } from '@/services/emailValidator';
+import {
+    generateChallenge,
+    consumeChallenge,
+    verifyPlayIntegrity,
+    verifyAppAttest,
+    isIntegrityCheckEnabled
+} from '@/services/integrityService';
 
 export const authRouter = Router();
 
@@ -206,8 +216,15 @@ authRouter.post('/enter', enterLimiter, async (req, res) => {
         return;
     }
 
-    const { email, deviceUUID, sessionToken, username } = parsed.data;
+    const { email: rawEmail, deviceUUID, sessionToken, username } = parsed.data;
+    const email = normalizeEmail(rawEmail);
     const db = getDatabase();
+
+    // Block disposable / temporary email providers
+    if (isDisposableEmail(email)) {
+        res.status(422).json({ error: 'disposable_email' });
+        return;
+    }
 
     try {
         const device = await db.device.findUnique({ where: { uuid: deviceUUID } });
@@ -563,6 +580,12 @@ authRouter.post('/refresh-ws-token', refreshLimiter, async (req, res) => {
             return;
         }
 
+        // Require device integrity verification if enabled
+        if (isIntegrityCheckEnabled() && !device.integrityVerifiedAt) {
+            res.status(403).json({ error: 'integrity_required' });
+            return;
+        }
+
         const newSessionToken = await tokenManager.session.cycle(device.id);
         const wsToken = tokenManager.ws.generate(device.userId, device.id);
 
@@ -708,5 +731,126 @@ authRouter.post('/sign-out', async (req, res) => {
     } catch (error) {
         logger.error('[Auth] Sign-out error', error);
         res.status(500).json({ success: false } satisfies HTTPResponse_SignOut);
+    }
+});
+
+// ─── POST /auth/integrity-challenge ──────────────────────────────────
+
+const challengeSchema = z.object({
+    deviceUUID: z.string().min(1),
+    sessionToken: z.string().min(1)
+});
+
+authRouter.post('/integrity-challenge', refreshLimiter, async (req, res) => {
+    if (!isIntegrityCheckEnabled()) {
+        res.json({ challenge: null, required: false } satisfies HTTPResponse_IntegrityChallenge);
+        return;
+    }
+
+    const parsed = challengeSchema.safeParse(req.body);
+    if (!parsed.success) {
+        res.status(400).json({ error: 'Invalid request' });
+        return;
+    }
+
+    const { deviceUUID, sessionToken } = parsed.data;
+    const db = getDatabase();
+
+    try {
+        const device = await db.device.findUnique({ where: { uuid: deviceUUID } });
+        if (!device || device.status !== 'active' || !device.userId) {
+            res.status(401).json({ error: 'Invalid device' });
+            return;
+        }
+
+        if (!tokenManager.session.check(device.sessionTokenHash, sessionToken)) {
+            res.status(401).json({ error: 'Invalid session' });
+            return;
+        }
+
+        // If already verified recently (within 24h), skip
+        if (device.integrityVerifiedAt && Date.now() - device.integrityVerifiedAt.getTime() < 24 * 60 * 60 * 1000) {
+            res.json({ challenge: null, required: false } satisfies HTTPResponse_IntegrityChallenge);
+            return;
+        }
+
+        const challenge = generateChallenge(device.id);
+        res.json({ challenge, required: true } satisfies HTTPResponse_IntegrityChallenge);
+    } catch (error) {
+        logger.error('[Auth] Integrity challenge error', error);
+        res.status(500).json({ error: 'Internal error' });
+    }
+});
+
+// ─── POST /auth/integrity-verify ─────────────────────────────────────
+
+const verifyIntegritySchema = z.object({
+    deviceUUID: z.string().min(1),
+    sessionToken: z.string().min(1),
+    platform: z.enum(['android', 'ios']),
+    challenge: z.string().min(1),
+    token: z.string().min(1),
+    keyId: z.string().optional() // Required for iOS App Attest
+});
+
+authRouter.post('/integrity-verify', refreshLimiter, async (req, res) => {
+    if (!isIntegrityCheckEnabled()) {
+        res.json({ verified: true } satisfies HTTPResponse_IntegrityVerify);
+        return;
+    }
+
+    const parsed = verifyIntegritySchema.safeParse(req.body);
+    if (!parsed.success) {
+        res.status(400).json({ error: 'Invalid request' });
+        return;
+    }
+
+    const { deviceUUID, sessionToken, platform, challenge, token, keyId } = parsed.data;
+    const db = getDatabase();
+
+    try {
+        const device = await db.device.findUnique({ where: { uuid: deviceUUID } });
+        if (!device || device.status !== 'active' || !device.userId) {
+            res.status(401).json({ error: 'Invalid device' });
+            return;
+        }
+
+        if (!tokenManager.session.check(device.sessionTokenHash, sessionToken)) {
+            res.status(401).json({ error: 'Invalid session' });
+            return;
+        }
+
+        // Consume the challenge (one-time use)
+        if (!consumeChallenge(challenge, device.id)) {
+            res.status(400).json({ error: 'Invalid or expired challenge' });
+            return;
+        }
+
+        let verified = false;
+
+        if (platform === 'android') {
+            verified = await verifyPlayIntegrity(token, challenge);
+        } else if (platform === 'ios') {
+            if (!keyId) {
+                res.status(400).json({ error: 'keyId required for iOS' });
+                return;
+            }
+            verified = await verifyAppAttest(token, challenge, keyId);
+        }
+
+        if (verified) {
+            await db.device.update({
+                where: { id: device.id },
+                data: { integrityVerifiedAt: new Date() }
+            });
+            logger.info(`[Auth] Integrity verified: device=${device.id} platform=${platform}`);
+        } else {
+            logger.warn(`[Auth] Integrity verification failed: device=${device.id} platform=${platform}`);
+        }
+
+        res.json({ verified } satisfies HTTPResponse_IntegrityVerify);
+    } catch (error) {
+        logger.error('[Auth] Integrity verify error', error);
+        res.status(500).json({ error: 'Internal error' });
     }
 });

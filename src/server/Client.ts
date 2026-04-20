@@ -9,6 +9,11 @@ export class Client {
     readonly userId: string;
     readonly deviceId: string;
 
+    // WS rate limiting
+    messageCount = 0;
+    messageWindowStart = Date.now();
+    rateLimitWarnings = 0;
+
     constructor(id: string, ws: WebSocket, ip: string, userId: string, deviceId: string) {
         this.id = id;
         this.ws = ws;

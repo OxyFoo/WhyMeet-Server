@@ -67,7 +67,13 @@ const envSchema = z.object({
     FREE_DAILY_TOKEN_REFILL: z.coerce.number().int().positive().default(3),
     PREMIUM_DAILY_TOKEN_REFILL: z.coerce.number().int().positive().default(20),
     INITIAL_TOKEN_COUNT: z.coerce.number().int().nonnegative().default(5),
-    SUBSCRIPTION_BOOST_DAYS: z.coerce.number().int().positive().default(10)
+    SUBSCRIPTION_BOOST_DAYS: z.coerce.number().int().positive().default(10),
+
+    // Device integrity verification
+    INTEGRITY_CHECK_ENABLED: z.coerce.boolean().default(false),
+    GOOGLE_CLOUD_PROJECT_NUMBER: z.string().default(''),
+    GOOGLE_SERVICE_ACCOUNT_KEY: z.string().default(''),
+    APPLE_APP_ATTEST_ENVIRONMENT: z.enum(['production', 'development']).default('production')
 });
 
 const parsed = envSchema.safeParse(process.env);
