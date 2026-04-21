@@ -74,7 +74,7 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
     const [currentUser, settings] = await Promise.all([
         db.user.findUnique({
             where: { id: client.userId },
-            include: { profile: true, tags: { include: { tag: true } } }
+            include: { profile: true, photos: true, tags: { include: { tag: true } } }
         }),
         db.settings.findUnique({ where: { userId: client.userId } })
     ]);
@@ -91,7 +91,15 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
     const myPreferredPeriod = (currentUser?.preferredPeriod ?? 'any') as PreferredPeriod;
     const mySocialVibe = (currentUser?.profile?.socialVibe ?? 'balanced') as SocialVibe;
     const myProfileComplete =
-        currentUser?.birthDate != null && myGender !== '' && myIntentions.length > 0 && myLatLng.latitude != null;
+        currentUser?.birthDate != null &&
+        myGender !== '' &&
+        myIntentions.length > 0 &&
+        myLatLng.latitude != null &&
+        (currentUser?.profile?.bio ?? '') !== '' &&
+        (currentUser?.photos ?? []).length > 0 &&
+        (currentUser?.tags ?? []).some((t) => t.type === 'interest') &&
+        (currentUser?.tags ?? []).some((t) => t.type === 'skill') &&
+        (currentUser?.profile?.spokenLanguages ?? []).length > 0;
 
     const prefAgeMin = settings?.discoveryAgeMin ?? 18;
     const prefAgeMax = settings?.discoveryAgeMax ?? 99;
