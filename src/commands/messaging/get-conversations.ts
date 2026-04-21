@@ -122,6 +122,12 @@ registerCommand<WSRequest_GetConversations>(
                     };
                 });
 
+            conversations.sort((a, b) => {
+                const dateA = a.lastMessageTime ? new Date(a.lastMessageTime).getTime() : 0;
+                const dateB = b.lastMessageTime ? new Date(b.lastMessageTime).getTime() : 0;
+                return dateB - dateA;
+            });
+
             return { command: 'get-conversations', payload: { conversations } };
         } catch (error) {
             logger.error('[Messaging] Get conversations error', error);
