@@ -70,7 +70,7 @@ const envSchema = z.object({
     SUBSCRIPTION_BOOST_DAYS: z.coerce.number().int().positive().default(10),
 
     // Device integrity verification
-    INTEGRITY_CHECK_ENABLED: z.coerce.boolean().default(false),
+    INTEGRITY_CHECK_ENABLED: z.preprocess((v) => v === 'true' || v === '1' || v === true, z.boolean()).default(false),
     GOOGLE_CLOUD_PROJECT_NUMBER: z.string().default(''),
     GOOGLE_SERVICE_ACCOUNT_KEY: z.string().default(''),
     APPLE_APP_ATTEST_ENVIRONMENT: z.enum(['production', 'development']).default('production')

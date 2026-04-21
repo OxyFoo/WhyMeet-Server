@@ -131,7 +131,8 @@ async function linkDeviceAndSendMail(userId: string, deviceId: string, email: st
             data: {
                 userId,
                 status: 'pending',
-                mailTokenHash: tokenManager.hashToken(mailToken)
+                mailTokenHash: tokenManager.hashToken(mailToken),
+                lastSeenAt: new Date()
             }
         });
         await sendConfirmationEmail(email, mailToken);
@@ -561,7 +562,8 @@ authRouter.post('/refresh-ws-token', refreshLimiter, async (req, res) => {
             return;
         }
 
-        if (!tokenManager.session.check(device.sessionTokenHash, sessionToken)) {
+        const sessionOk = tokenManager.session.check(device.sessionTokenHash, sessionToken);
+        if (!sessionOk) {
             res.status(401).json({ error: 'Invalid session' });
             return;
         }
