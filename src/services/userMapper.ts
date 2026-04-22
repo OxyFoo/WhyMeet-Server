@@ -237,7 +237,7 @@ export function mapUserToCandidate(
     refLatLng?: { latitude: number | null; longitude: number | null },
     flags?: { isPremium?: boolean; isBoosted?: boolean }
 ): MatchCandidate {
-    const userIntentions = (user.profile?.intentions ?? []) as IntentionKey[];
+    const userIntentions = Array.from(new Set((user.profile?.intentions ?? []) as IntentionKey[]));
     const sorted = priorityIntentions?.length
         ? [
               ...userIntentions.filter((i) => priorityIntentions.includes(i)),

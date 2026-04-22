@@ -20,6 +20,7 @@ import { computeMatchScore } from '@/services/scoring';
 import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
 import { getBoostedUserIds } from '@/services/boostService';
 import { interleaveByBoost } from '@/services/interleaveResults';
+import { obfuscateString } from '@/services/previewObfuscation';
 import { logger } from '@/config/logger';
 
 const DEFAULT_MAX_DISTANCE = 50;
@@ -31,30 +32,6 @@ function addRandomness(candidates: MatchCandidate[]): MatchCandidate[] {
         .map((c) => ({ c, sortKey: (c.score ?? 0) + (Math.random() - 0.5) * 20 }))
         .sort((a, b) => b.sortKey - a.sortKey)
         .map((x) => x.c);
-}
-
-/**
- * Obfuscate a string: keep spaces, punctuation, and emojis, but replace
- * each letter with a random letter (same case) and each digit with a random digit.
- * The total length and word structure stay identical.
- */
-function obfuscateString(str: string): string {
-    const lowers = 'abcdefghijklmnopqrstuvwxyz';
-    const uppers = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    const digits = '0123456789';
-    let result = '';
-    for (const ch of str) {
-        if (lowers.includes(ch)) {
-            result += lowers[Math.floor(Math.random() * 26)];
-        } else if (uppers.includes(ch)) {
-            result += uppers[Math.floor(Math.random() * 26)];
-        } else if (digits.includes(ch)) {
-            result += digits[Math.floor(Math.random() * 10)];
-        } else {
-            result += ch;
-        }
-    }
-    return result;
 }
 
 registerCommand<WSRequest_PreviewSearch>(

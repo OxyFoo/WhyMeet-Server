@@ -6,26 +6,8 @@ import type {
     ActivitySummary
 } from '@oxyfoo/whymeet-types';
 import { searchActivities } from '@/services/activityDiscoveryService';
+import { obfuscateString } from '@/services/previewObfuscation';
 import { logger } from '@/config/logger';
-
-function obfuscateString(str: string): string {
-    const lowers = 'abcdefghijklmnopqrstuvwxyz';
-    const uppers = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    const digits = '0123456789';
-    let result = '';
-    for (const ch of str) {
-        if (lowers.includes(ch)) {
-            result += lowers[Math.floor(Math.random() * 26)];
-        } else if (uppers.includes(ch)) {
-            result += uppers[Math.floor(Math.random() * 26)];
-        } else if (digits.includes(ch)) {
-            result += digits[Math.floor(Math.random() * 10)];
-        } else {
-            result += ch;
-        }
-    }
-    return result;
-}
 
 function obfuscateActivity(a: ActivitySummary): ActivitySummary {
     return {
