@@ -182,21 +182,46 @@ export async function getActivityCounts(userId: string): Promise<Record<string, 
         })
     ).map((r) => r.activityId);
 
-    const baseWhere: Prisma.ActivityWhereInput = {
+    // Resolve effective distance the same way as getActivities() so counts
+    // and the actual list stay consistent (no more "2 nearby → 0 results").
+    const effectiveMaxDistance = viewer.activityRemoteMode ? undefined : viewer.activityMaxDistance;
+
+    const where: Prisma.ActivityWhereInput = {
         isCancelled: false,
         isArchived: false,
+        id: reportedIds.length > 0 ? { notIn: reportedIds } : undefined,
         host: buildHostWhere(viewer),
         ...(viewer.gender ? { targetGenders: { has: viewer.gender } } : {})
     };
-    if (reportedIds.length > 0) {
-        baseWhere.id = { notIn: reportedIds };
+
+    // Geo bounding box pre-filter (cheap SQL range scan)
+    if (effectiveMaxDistance && viewer.latitude != null && viewer.longitude != null) {
+        const bbox = geoBoundingBox(viewer.latitude, viewer.longitude, effectiveMaxDistance);
+        if (bbox) {
+            where.latitude = bbox.latitude;
+            where.longitude = bbox.longitude;
+        }
     }
 
+    // Single query, then reduce — replaces the old N+1 count loop.
+    const rows = await db.activity.findMany({
+        where,
+        select: { category: true, latitude: true, longitude: true }
+    });
+
+    // Initialize all categories to 0
     const counts: Record<string, number> = {};
-    for (const key of INTEREST_CATEGORY_KEYS) {
-        counts[key] = await db.activity.count({
-            where: { ...baseWhere, category: key }
-        });
+    for (const key of INTEREST_CATEGORY_KEYS) counts[key] = 0;
+
+    for (const row of rows) {
+        // Exact distance post-filter (mirrors getActivities)
+        if (effectiveMaxDistance && viewer.latitude != null && viewer.longitude != null) {
+            if (row.latitude != null && row.longitude != null) {
+                const dist = getDistanceKm(viewer.latitude, viewer.longitude, row.latitude, row.longitude);
+                if (dist == null || dist > effectiveMaxDistance) continue;
+            }
+        }
+        if (row.category in counts) counts[row.category]++;
     }
 
     return counts;
