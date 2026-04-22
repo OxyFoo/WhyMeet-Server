@@ -5,44 +5,166 @@
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>{{title}}</title>
         <style>
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+            }
+
             body {
-                font-family: system-ui, sans-serif;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
                 display: flex;
+                flex-direction: column;
                 justify-content: center;
                 align-items: center;
                 min-height: 100vh;
                 margin: 0;
-                background: #f8f9fa;
-                color: #1a1a1a;
+                padding: 24px 16px;
+                background: radial-gradient(ellipse 80% 60% at 50% 0%, #ede9ff 0%, #f7f6fa 55%);
+                color: #1a1826;
             }
+
             .card {
+                width: 100%;
+                max-width: 420px;
+                background: #ffffff;
+                border-radius: 24px;
+                overflow: hidden;
+                box-shadow:
+                    0 8px 40px rgba(108, 99, 255, 0.12),
+                    0 2px 8px rgba(0, 0, 0, 0.05);
+            }
+
+            /* ── Header ── */
+            .card-header {
+                background: linear-gradient(135deg, #6c63ff 0%, #ff6b8a 100%);
+                padding: 32px 24px 28px;
                 text-align: center;
-                padding: 48px 32px;
-                background: #fff;
-                border-radius: 16px;
-                box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-                max-width: 400px;
             }
-            .icon {
-                font-size: 48px;
-                margin-bottom: 16px;
+
+            .logo-wrap {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                background: rgba(255, 255, 255, 0.18);
+                border-radius: 50%;
+                width: 72px;
+                height: 72px;
+                margin-bottom: 14px;
             }
+
+            .brand-name {
+                display: block;
+                font-size: 20px;
+                font-weight: 800;
+                color: #ffffff;
+                letter-spacing: -0.4px;
+            }
+
+            .brand-tagline {
+                display: block;
+                font-size: 13px;
+                color: rgba(255, 255, 255, 0.75);
+                margin-top: 4px;
+                letter-spacing: 0.2px;
+            }
+
+            /* ── Body ── */
+            .card-body {
+                padding: 36px 36px 28px;
+                text-align: center;
+            }
+
+            .icon-wrap {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 76px;
+                height: 76px;
+                border-radius: 50%;
+                margin: 0 auto 22px;
+                font-size: 34px;
+                background: #f7f6fa;
+            }
+
             h1 {
                 font-size: 22px;
+                font-weight: 700;
+                color: #1a1826;
                 margin: 0 0 12px;
+                letter-spacing: -0.3px;
             }
+
             p {
-                color: #666;
+                font-size: 15px;
+                color: #8a8a9e;
+                line-height: 1.65;
                 margin: 0;
-                line-height: 1.5;
+            }
+
+            /* ── Footer ── */
+            .card-footer {
+                padding: 16px 36px 22px;
+                text-align: center;
+                border-top: 1px solid #f0eef8;
+            }
+
+            .card-footer span {
+                font-size: 12px;
+                color: #c0bed0;
             }
         </style>
     </head>
     <body>
         <div class="card">
-            <div class="icon">{{icon}}</div>
-            <h1>{{title}}</h1>
-            <p>{{message}}</p>
+            <!-- Header with logo -->
+            <div class="card-header">
+                <div class="logo-wrap">
+                    <!-- WhyMeet "W" logo mark — SVG inline -->
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="44"
+                        height="44"
+                        viewBox="0 0 200 210"
+                        fill="none"
+                        aria-label="WhyMeet logo"
+                    >
+                        <defs>
+                            <linearGradient id="wg" x1="0" y1="0" x2="200" y2="0" gradientUnits="userSpaceOnUse">
+                                <stop offset="0%" stop-color="#ffffff" />
+                                <stop offset="100%" stop-color="rgba(255,255,255,0.75)" />
+                            </linearGradient>
+                        </defs>
+                        <!-- Left dot -->
+                        <circle cx="50" cy="36" r="18" fill="rgba(255,255,255,0.95)" />
+                        <!-- Right dot -->
+                        <circle cx="150" cy="36" r="18" fill="rgba(255,255,255,0.75)" />
+                        <!-- W strokes -->
+                        <polyline
+                            points="22,72 58,168 100,118 142,168 178,72"
+                            fill="none"
+                            stroke="url(#wg)"
+                            stroke-width="26"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        />
+                    </svg>
+                </div>
+                <span class="brand-name">WhyMeet</span>
+                <span class="brand-tagline">Connect with intention</span>
+            </div>
+
+            <!-- Body -->
+            <div class="card-body">
+                <div class="icon-wrap">{{icon}}</div>
+                <h1>{{title}}</h1>
+                <p>{{message}}</p>
+            </div>
+
+            <!-- Footer -->
+            <div class="card-footer">
+                <span>© 2026 WhyMeet — All rights reserved</span>
+            </div>
         </div>
     </body>
 </html>
