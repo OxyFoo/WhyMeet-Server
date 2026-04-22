@@ -116,14 +116,22 @@ model Settings {
     language String @default("fr") // Language: "fr" | "en"
     theme    String @default("light") // Theme: "light" | "dark"
 
-    // Discovery preferences (who I want to see)
-    discoveryAgeMin      Int      @default(18)
-    discoveryAgeMax      Int      @default(99)
-    discoveryGenders     String[] @default(["male", "female", "non_binary", "other", "prefer_not_to_say"])
-    discoveryMaxDistance Int      @default(50)
-    discoveryRemoteMode  Boolean  @default(false)
-    discoveryVerified    Boolean  @default(false)
-    discoveryPhotosOnly  Boolean  @default(false)
+    // People discovery preferences (who I want to see)
+    peopleAgeMin      Int      @default(18)
+    peopleAgeMax      Int      @default(99)
+    peopleGenders     String[] @default(["male", "female", "non_binary", "other", "prefer_not_to_say"])
+    peopleMaxDistance Int      @default(50)
+    peopleRemoteMode  Boolean  @default(false)
+    peopleVerified    Boolean  @default(false)
+    peoplePhotosOnly  Boolean  @default(false)
+    peopleLanguages   String[] @default([])
+
+    // Activity discovery preferences (which activities to see, filtering on host profile)
+    activityGenders     String[] @default(["male", "female", "non_binary", "other", "prefer_not_to_say"])
+    activityMaxDistance Int      @default(50)
+    activityRemoteMode  Boolean  @default(false)
+    activityVerified    Boolean  @default(false)
+    activityLanguages   String[] @default([])
 
     // Visibility preferences (who can see me)
     syncVisibility        Boolean  @default(true)
@@ -402,6 +410,7 @@ model Activity {
     isCompleted           Boolean   @default(false)
     hostConfirmedAt       DateTime?
     hostReportedAttendees Int?
+    targetGenders         String[]  @default(["male", "female", "non_binary", "other", "prefer_not_to_say"])
     conversationId        String?   @unique
     createdAt             DateTime  @default(now())
     updatedAt             DateTime  @updatedAt

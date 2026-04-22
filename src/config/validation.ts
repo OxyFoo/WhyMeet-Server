@@ -4,7 +4,7 @@
  */
 
 import { z } from 'zod';
-import { SOCIAL_VIBES, INTENTION_KEYS, INTEREST_CATEGORY_KEYS } from '@oxyfoo/whymeet-types';
+import { SOCIAL_VIBES, INTENTION_KEYS, INTEREST_CATEGORY_KEYS, GENDERS } from '@oxyfoo/whymeet-types';
 
 // ─── Limits ───────────────────────────────────────────────────────────────────
 
@@ -47,6 +47,10 @@ export const createActivitySchema = z.object({
     category: z.enum(INTEREST_CATEGORY_KEYS as unknown as [string, ...string[]]),
     locationName: z.string().trim().max(LIMITS.LOCATION_NAME_MAX).optional(),
     maxParticipants: z.number().int().min(LIMITS.PARTICIPANTS_MIN).max(LIMITS.PARTICIPANTS_MAX).optional(),
+    targetGenders: z
+        .array(z.enum(GENDERS as unknown as [string, ...string[]]))
+        .min(1)
+        .optional(),
     dateTime: z
         .string()
         .refine((d) => !isNaN(new Date(d).getTime()) && new Date(d) > new Date(), {
@@ -61,6 +65,10 @@ export const updateActivitySchema = z.object({
     category: z.enum(INTEREST_CATEGORY_KEYS as unknown as [string, ...string[]]).optional(),
     locationName: z.string().trim().max(LIMITS.LOCATION_NAME_MAX).optional(),
     maxParticipants: z.number().int().min(LIMITS.PARTICIPANTS_MIN).max(LIMITS.PARTICIPANTS_MAX).optional(),
+    targetGenders: z
+        .array(z.enum(GENDERS as unknown as [string, ...string[]]))
+        .min(1)
+        .optional(),
     dateTime: z
         .string()
         .refine((d) => !isNaN(new Date(d).getTime()) && new Date(d) > new Date(), {

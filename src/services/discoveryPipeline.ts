@@ -51,6 +51,7 @@ export interface PipelineSetup {
     prefAgeMax: number;
     prefGenders: string[];
     prefVerified: boolean;
+    prefLanguages: string[];
     storedMaxDistance: number;
     storedRemote: boolean;
     excludeIds: string[];
@@ -101,12 +102,13 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
         (currentUser?.tags ?? []).some((t) => t.type === 'skill') &&
         (currentUser?.profile?.spokenLanguages ?? []).length > 0;
 
-    const prefAgeMin = settings?.discoveryAgeMin ?? 18;
-    const prefAgeMax = settings?.discoveryAgeMax ?? 99;
-    const prefGenders = settings?.discoveryGenders ?? [];
-    const prefVerified = settings?.discoveryVerified ?? false;
-    const storedMaxDistance = settings?.discoveryMaxDistance ?? DEFAULT_MAX_DISTANCE;
-    const storedRemote = settings?.discoveryRemoteMode ?? false;
+    const prefAgeMin = settings?.peopleAgeMin ?? 18;
+    const prefAgeMax = settings?.peopleAgeMax ?? 99;
+    const prefGenders = settings?.peopleGenders ?? [];
+    const prefVerified = settings?.peopleVerified ?? false;
+    const prefLanguages = settings?.peopleLanguages ?? [];
+    const storedMaxDistance = settings?.peopleMaxDistance ?? DEFAULT_MAX_DISTANCE;
+    const storedRemote = settings?.peopleRemoteMode ?? false;
 
     // ── Level 3 cache: excludeIds via Redis Set ──────────────────────────
     const excludeIds = await getExcludeIds(client.userId);
@@ -129,6 +131,7 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
         prefAgeMax,
         prefGenders,
         prefVerified,
+        prefLanguages,
         storedMaxDistance,
         storedRemote,
         excludeIds
@@ -189,6 +192,9 @@ function buildPipelineWhere(
 
     if (prefRemote && filters?.languages && filters.languages.length > 0) {
         profileWhere.spokenLanguages = { hasSome: filters.languages };
+    } else if (setup.prefLanguages.length > 0) {
+        // User-level language preference (people.languages) always applies
+        profileWhere.spokenLanguages = { hasSome: setup.prefLanguages };
     }
 
     if (Object.keys(profileWhere).length > 0) {

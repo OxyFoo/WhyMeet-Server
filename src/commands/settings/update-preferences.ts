@@ -3,7 +3,8 @@ import type { Client } from '@/server/Client';
 import type {
     WSRequest_UpdatePreferences,
     WSResponse_UpdatePreferences,
-    DiscoveryPreferences,
+    PeoplePreferences,
+    ActivityPreferences,
     VisibilityPreferences,
     Gender
 } from '@oxyfoo/whymeet-types';
@@ -24,32 +25,56 @@ function validateAgeRange(arr: unknown): arr is [number, number] {
     return typeof min === 'number' && typeof max === 'number' && min >= 18 && max <= 99 && min <= max;
 }
 
+function validateLanguages(arr: unknown): arr is string[] {
+    return Array.isArray(arr) && arr.every((l) => typeof l === 'string' && l.length >= 2 && l.length <= 10);
+}
+
+function validateMaxDistance(n: unknown): boolean {
+    return typeof n === 'number' && n >= 1 && n <= 500;
+}
+
 registerCommand<WSRequest_UpdatePreferences>(
     'update-preferences',
     async (client: Client, payload): Promise<WSResponse_UpdatePreferences> => {
         const db = getDatabase();
-        const { discovery, visibility, syncVisibility } = payload;
+        const { people, activity, visibility, syncVisibility } = payload;
 
         try {
-            if (discovery === undefined && visibility === undefined && syncVisibility === undefined) {
+            if (
+                people === undefined &&
+                activity === undefined &&
+                visibility === undefined &&
+                syncVisibility === undefined
+            ) {
                 return { command: 'update-preferences', payload: { error: 'No preferences provided' } };
             }
 
-            // Validate discovery fields
-            if (discovery) {
-                if (discovery.ageRange !== undefined && !validateAgeRange(discovery.ageRange)) {
+            // Validate people fields
+            if (people) {
+                if (people.ageRange !== undefined && !validateAgeRange(people.ageRange)) {
                     return { command: 'update-preferences', payload: { error: 'Invalid age range' } };
                 }
-                if (discovery.genders !== undefined && !validateGenders(discovery.genders)) {
+                if (people.genders !== undefined && !validateGenders(people.genders)) {
                     return { command: 'update-preferences', payload: { error: 'Invalid genders' } };
                 }
-                if (
-                    discovery.maxDistance !== undefined &&
-                    (typeof discovery.maxDistance !== 'number' ||
-                        discovery.maxDistance < 1 ||
-                        discovery.maxDistance > 500)
-                ) {
+                if (people.maxDistance !== undefined && !validateMaxDistance(people.maxDistance)) {
                     return { command: 'update-preferences', payload: { error: 'Invalid max distance' } };
+                }
+                if (people.languages !== undefined && !validateLanguages(people.languages)) {
+                    return { command: 'update-preferences', payload: { error: 'Invalid languages' } };
+                }
+            }
+
+            // Validate activity fields
+            if (activity) {
+                if (activity.genders !== undefined && !validateGenders(activity.genders)) {
+                    return { command: 'update-preferences', payload: { error: 'Invalid genders' } };
+                }
+                if (activity.maxDistance !== undefined && !validateMaxDistance(activity.maxDistance)) {
+                    return { command: 'update-preferences', payload: { error: 'Invalid max distance' } };
+                }
+                if (activity.languages !== undefined && !validateLanguages(activity.languages)) {
+                    return { command: 'update-preferences', payload: { error: 'Invalid languages' } };
                 }
             }
 
@@ -61,12 +86,7 @@ registerCommand<WSRequest_UpdatePreferences>(
                 if (visibility.genders !== undefined && !validateGenders(visibility.genders)) {
                     return { command: 'update-preferences', payload: { error: 'Invalid genders' } };
                 }
-                if (
-                    visibility.maxDistance !== undefined &&
-                    (typeof visibility.maxDistance !== 'number' ||
-                        visibility.maxDistance < 1 ||
-                        visibility.maxDistance > 500)
-                ) {
+                if (visibility.maxDistance !== undefined && !validateMaxDistance(visibility.maxDistance)) {
                     return { command: 'update-preferences', payload: { error: 'Invalid max distance' } };
                 }
             }
@@ -74,36 +94,45 @@ registerCommand<WSRequest_UpdatePreferences>(
             // Build update data
             const data: Record<string, unknown> = {};
 
-            if (discovery) {
-                if (discovery.ageRange !== undefined) {
-                    data.discoveryAgeMin = discovery.ageRange[0];
-                    data.discoveryAgeMax = discovery.ageRange[1];
+            if (people) {
+                if (people.ageRange !== undefined) {
+                    data.peopleAgeMin = people.ageRange[0];
+                    data.peopleAgeMax = people.ageRange[1];
                 }
-                if (discovery.genders !== undefined) data.discoveryGenders = discovery.genders;
-                if (discovery.maxDistance !== undefined) data.discoveryMaxDistance = discovery.maxDistance;
-                if (discovery.remoteMode !== undefined) data.discoveryRemoteMode = discovery.remoteMode;
-                if (discovery.verifiedOnly !== undefined) data.discoveryVerified = discovery.verifiedOnly;
-                if (discovery.photosOnly !== undefined) data.discoveryPhotosOnly = discovery.photosOnly;
+                if (people.genders !== undefined) data.peopleGenders = people.genders;
+                if (people.maxDistance !== undefined) data.peopleMaxDistance = people.maxDistance;
+                if (people.remoteMode !== undefined) data.peopleRemoteMode = people.remoteMode;
+                if (people.verifiedOnly !== undefined) data.peopleVerified = people.verifiedOnly;
+                if (people.photosOnly !== undefined) data.peoplePhotosOnly = people.photosOnly;
+                if (people.languages !== undefined) data.peopleLanguages = people.languages;
+            }
+
+            if (activity) {
+                if (activity.genders !== undefined) data.activityGenders = activity.genders;
+                if (activity.maxDistance !== undefined) data.activityMaxDistance = activity.maxDistance;
+                if (activity.remoteMode !== undefined) data.activityRemoteMode = activity.remoteMode;
+                if (activity.verifiedOnly !== undefined) data.activityVerified = activity.verifiedOnly;
+                if (activity.languages !== undefined) data.activityLanguages = activity.languages;
             }
 
             if (syncVisibility !== undefined) {
                 data.syncVisibility = syncVisibility;
             }
 
-            // If syncVisibility is on (or becoming on), copy discovery values to visibility
+            // If syncVisibility is on (or becoming on), copy people values to visibility
             const shouldSync =
                 syncVisibility === true ||
                 (syncVisibility === undefined &&
                     (await db.settings.findUnique({ where: { userId: client.userId } }))?.syncVisibility);
 
-            if (shouldSync && discovery) {
-                if (discovery.ageRange !== undefined) {
-                    data.visibilityAgeMin = discovery.ageRange[0];
-                    data.visibilityAgeMax = discovery.ageRange[1];
+            if (shouldSync && people) {
+                if (people.ageRange !== undefined) {
+                    data.visibilityAgeMin = people.ageRange[0];
+                    data.visibilityAgeMax = people.ageRange[1];
                 }
-                if (discovery.genders !== undefined) data.visibilityGenders = discovery.genders;
-                if (discovery.maxDistance !== undefined) data.visibilityMaxDistance = discovery.maxDistance;
-                if (discovery.remoteMode !== undefined) data.visibilityRemoteMode = discovery.remoteMode;
+                if (people.genders !== undefined) data.visibilityGenders = people.genders;
+                if (people.maxDistance !== undefined) data.visibilityMaxDistance = people.maxDistance;
+                if (people.remoteMode !== undefined) data.visibilityRemoteMode = people.remoteMode;
             } else if (visibility && !shouldSync) {
                 if (visibility.ageRange !== undefined) {
                     data.visibilityAgeMin = visibility.ageRange[0];
@@ -123,13 +152,22 @@ registerCommand<WSRequest_UpdatePreferences>(
                 }
             });
 
-            const resDiscovery: DiscoveryPreferences = {
-                ageRange: [updated.discoveryAgeMin, updated.discoveryAgeMax],
-                genders: updated.discoveryGenders as Gender[],
-                maxDistance: updated.discoveryMaxDistance,
-                remoteMode: updated.discoveryRemoteMode,
-                verifiedOnly: updated.discoveryVerified,
-                photosOnly: updated.discoveryPhotosOnly
+            const resPeople: PeoplePreferences = {
+                ageRange: [updated.peopleAgeMin, updated.peopleAgeMax],
+                genders: updated.peopleGenders as Gender[],
+                maxDistance: updated.peopleMaxDistance,
+                remoteMode: updated.peopleRemoteMode,
+                verifiedOnly: updated.peopleVerified,
+                photosOnly: updated.peoplePhotosOnly,
+                languages: updated.peopleLanguages
+            };
+
+            const resActivity: ActivityPreferences = {
+                genders: updated.activityGenders as Gender[],
+                maxDistance: updated.activityMaxDistance,
+                remoteMode: updated.activityRemoteMode,
+                verifiedOnly: updated.activityVerified,
+                languages: updated.activityLanguages
             };
 
             const resVisibility: VisibilityPreferences = {
@@ -144,7 +182,8 @@ registerCommand<WSRequest_UpdatePreferences>(
             return {
                 command: 'update-preferences',
                 payload: {
-                    discovery: resDiscovery,
+                    people: resPeople,
+                    activity: resActivity,
                     visibility: resVisibility,
                     syncVisibility: updated.syncVisibility
                 }

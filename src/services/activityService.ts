@@ -64,6 +64,7 @@ interface PrismaActivityWithRelations {
     isCompleted: boolean;
     hostConfirmedAt: Date | null;
     hostReportedAttendees: number | null;
+    targetGenders: string[];
     participants: {
         userId: string;
         confirmedAttendance: boolean | null;
@@ -116,6 +117,7 @@ function mapToActivity(
         hostReportedAttendees: a.hostReportedAttendees,
         isParticipant: (a.participants ?? []).some((p: { userId: string }) => p.userId === viewerId),
         isHost: a.hostId === viewerId,
+        targetGenders: a.targetGenders as Gender[],
         distance: distStr,
         distanceKm: distKm ?? undefined,
         createdAt: a.createdAt.toISOString(),
@@ -146,6 +148,7 @@ export async function createActivity(
         latitude?: number;
         longitude?: number;
         maxParticipants?: number;
+        targetGenders?: Gender[];
     }
 ): Promise<Activity> {
     const db = getDatabase();
@@ -182,6 +185,7 @@ export async function createActivity(
             longitude: lng,
             maxParticipants: data.maxParticipants ?? null,
             conversationId: conversation.id,
+            ...(data.targetGenders ? { targetGenders: data.targetGenders } : {}),
             participants: {
                 create: { userId: hostId }
             }
@@ -217,6 +221,7 @@ export async function updateActivity(
         latitude?: number | null;
         longitude?: number | null;
         maxParticipants?: number | null;
+        targetGenders?: Gender[];
     }
 ): Promise<Activity | null> {
     const db = getDatabase();
@@ -242,6 +247,7 @@ export async function updateActivity(
     if (data.latitude !== undefined) updateData.latitude = lat;
     if (data.longitude !== undefined) updateData.longitude = lng;
     if (data.maxParticipants !== undefined) updateData.maxParticipants = data.maxParticipants;
+    if (data.targetGenders !== undefined) updateData.targetGenders = data.targetGenders;
 
     if (data.dateTime !== undefined) {
         updateData.dateTime = data.dateTime ? new Date(data.dateTime) : null;
