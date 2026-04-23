@@ -51,6 +51,7 @@ export const createActivitySchema = z.object({
         .array(z.enum(GENDERS as unknown as [string, ...string[]]))
         .min(1)
         .optional(),
+    targetAgeRange: z.tuple([z.number().int().min(18).max(80), z.number().int().min(18).max(80)]).optional(),
     dateTime: z
         .string()
         .refine((d) => !isNaN(new Date(d).getTime()) && new Date(d) > new Date(), {
@@ -69,6 +70,7 @@ export const updateActivitySchema = z.object({
         .array(z.enum(GENDERS as unknown as [string, ...string[]]))
         .min(1)
         .optional(),
+    targetAgeRange: z.tuple([z.number().int().min(18).max(80), z.number().int().min(18).max(80)]).optional(),
     dateTime: z
         .string()
         .refine((d) => !isNaN(new Date(d).getTime()) && new Date(d) > new Date(), {

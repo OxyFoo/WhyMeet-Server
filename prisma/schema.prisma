@@ -411,6 +411,7 @@ model Activity {
     hostConfirmedAt       DateTime?
     hostReportedAttendees Int?
     targetGenders         String[]  @default(["male", "female", "non_binary", "other", "prefer_not_to_say"])
+    targetAgeRange        Int[]     @default([18, 80])
     conversationId        String?   @unique
     createdAt             DateTime  @default(now())
     updatedAt             DateTime  @updatedAt

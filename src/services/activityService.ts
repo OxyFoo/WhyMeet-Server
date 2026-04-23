@@ -65,6 +65,7 @@ interface PrismaActivityWithRelations {
     hostConfirmedAt: Date | null;
     hostReportedAttendees: number | null;
     targetGenders: string[];
+    targetAgeRange: number[];
     participants: {
         userId: string;
         confirmedAttendance: boolean | null;
@@ -118,6 +119,7 @@ function mapToActivity(
         isParticipant: (a.participants ?? []).some((p: { userId: string }) => p.userId === viewerId),
         isHost: a.hostId === viewerId,
         targetGenders: a.targetGenders as Gender[],
+        targetAgeRange: (a.targetAgeRange?.length === 2 ? a.targetAgeRange : [18, 80]) as [number, number],
         distance: distStr,
         distanceKm: distKm ?? undefined,
         createdAt: a.createdAt.toISOString(),
@@ -149,6 +151,7 @@ export async function createActivity(
         longitude?: number;
         maxParticipants?: number;
         targetGenders?: Gender[];
+        targetAgeRange?: [number, number];
     }
 ): Promise<Activity> {
     const db = getDatabase();
@@ -186,6 +189,7 @@ export async function createActivity(
             maxParticipants: data.maxParticipants ?? null,
             conversationId: conversation.id,
             ...(data.targetGenders ? { targetGenders: data.targetGenders } : {}),
+            ...(data.targetAgeRange ? { targetAgeRange: data.targetAgeRange } : {}),
             participants: {
                 create: { userId: hostId }
             }
@@ -222,6 +226,7 @@ export async function updateActivity(
         longitude?: number | null;
         maxParticipants?: number | null;
         targetGenders?: Gender[];
+        targetAgeRange?: [number, number];
     }
 ): Promise<Activity | null> {
     const db = getDatabase();
@@ -248,6 +253,7 @@ export async function updateActivity(
     if (data.longitude !== undefined) updateData.longitude = lng;
     if (data.maxParticipants !== undefined) updateData.maxParticipants = data.maxParticipants;
     if (data.targetGenders !== undefined) updateData.targetGenders = data.targetGenders;
+    if (data.targetAgeRange !== undefined) updateData.targetAgeRange = data.targetAgeRange;
 
     if (data.dateTime !== undefined) {
         updateData.dateTime = data.dateTime ? new Date(data.dateTime) : null;

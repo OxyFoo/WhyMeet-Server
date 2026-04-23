@@ -160,6 +160,7 @@ export async function getActivities(
             photoKey: a.photos[0]?.key ?? null,
             hostName: a.host.name,
             targetGenders: a.targetGenders as Gender[],
+            targetAgeRange: (a.targetAgeRange?.length === 2 ? a.targetAgeRange : [18, 80]) as [number, number],
             distance: distStr,
             distanceKm: distKm ?? undefined
         };
@@ -328,6 +329,7 @@ export async function getMyActivities(userId: string, role: 'host' | 'participan
             photoKey: a.photos[0]?.key ?? null,
             hostName: a.host.name,
             targetGenders: a.targetGenders as Gender[],
+            targetAgeRange: (a.targetAgeRange?.length === 2 ? a.targetAgeRange : [18, 80]) as [number, number],
             distance: distStr,
             distanceKm: distKm ?? undefined
         };
