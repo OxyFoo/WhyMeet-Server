@@ -528,7 +528,7 @@ const STATUS_STRINGS: Record<
             title: 'Appareil confirmé',
             message: "Ton appareil a été confirmé avec succès. Tu peux maintenant retourner dans l'application."
         },
-        error: { title: 'Erreur', message: 'Une erreur inattendue s\'est produite. Réessaie plus tard.' },
+        error: { title: 'Erreur', message: "Une erreur inattendue s'est produite. Réessaie plus tard." },
         footer: '© 2026 WhyMeet — Tous droits réservés'
     },
     en: {
