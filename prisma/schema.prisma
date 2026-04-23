@@ -9,23 +9,24 @@ datasource db {
 // ─── Auth & Users ───────────────────────────────────────────────────
 
 model User {
-    id                String    @id @default(cuid())
-    email             String    @unique
-    name              String    @default("")
-    birthDate         DateTime?
-    gender            String    @default("")
-    city              String    @default("")
-    verified          Boolean   @default(false)
-    banned            Boolean   @default(false)
-    suspended         Boolean   @default(false)
-    suspendedAt       DateTime?
-    deleted           Boolean   @default(false)
-    deletedAt         DateTime?
-    appealMessage     String?   @db.VarChar(500)
-    appealRequestedAt DateTime?
-    preferredPeriod   String    @default("any")
-    createdAt         DateTime  @default(now())
-    updatedAt         DateTime  @updatedAt
+    id                     String    @id @default(cuid())
+    email                  String    @unique
+    name                   String    @default("")
+    birthDate              DateTime?
+    birthDateLastChangedAt DateTime?
+    gender                 String    @default("")
+    city                   String    @default("")
+    verified               Boolean   @default(false)
+    banned                 Boolean   @default(false)
+    suspended              Boolean   @default(false)
+    suspendedAt            DateTime?
+    deleted                Boolean   @default(false)
+    deletedAt              DateTime?
+    appealMessage          String?   @db.VarChar(500)
+    appealRequestedAt      DateTime?
+    preferredPeriod        String    @default("any")
+    createdAt              DateTime  @default(now())
+    updatedAt              DateTime  @updatedAt
 
     profile                Profile?
     settings               Settings?
@@ -50,6 +51,7 @@ model User {
     activityParticipations ActivityParticipant[]
     activityReports        ActivityReport[]
     badges                 UserBadge[]
+    auditLogs              AuditLog[]
 
     @@map("users")
 }
@@ -337,6 +339,23 @@ model IpLog {
     @@index([ip])
     @@index([userId])
     @@map("ip_logs")
+}
+
+// ─── Audit Logs ───────────────────────────────────────────────────
+
+model AuditLog {
+    id        String   @id @default(cuid())
+    userId    String?
+    action    String
+    metadata  Json?
+    ip        String?
+    createdAt DateTime @default(now())
+
+    user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+    @@index([userId, action])
+    @@index([createdAt])
+    @@map("audit_logs")
 }
 
 // ─── Subscription & Monetization ────────────────────────────────────

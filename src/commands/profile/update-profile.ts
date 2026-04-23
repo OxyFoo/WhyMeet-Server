@@ -10,6 +10,7 @@ import { logger } from '@/config/logger';
 import { validateProfileData } from '@/config/validation';
 import { invalidateCandidate } from '@/services/candidateCache';
 import { invalidatePipelineSetup } from '@/services/pipelineSetupCache';
+import { logAudit } from '@/services/auditLogService';
 
 const TAG_MAX_LENGTH = 40;
 
@@ -96,6 +97,24 @@ registerCommand<WSRequest_UpdateProfile>(
         // ─────────────────────────────────────────────────────────────────────
 
         try {
+            // ─── Rate-limit check: birthDate can only change once per year ────────
+            let previousBirthDate: Date | null = null;
+            let newParsedBirthDate: Date | null = null;
+            if (data.birthDate !== undefined && data.birthDate !== null) {
+                const currentUser = await db.user.findUnique({
+                    where: { id: client.userId },
+                    select: { birthDate: true, birthDateLastChangedAt: true }
+                });
+                previousBirthDate = currentUser?.birthDate ?? null;
+                if (previousBirthDate && currentUser?.birthDateLastChangedAt) {
+                    const msPerYear = 365 * 24 * 60 * 60 * 1000;
+                    if (Date.now() - currentUser.birthDateLastChangedAt.getTime() < msPerYear) {
+                        return { command: 'update-profile', payload: { error: 'birthDateChangeRateLimited' } };
+                    }
+                }
+            }
+            // ─────────────────────────────────────────────────────────────────────
+
             await db.$transaction(async (tx) => {
                 // Update user base fields
                 const userData: Record<string, unknown> = {};
@@ -107,6 +126,8 @@ registerCommand<WSRequest_UpdateProfile>(
                         const parsed = new Date(data.birthDate);
                         if (!isNaN(parsed.getTime()) && computeAge(parsed) >= 18) {
                             userData.birthDate = parsed;
+                            userData.birthDateLastChangedAt = new Date();
+                            newParsedBirthDate = parsed;
                         }
                     }
                 }
@@ -170,6 +191,18 @@ registerCommand<WSRequest_UpdateProfile>(
             });
 
             logger.info(`[Profile] Updated profile for user: ${client.userId}`);
+
+            // Audit log for birthDate change
+            // TypeScript doesn't track let mutations inside async callbacks — cast is safe here
+            const capturedNewBirthDate = newParsedBirthDate as Date | null;
+            if (capturedNewBirthDate !== null) {
+                logAudit(
+                    client.userId,
+                    'BIRTH_DATE_CHANGED',
+                    { oldDate: previousBirthDate?.toISOString() ?? null, newDate: capturedNewBirthDate.toISOString() },
+                    client.ip
+                );
+            }
 
             // Invalidate caches so discovery reflects updated profile immediately
             invalidateCandidate(client.userId).catch(() => {});

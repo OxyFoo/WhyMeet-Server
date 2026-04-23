@@ -1,13 +1,14 @@
 import type { ActivitySummary, ActivitySearchFilters, InterestCategoryKey, Gender } from '@oxyfoo/whymeet-types';
 import type { Prisma } from '@prisma/client';
 import { getDatabase } from '@/services/database';
-import { getDistanceKm, geoBoundingBox } from '@/services/userMapper';
+import { getDistanceKm, geoBoundingBox, computeAge } from '@/services/userMapper';
 import { INTEREST_CATEGORY_KEYS } from '@oxyfoo/whymeet-types';
 
 interface ViewerContext {
     latitude: number | null;
     longitude: number | null;
     gender: string | null;
+    birthDate: Date | null;
     activityGenders: string[];
     activityMaxDistance: number;
     activityRemoteMode: boolean;
@@ -20,7 +21,7 @@ async function loadViewerContext(userId: string): Promise<ViewerContext> {
     const [user, settings] = await Promise.all([
         db.user.findUnique({
             where: { id: userId },
-            select: { gender: true, profile: { select: { latitude: true, longitude: true } } }
+            select: { gender: true, birthDate: true, profile: { select: { latitude: true, longitude: true } } }
         }),
         db.settings.findUnique({ where: { userId } })
     ]);
@@ -29,12 +30,26 @@ async function loadViewerContext(userId: string): Promise<ViewerContext> {
         latitude: user?.profile?.latitude ?? null,
         longitude: user?.profile?.longitude ?? null,
         gender: user?.gender ?? null,
+        birthDate: user?.birthDate ?? null,
         activityGenders: settings?.activityGenders ?? [],
         activityMaxDistance: settings?.activityMaxDistance ?? 50,
         activityRemoteMode: settings?.activityRemoteMode ?? false,
         activityVerified: settings?.activityVerified ?? false,
         activityLanguages: settings?.activityLanguages ?? []
     };
+}
+
+/** Returns true if the viewer's age is within the activity's targetAgeRange.
+ * If viewer has no birthDate, we include the activity (benefit of the doubt).
+ * If targetAgeRange[1] >= 80, treat it as "80+" (no upper bound).
+ * Exported for unit testing. */
+export function passesAgeFilter(birthDate: Date | null, targetAgeRange: number[]): boolean {
+    if (!birthDate || targetAgeRange.length < 2) return true;
+    const age = computeAge(birthDate);
+    const [min, max] = targetAgeRange;
+    if (age < min) return false;
+    if (max < 80 && age > max) return false;
+    return true;
 }
 
 function buildHostWhere(viewer: ViewerContext): Prisma.UserWhereInput {
@@ -135,7 +150,7 @@ export async function getActivities(
         take: 50
     });
 
-    // Post-filter by exact distance if needed
+    // Post-filter by exact distance and age range
     let filtered = activities;
     if (effectiveMaxDistance && viewer.latitude != null && viewer.longitude != null) {
         filtered = activities.filter((a) => {
@@ -144,6 +159,7 @@ export async function getActivities(
             return dist != null && dist <= effectiveMaxDistance;
         });
     }
+    filtered = filtered.filter((a) => passesAgeFilter(viewer.birthDate, a.targetAgeRange));
 
     const summaries: ActivitySummary[] = filtered.map((a) => {
         const distKm = getDistanceKm(viewer.latitude, viewer.longitude, a.latitude, a.longitude);
@@ -207,7 +223,7 @@ export async function getActivityCounts(userId: string): Promise<Record<string, 
     // Single query, then reduce — replaces the old N+1 count loop.
     const rows = await db.activity.findMany({
         where,
-        select: { category: true, latitude: true, longitude: true }
+        select: { category: true, latitude: true, longitude: true, targetAgeRange: true }
     });
 
     // Initialize all categories to 0
@@ -222,6 +238,7 @@ export async function getActivityCounts(userId: string): Promise<Record<string, 
                 if (dist == null || dist > effectiveMaxDistance) continue;
             }
         }
+        if (!passesAgeFilter(viewer.birthDate, row.targetAgeRange)) continue;
         if (row.category in counts) counts[row.category]++;
     }
 
@@ -262,6 +279,7 @@ export async function getPopularActivityTags(userId: string, category: InterestC
             ...(reportedIds.length > 0 ? { id: { notIn: reportedIds } } : {})
         },
         select: {
+            targetAgeRange: true,
             host: {
                 select: {
                     tags: {
@@ -276,6 +294,7 @@ export async function getPopularActivityTags(userId: string, category: InterestC
 
     const counts = new Map<string, number>();
     for (const a of activities) {
+        if (!passesAgeFilter(viewer.birthDate, a.targetAgeRange)) continue;
         for (const t of a.host.tags) {
             counts.set(t.tag.label, (counts.get(t.tag.label) ?? 0) + 1);
         }
