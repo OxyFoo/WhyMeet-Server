@@ -52,6 +52,7 @@ model User {
     activityReports        ActivityReport[]
     badges                 UserBadge[]
     auditLogs              AuditLog[]
+    feedbacks              Feedback[]
 
     @@map("users")
 }
@@ -542,4 +543,18 @@ model UserBadge {
     @@unique([userId, badgeKey])
     @@index([userId, earned])
     @@map("user_badges")
+}
+
+model Feedback {
+    id        String   @id @default(cuid())
+    userId    String?
+    type      String // "bug" | "suggestion" | "other"
+    message   String   @db.VarChar(1000)
+    createdAt DateTime @default(now())
+
+    user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+    @@index([userId])
+    @@index([type])
+    @@map("feedbacks")
 }
