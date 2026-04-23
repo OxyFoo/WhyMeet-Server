@@ -17,6 +17,7 @@ import { getDatabase } from '@/services/database';
 import { tokenManager } from '@/services/tokenManager';
 import { mapUserToProfile, profileInclude } from '@/services/userMapper';
 import { sendConfirmationEmail, isSmtpConfigured } from '@/services/emailService';
+import { getUserLanguage } from '@/services/notifI18n';
 import { renderTemplate } from '@/services/templateService';
 import { logger } from '@/config/logger';
 import { env } from '@/config/env';
@@ -81,7 +82,8 @@ const enterSchema = z.object({
     email: z.string().email(),
     deviceUUID: z.string().uuid(),
     sessionToken: z.string().min(1),
-    username: z.string().min(2).max(32).optional()
+    username: z.string().min(2).max(32).optional(),
+    language: z.string().min(2).max(10).optional()
 });
 
 const googleSignInSchema = z.object({
@@ -111,7 +113,12 @@ const signOutSchema = z.object({
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-async function linkDeviceAndSendMail(userId: string, deviceId: string, email: string): Promise<boolean> {
+async function linkDeviceAndSendMail(
+    userId: string,
+    deviceId: string,
+    email: string,
+    language?: string
+): Promise<boolean> {
     const db = getDatabase();
 
     // If SMTP is not configured, auto-activate the device (skip email verification)
@@ -135,7 +142,8 @@ async function linkDeviceAndSendMail(userId: string, deviceId: string, email: st
                 lastSeenAt: new Date()
             }
         });
-        await sendConfirmationEmail(email, mailToken);
+        const lang = language ?? (await getUserLanguage(userId));
+        await sendConfirmationEmail(email, mailToken, lang);
     }
     return false; // emailSkipped = false
 }
@@ -217,7 +225,7 @@ authRouter.post('/enter', enterLimiter, async (req, res) => {
         return;
     }
 
-    const { email: rawEmail, deviceUUID, sessionToken, username } = parsed.data;
+    const { email: rawEmail, deviceUUID, sessionToken, username, language } = parsed.data;
     const email = normalizeEmail(rawEmail);
     const db = getDatabase();
 
@@ -322,7 +330,7 @@ authRouter.post('/enter', enterLimiter, async (req, res) => {
             db.swipeQuota.create({ data: { userId: newUser.id, swipesUsed: 0, resetAt: nextMidnight } })
         ]);
 
-        const emailSkippedSignup = await linkDeviceAndSendMail(newUser.id, device.id, email);
+        const emailSkippedSignup = await linkDeviceAndSendMail(newUser.id, device.id, email, language);
 
         if (emailSkippedSignup) {
             // SMTP not configured → authenticate directly after sign-up
@@ -680,7 +688,8 @@ authRouter.post('/resend-email', resendLimiter, async (req, res) => {
             data: { mailTokenHash: tokenManager.hashToken(mailToken), lastSeenAt: new Date() }
         });
 
-        await sendConfirmationEmail(device.user.email, mailToken);
+        const lang = await getUserLanguage(device.userId);
+        await sendConfirmationEmail(device.user.email, mailToken, lang);
 
         logger.info(`[Auth] Resent confirmation email: device=${device.id}`);
         res.json({ success: true, message: 'Confirmation email sent' } satisfies HTTPResponse_ResendEmail);

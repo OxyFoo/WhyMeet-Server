@@ -20,7 +20,46 @@ function buildValidationUrl(token: string): string {
     return `${env.PUBLIC_APP_URL}/auth/validate-email/${encodeURIComponent(token)}`;
 }
 
-export async function sendConfirmationEmail(to: string, mailToken: string): Promise<void> {
+// ─── Email i18n ──────────────────────────────────────────────────────
+
+const EMAIL_STRINGS: Record<
+    string,
+    {
+        subject: string;
+        heading: string;
+        body: string;
+        ctaLabel: string;
+        expiryNote: (minutes: number) => string;
+        footer: string;
+    }
+> = {
+    fr: {
+        subject: 'WhyMeet — Confirme ton appareil',
+        heading: 'Confirme ton appareil',
+        body: 'Une nouvelle tentative de connexion a été effectuée sur ton compte WhyMeet. Clique sur le bouton ci-dessous pour confirmer cet appareil et finaliser ta connexion.',
+        ctaLabel: '✓  Confirmer mon appareil',
+        expiryNote: (m) =>
+            `Ce lien expire dans <strong style="color:#6c63ff">${m} minutes</strong>. Si tu n'es pas à l'origine de cette demande, ignore cet email — ton compte reste en sécurité.`,
+        footer: '© 2026 WhyMeet — Tous droits réservés'
+    },
+    en: {
+        subject: 'WhyMeet — Confirm your device',
+        heading: 'Confirm your device',
+        body: 'A new sign-in attempt was made on your WhyMeet account. Click the button below to confirm this device and complete your login.',
+        ctaLabel: '✓  Confirm my device',
+        expiryNote: (m) =>
+            `This confirmation link expires in <strong style="color:#6c63ff">${m} minutes</strong>. If you did not request this, you can safely ignore this email — your account remains secure.`,
+        footer: '© 2026 WhyMeet — All rights reserved'
+    }
+};
+
+function getEmailStrings(language: string) {
+    return EMAIL_STRINGS[language] ?? EMAIL_STRINGS.fr;
+}
+
+// ─── Send confirmation email ─────────────────────────────────────────
+
+export async function sendConfirmationEmail(to: string, mailToken: string, language = 'fr'): Promise<void> {
     const link = buildValidationUrl(mailToken);
 
     if (!transporter) {
@@ -28,19 +67,25 @@ export async function sendConfirmationEmail(to: string, mailToken: string): Prom
         return;
     }
 
+    const s = getEmailStrings(language);
     const html = renderTemplate('confirmation-email.html', {
         link,
-        ttlMinutes: String(env.MAIL_TOKEN_TTL_MINUTES)
+        ttlMinutes: String(env.MAIL_TOKEN_TTL_MINUTES),
+        heading: s.heading,
+        body: s.body,
+        ctaLabel: s.ctaLabel,
+        expiryNote: s.expiryNote(env.MAIL_TOKEN_TTL_MINUTES),
+        footer: s.footer
     });
 
     try {
         await transporter.sendMail({
             from: env.EMAIL_FROM,
             to,
-            subject: 'WhyMeet — Confirm your device',
+            subject: s.subject,
             html
         });
-        logger.info(`[Email] Confirmation email sent to ${to}`);
+        logger.info(`[Email] Confirmation email sent to ${to} (lang=${language})`);
     } catch (error) {
         logger.error(`[Email] Failed to send to ${to}`, error);
     }
