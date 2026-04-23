@@ -18,6 +18,7 @@ import {
 } from '@/services/userMapper';
 import { computeMatchScore } from '@/services/scoring';
 import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
+import { buildTagScoringData } from '@/services/discoveryPipeline';
 import { getBalance } from '@/services/tokenService';
 import { getBoostedUserIds } from '@/services/boostService';
 import { interleaveByBoost } from '@/services/interleaveResults';
@@ -49,7 +50,7 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
             longitude: currentUser?.profile?.longitude ?? null
         };
         const myIntentions = (currentUser?.profile?.intentions ?? []) as IntentionKey[];
-        const myTagLabels = new Set((currentUser?.tags ?? []).map((t) => t.tag.label));
+        const myTagScoringData = buildTagScoringData(currentUser?.tags);
         const myLanguages = currentUser?.profile?.spokenLanguages ?? [];
         const myPreferredPeriod = (currentUser?.preferredPeriod ?? 'any') as PreferredPeriod;
         const mySocialVibe = (currentUser?.profile?.socialVibe ?? 'balanced') as SocialVibe;
@@ -150,7 +151,9 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
 
         const scoringCtx: ScoringContext = {
             myIntentions,
-            myTagLabels,
+            myInterestTagIds: myTagScoringData.interestTagIds,
+            mySkillTagIds: myTagScoringData.skillTagIds,
+            myDomainCounts: myTagScoringData.domainCounts,
             myLanguages,
             myLatitude: myLatLng.latitude,
             myLongitude: myLatLng.longitude,
@@ -171,10 +174,12 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
                 );
 
                 const theirIntentions = (u.profile?.intentions ?? []) as IntentionKey[];
-                const theirTags = new Set((u.tags ?? []).map((t) => t.tag.label));
+                const theirTagData = buildTagScoringData(u.tags);
                 const scoringCandidate: ScoringCandidate = {
                     intentions: theirIntentions,
-                    tagLabels: theirTags,
+                    interestTagIds: theirTagData.interestTagIds,
+                    skillTagIds: theirTagData.skillTagIds,
+                    domainCounts: theirTagData.domainCounts,
                     spokenLanguages: u.profile?.spokenLanguages ?? [],
                     latitude: u.profile?.latitude ?? null,
                     longitude: u.profile?.longitude ?? null,

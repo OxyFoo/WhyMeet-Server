@@ -1,13 +1,22 @@
-import type { IntentionKey, PreferredPeriod, SocialVibe } from '@oxyfoo/whymeet-types';
+import type { IntentionKey, InterestCategoryKey, PreferredPeriod, SocialVibe } from '@oxyfoo/whymeet-types';
 
 // Local copy of the ordinal vibe scale (avoids ESM value import in CJS test env)
 const VIBE_SCALE: readonly SocialVibe[] = ['reserved', 'calm', 'balanced', 'outgoing', 'very_social'];
 
 // ─── Types ──────────────────────────────────────────────────────────
 
+/**
+ * Tag data needed for scoring. We use stable canonical tag IDs (not labels)
+ * so that aliases/re-casings don't break equality.
+ * `domainCounts` aggregates how many interest+skill tags the user has per
+ * canonical InterestCategoryKey domain — lets us reward "same domain"
+ * affinities even when exact tags differ ("guitare" vs "piano" → both music).
+ */
 export interface ScoringCandidate {
     intentions: IntentionKey[];
-    tagLabels: Set<string>;
+    interestTagIds: Set<string>;
+    skillTagIds: Set<string>;
+    domainCounts: Map<InterestCategoryKey, number>;
     spokenLanguages: string[];
     latitude: number | null;
     longitude: number | null;
@@ -22,7 +31,9 @@ export interface ScoringCandidate {
 
 export interface ScoringContext {
     myIntentions: IntentionKey[];
-    myTagLabels: Set<string>;
+    myInterestTagIds: Set<string>;
+    mySkillTagIds: Set<string>;
+    myDomainCounts: Map<InterestCategoryKey, number>;
     myLanguages: string[];
     myLatitude: number | null;
     myLongitude: number | null;
@@ -50,6 +61,14 @@ const WEIGHT_INTERESTS = 25;
 const WEIGHT_AVAILABILITY = 5;
 const WEIGHT_SOCIAL_VIBE = 10;
 const WEIGHT_QUALITY = 20;
+
+// Fuzzy-matching weights for tag overlap:
+//   same list (interest↔interest, skill↔skill) → full weight
+//   cross list (interest↔skill)                → most of the weight
+//   same domain but no exact tag match         → partial weight
+const WEIGHT_TAG_SAME_TYPE = 1.0;
+const WEIGHT_TAG_CROSS_TYPE = 0.85;
+const WEIGHT_TAG_DOMAIN = 0.4;
 
 export const MIN_SCORE_THRESHOLD = 15;
 
@@ -102,14 +121,42 @@ function scoreDistance(ctx: ScoringContext, candidate: ScoringCandidate): number
     return Math.max(0, 1 - dist / ctx.maxDistance) * WEIGHT_DISTANCE;
 }
 
-function scoreInterests(mine: Set<string>, theirs: Set<string>): number {
-    const max = Math.max(mine.size, theirs.size);
+function scoreInterests(ctx: ScoringContext, candidate: ScoringCandidate): number {
+    const mySize = ctx.myInterestTagIds.size + ctx.mySkillTagIds.size;
+    const theirSize = candidate.interestTagIds.size + candidate.skillTagIds.size;
+    const max = Math.max(mySize, theirSize);
     if (max === 0) return 0;
-    let common = 0;
-    for (const t of theirs) {
-        if (mine.has(t)) common++;
+
+    // 1. Strict same-type overlap (interest↔interest, skill↔skill)
+    let strictSame = 0;
+    for (const id of candidate.interestTagIds) if (ctx.myInterestTagIds.has(id)) strictSame++;
+    for (const id of candidate.skillTagIds) if (ctx.mySkillTagIds.has(id)) strictSame++;
+
+    // 2. Strict cross-type overlap (my interest ↔ their skill, and vice-versa)
+    //    Only count each tag ID once per direction to avoid double-counting
+    //    when a user has the same tag in both lists.
+    let crossSame = 0;
+    for (const id of candidate.skillTagIds) {
+        if (ctx.myInterestTagIds.has(id) && !ctx.mySkillTagIds.has(id)) crossSame++;
     }
-    return hybridScore(common, max, 5, WEIGHT_INTERESTS);
+    for (const id of candidate.interestTagIds) {
+        if (ctx.mySkillTagIds.has(id) && !ctx.myInterestTagIds.has(id)) crossSame++;
+    }
+
+    // 3. Domain affinity = min-overlap of per-domain counts, MINUS the strict
+    //    matches already rewarded (they would otherwise be double-counted since
+    //    an exact-match tag also contributes to its domain count).
+    let domainOverlap = 0;
+    for (const [domain, myCount] of ctx.myDomainCounts) {
+        const theirCount = candidate.domainCounts.get(domain) ?? 0;
+        if (theirCount > 0) domainOverlap += Math.min(myCount, theirCount);
+    }
+    const residualDomain = Math.max(0, domainOverlap - strictSame - crossSame);
+
+    const rawCommon =
+        WEIGHT_TAG_SAME_TYPE * strictSame + WEIGHT_TAG_CROSS_TYPE * crossSame + WEIGHT_TAG_DOMAIN * residualDomain;
+
+    return hybridScore(rawCommon, max, 5, WEIGHT_INTERESTS);
 }
 
 function scoreAvailability(mine: PreferredPeriod, theirs: PreferredPeriod): number {
@@ -145,7 +192,7 @@ function scoreSocialVibe(mine: SocialVibe, theirs: SocialVibe): number {
 export function computeMatchScore(ctx: ScoringContext, candidate: ScoringCandidate): ScoreBreakdown {
     const intentions = scoreIntentions(ctx.myIntentions, candidate.intentions);
     const distance = scoreDistance(ctx, candidate);
-    const interests = scoreInterests(ctx.myTagLabels, candidate.tagLabels);
+    const interests = scoreInterests(ctx, candidate);
     const availability = scoreAvailability(ctx.myPreferredPeriod, candidate.preferredPeriod);
     const socialVibe = scoreSocialVibe(ctx.mySocialVibe, candidate.socialVibe);
     const profileQuality = scoreProfileQuality(candidate);

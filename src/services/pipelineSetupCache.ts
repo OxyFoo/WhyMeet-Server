@@ -2,15 +2,23 @@ import { getRedis, isRedisAvailable } from '@/services/redisService';
 import { env } from '@/config/env';
 import { logger } from '@/config/logger';
 import type { PipelineSetup } from '@/services/discoveryPipeline';
+import type { InterestCategoryKey } from '@oxyfoo/whymeet-types';
 
 const KEY_PREFIX = 'pipeline:setup:';
+// Bump this when the serialized shape changes so that in-flight Redis entries
+// are ignored (rather than deserialised with a stale shape).
+const CACHE_VERSION = 2;
 
 function key(userId: string): string {
-    return `${KEY_PREFIX}${userId}`;
+    return `${KEY_PREFIX}v${CACHE_VERSION}:${userId}`;
 }
 
-// Set<string> is not JSON-serializable — store as array
-type SerializedSetup = Omit<PipelineSetup, 'myTagLabels'> & { myTagLabels: string[] };
+// Set<>/Map<> are not JSON-serializable — store as arrays
+type SerializedSetup = Omit<PipelineSetup, 'myInterestTagIds' | 'mySkillTagIds' | 'myDomainCounts'> & {
+    myInterestTagIds: string[];
+    mySkillTagIds: string[];
+    myDomainCounts: Array<[InterestCategoryKey, number]>;
+};
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -26,7 +34,12 @@ export async function getPipelineSetup(userId: string): Promise<PipelineSetup | 
         if (!raw) return null;
 
         const data = JSON.parse(raw) as SerializedSetup;
-        return { ...data, myTagLabels: new Set(data.myTagLabels) };
+        return {
+            ...data,
+            myInterestTagIds: new Set(data.myInterestTagIds),
+            mySkillTagIds: new Set(data.mySkillTagIds),
+            myDomainCounts: new Map(data.myDomainCounts)
+        };
     } catch (error) {
         logger.warn('[PipelineSetupCache] Redis error on get', error);
         return null;
@@ -43,7 +56,9 @@ export async function setPipelineSetup(userId: string, setup: PipelineSetup): Pr
     try {
         const serialized: SerializedSetup = {
             ...setup,
-            myTagLabels: [...setup.myTagLabels]
+            myInterestTagIds: [...setup.myInterestTagIds],
+            mySkillTagIds: [...setup.mySkillTagIds],
+            myDomainCounts: [...setup.myDomainCounts]
         };
         await getRedis().set(key(userId), JSON.stringify(serialized), 'EX', env.REDIS_TTL_SETUP_S);
     } catch (error) {

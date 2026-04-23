@@ -67,10 +67,10 @@ describe('mapUserToProfile', () => {
             bio: 'Hello world',
             socialVibe: 'chill',
             interests: [
-                { id: 'tag-1', label: 'Photographie' },
-                { id: 'tag-2', label: 'Randonnée' }
+                { id: 'tag-1', label: 'Photographie', source: null },
+                { id: 'tag-2', label: 'Randonnée', source: null }
             ],
-            skills: [{ id: 'tag-3', label: 'JavaScript' }],
+            skills: [{ id: 'tag-3', label: 'JavaScript', source: null }],
             intentions: ['dating', 'friendship'],
             spokenLanguages: ['fr', 'en'],
             location: {
@@ -117,12 +117,12 @@ describe('mapUserToProfile', () => {
         const profile = mapUserToProfile(user);
 
         expect(profile.interests).toEqual([
-            { id: 'i1', label: 'Yoga' },
-            { id: 'i2', label: 'Café' }
+            { id: 'i1', label: 'Yoga', source: null },
+            { id: 'i2', label: 'Café', source: null }
         ]);
         expect(profile.skills).toEqual([
-            { id: 's1', label: 'Python' },
-            { id: 's2', label: 'DevOps' }
+            { id: 's1', label: 'Python', source: null },
+            { id: 's2', label: 'DevOps', source: null }
         ]);
     });
 });

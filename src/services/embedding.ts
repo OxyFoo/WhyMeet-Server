@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { env } from '@/config/env';
 import { getDatabase } from '@/services/database';
 import { logger } from '@/config/logger';
+import { resolveDomain } from '@/services/tagDomain';
 
 const EMBEDDING_MODEL = 'text-embedding-3-small';
 const EMBEDDING_DIMENSIONS = 1536;
@@ -79,16 +80,22 @@ export async function findSimilarTags(
 }
 
 /**
- * Generate and store embedding for a tag.
+ * Generate and store embedding for a tag, and resolve its canonical domain.
  * No-op if OpenAI is not configured.
  */
 export async function ensureTagEmbedding(tagId: string, label: string): Promise<void> {
     const embedding = await generateEmbedding(label);
     if (!embedding) return;
 
+    // Resolve canonical domain from the freshly-generated embedding.
+    // `tagDomain` imports this module for `generateEmbedding`, which creates a
+    // circular import at the type level — fine at runtime because the functions
+    // are only called after module initialisation.
+    const domainKey = await resolveDomain(embedding);
+
     const db = getDatabase();
     await db.tag.update({
         where: { id: tagId },
-        data: { embedding }
+        data: { embedding, domainKey }
     });
 }

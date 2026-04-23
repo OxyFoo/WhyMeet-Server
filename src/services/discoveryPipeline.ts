@@ -1,5 +1,11 @@
 import type { Client } from '@/server/Client';
-import type { IntentionKey, PreferredPeriod, SearchFilters, SocialVibe } from '@oxyfoo/whymeet-types';
+import type {
+    IntentionKey,
+    InterestCategoryKey,
+    PreferredPeriod,
+    SearchFilters,
+    SocialVibe
+} from '@oxyfoo/whymeet-types';
 import type { Prisma } from '@prisma/client';
 import { getDatabase } from '@/services/database';
 import { candidateInclude, getDistanceKm, computeAge, ageToBirthDateRange } from '@/services/userMapper';
@@ -8,6 +14,7 @@ import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
 import { getExcludeIds } from '@/services/excludeCache';
 import { getCandidates, setCandidates } from '@/services/candidateCache';
 import { getPipelineSetup, setPipelineSetup } from '@/services/pipelineSetupCache';
+import { resolveDomain } from '@/services/tagDomain';
 import { logger } from '@/config/logger';
 
 const DEFAULT_MAX_DISTANCE = 50; // km
@@ -48,7 +55,9 @@ export interface PipelineContext {
 /** Pre-computed data shared across multiple pipeline queries for the same user. */
 export interface PipelineSetup {
     myIntentions: IntentionKey[];
-    myTagLabels: Set<string>;
+    myInterestTagIds: Set<string>;
+    mySkillTagIds: Set<string>;
+    myDomainCounts: Map<InterestCategoryKey, number>;
     myLatLng: { latitude: number | null; longitude: number | null };
     myGender: string;
     myAge: number;
@@ -64,6 +73,61 @@ export interface PipelineSetup {
     storedMaxDistance: number;
     storedRemote: boolean;
     excludeIds: string[];
+}
+
+/**
+ * Shape of a joined user_tag row used by `buildTagScoringData`. Keeping it
+ * loose (non-Prisma-typed) lets us reuse the helper with cached/deserialised
+ * shapes (candidateCache returns plain objects). `tagEmbedding` is optional;
+ * when provided it is used to resolve a missing `tagDomainKey` lazily.
+ */
+type TagRow = {
+    type: string;
+    tag: { id: string; label?: string; domainKey?: string | null; embedding?: number[] | null };
+};
+
+/**
+ * Derive the 3 structures needed by the scoring engine from a list of user
+ * tag rows. Fires lazy domain-resolution for tags that still have a null
+ * `domainKey` but do carry an embedding — fire-and-forget, so the current
+ * request is not penalised. Subsequent queries will benefit.
+ */
+export function buildTagScoringData(tags: TagRow[] | undefined): {
+    interestTagIds: Set<string>;
+    skillTagIds: Set<string>;
+    domainCounts: Map<InterestCategoryKey, number>;
+} {
+    const interestTagIds = new Set<string>();
+    const skillTagIds = new Set<string>();
+    const domainCounts = new Map<InterestCategoryKey, number>();
+
+    for (const row of tags ?? []) {
+        const tagId = row.tag?.id;
+        if (!tagId) continue;
+        if (row.type === 'interest') interestTagIds.add(tagId);
+        else if (row.type === 'skill') skillTagIds.add(tagId);
+        else continue;
+
+        const domain = row.tag.domainKey as InterestCategoryKey | null | undefined;
+        if (domain) {
+            domainCounts.set(domain, (domainCounts.get(domain) ?? 0) + 1);
+        } else if (row.tag.embedding && row.tag.embedding.length > 0) {
+            // Backfill lazily: resolve a domain for this tag, persist, forget.
+            lazyResolveDomain(tagId, row.tag.embedding).catch(() => {});
+        }
+    }
+
+    return { interestTagIds, skillTagIds, domainCounts };
+}
+
+async function lazyResolveDomain(tagId: string, embedding: number[]): Promise<void> {
+    const domain = await resolveDomain(embedding);
+    if (!domain) return;
+    try {
+        await getDatabase().tag.update({ where: { id: tagId }, data: { domainKey: domain } });
+    } catch {
+        // ignore — the tag may have been deleted meanwhile
+    }
 }
 
 /**
@@ -90,7 +154,11 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
     ]);
 
     const myIntentions = (currentUser?.profile?.intentions ?? []) as IntentionKey[];
-    const myTagLabels = new Set((currentUser?.tags ?? []).map((t) => t.tag.label));
+    const {
+        interestTagIds: myInterestTagIds,
+        skillTagIds: mySkillTagIds,
+        domainCounts: myDomainCounts
+    } = buildTagScoringData(currentUser?.tags);
     const myLatLng = {
         latitude: currentUser?.profile?.latitude ?? null,
         longitude: currentUser?.profile?.longitude ?? null
@@ -128,7 +196,9 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
 
     const setup: PipelineSetup = {
         myIntentions,
-        myTagLabels,
+        myInterestTagIds,
+        mySkillTagIds,
+        myDomainCounts,
         myLatLng,
         myGender,
         myAge,
@@ -315,7 +385,9 @@ export async function runPipelineQuery(
     // ── Score & post-filter ──────────────────────────────────────
     const scoringCtx: ScoringContext = {
         myIntentions: setup.myIntentions,
-        myTagLabels: setup.myTagLabels,
+        myInterestTagIds: setup.myInterestTagIds,
+        mySkillTagIds: setup.mySkillTagIds,
+        myDomainCounts: setup.myDomainCounts,
         myLanguages: setup.myLanguages,
         myLatitude: setup.myLatLng.latitude,
         myLongitude: setup.myLatLng.longitude,
@@ -328,7 +400,7 @@ export async function runPipelineQuery(
     const qualified = users
         .map((u) => {
             const theirIntentions = (u.profile?.intentions ?? []) as IntentionKey[];
-            const theirTags = new Set<string>((u.tags ?? []).map((t) => t.tag.label));
+            const theirTagData = buildTagScoringData(u.tags);
             const distKm = getDistanceKm(
                 setup.myLatLng.latitude,
                 setup.myLatLng.longitude,
@@ -338,7 +410,9 @@ export async function runPipelineQuery(
 
             const candidate: ScoringCandidate = {
                 intentions: theirIntentions,
-                tagLabels: theirTags,
+                interestTagIds: theirTagData.interestTagIds,
+                skillTagIds: theirTagData.skillTagIds,
+                domainCounts: theirTagData.domainCounts,
                 spokenLanguages: u.profile?.spokenLanguages ?? [],
                 latitude: u.profile?.latitude ?? null,
                 longitude: u.profile?.longitude ?? null,

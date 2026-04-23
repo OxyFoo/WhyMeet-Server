@@ -177,10 +177,14 @@ model Tag {
     id        String  @id @default(cuid())
     label     String  @unique
     embedding Float[] @default([])
+    // Canonical domain key (one of InterestCategoryKey from @oxyfoo/whymeet-types).
+    // Populated lazily via embedding similarity; null when unknown or embeddings disabled.
+    domainKey String?
 
     userTags UserTag[]
     aliases  TagAlias[]
 
+    @@index([domainKey])
     @@map("tags")
 }
 
@@ -196,16 +200,21 @@ model TagAlias {
 }
 
 model UserTag {
-    id     String @id @default(cuid())
+    id     String  @id @default(cuid())
     userId String
     tagId  String
     type   String // "interest" | "skill"
+    // Provenance marker — how this tag was added to the user profile.
+    // Values: "free" (typed), "popular" (popular-tags chip),
+    // "refine:<step_key>" (chosen from a refine wizard step), or null (legacy).
+    source String?
 
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
     tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
     @@unique([userId, tagId, type])
     @@index([tagId])
+    @@index([userId, source])
     @@map("user_tags")
 }
 

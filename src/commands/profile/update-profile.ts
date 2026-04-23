@@ -61,25 +61,38 @@ async function resolveTag(db: ReturnType<typeof getDatabase>, label: string): Pr
 async function syncTags(
     db: ReturnType<typeof getDatabase>,
     userId: string,
-    labels: string[],
+    incoming: { label: string; source?: string | null }[],
     type: 'interest' | 'skill'
 ) {
-    // Delete existing tags of this type
+    // Snapshot existing sources per canonical tagId so we can preserve provenance
+    // across saves that don't specify `source` (e.g. regular profile edits).
+    const previous = await db.userTag.findMany({
+        where: { userId, type },
+        select: { tagId: true, source: true }
+    });
+    const previousSourceByTagId = new Map<string, string | null>();
+    for (const row of previous) previousSourceByTagId.set(row.tagId, row.source);
+
     await db.userTag.deleteMany({ where: { userId, type } });
 
-    if (labels.length === 0) return;
+    if (incoming.length === 0) return;
 
-    // Resolve each label to a canonical tag, then create UserTag links
-    const resolved = new Set<string>();
-    for (const raw of labels) {
-        const label = sanitizeTagLabel(raw);
+    const seen = new Set<string>();
+    for (const raw of incoming) {
+        const label = sanitizeTagLabel(raw.label);
         if (!label) continue;
         const tag = await resolveTag(db, label);
         // Avoid duplicates (different labels resolving to same canonical tag)
-        if (resolved.has(tag.id)) continue;
-        resolved.add(tag.id);
+        if (seen.has(tag.id)) continue;
+        seen.add(tag.id);
+
+        // Preserve previous source when the client didn't include one — this is
+        // the normal case for generic profile edits. Explicit `null` from the
+        // client still resets to null (opt-out).
+        const source = raw.source !== undefined ? raw.source : (previousSourceByTagId.get(tag.id) ?? null);
+
         await db.userTag.create({
-            data: { userId, tagId: tag.id, type }
+            data: { userId, tagId: tag.id, type, source }
         });
     }
 }
@@ -188,7 +201,7 @@ registerCommand<WSRequest_UpdateProfile>(
                     await syncTags(
                         tx as ReturnType<typeof getDatabase>,
                         client.userId,
-                        data.interests.map((t) => t.label),
+                        data.interests.map((t) => ({ label: t.label, source: t.source })),
                         'interest'
                     );
                 }
@@ -198,7 +211,7 @@ registerCommand<WSRequest_UpdateProfile>(
                     await syncTags(
                         tx as ReturnType<typeof getDatabase>,
                         client.userId,
-                        data.skills.map((t) => t.label),
+                        data.skills.map((t) => ({ label: t.label, source: t.source })),
                         'skill'
                     );
                 }
