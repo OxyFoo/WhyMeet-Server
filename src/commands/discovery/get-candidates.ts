@@ -6,6 +6,7 @@ import { getQuota } from '@/services/swipeQuotaService';
 import { getBoostedUserIds } from '@/services/boostService';
 import { interleaveByBoost } from '@/services/interleaveResults';
 import { runDiscoveryPipeline, DISCOVERY_FETCH_LIMIT } from '@/services/discoveryPipeline';
+import { obfuscateString } from '@/services/previewObfuscation';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_GetCandidates>(
@@ -22,6 +23,9 @@ registerCommand<WSRequest_GetCandidates>(
                 candidate.score = s.score;
                 if (!ctx.myProfileComplete) {
                     candidate.blurred = true;
+                    candidate.bio = obfuscateString(candidate.bio);
+                    candidate.interests = candidate.interests.map(obfuscateString);
+                    candidate.skills = candidate.skills.map(obfuscateString);
                 }
                 return candidate;
             });

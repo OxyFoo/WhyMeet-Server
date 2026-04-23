@@ -3,6 +3,7 @@ import type { Client } from '@/server/Client';
 import type { WSRequest_SearchWithToken, WSResponse_SearchWithToken, MatchCandidate } from '@oxyfoo/whymeet-types';
 import { mapUserToCandidate } from '@/services/userMapper';
 import { runDiscoveryPipeline, DISCOVERY_FETCH_LIMIT } from '@/services/discoveryPipeline';
+import { obfuscateString } from '@/services/previewObfuscation';
 import { getBalance, useToken } from '@/services/tokenService';
 import { getBoostedUserIds } from '@/services/boostService';
 import { interleaveByBoost } from '@/services/interleaveResults';
@@ -39,6 +40,9 @@ registerCommand<WSRequest_SearchWithToken>(
                 candidate.score = s.score;
                 if (!ctx.myProfileComplete) {
                     candidate.blurred = true;
+                    candidate.bio = obfuscateString(candidate.bio);
+                    candidate.interests = candidate.interests.map(obfuscateString);
+                    candidate.skills = candidate.skills.map(obfuscateString);
                 }
                 return candidate;
             });
