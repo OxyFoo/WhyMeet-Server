@@ -10,6 +10,7 @@ import { logger } from '@/config/logger';
 import { validateProfileData } from '@/config/validation';
 import { invalidateCandidate } from '@/services/candidateCache';
 import { invalidatePipelineSetup } from '@/services/pipelineSetupCache';
+import { invalidateDiscoveryCounts } from '@/services/discoveryCountsCache';
 import { logAudit } from '@/services/auditLogService';
 
 const TAG_MAX_LENGTH = 40;
@@ -220,6 +221,7 @@ registerCommand<WSRequest_UpdateProfile>(
             // Invalidate caches so discovery reflects updated profile immediately
             invalidateCandidate(client.userId).catch(() => {});
             invalidatePipelineSetup(client.userId).catch(() => {});
+            invalidateDiscoveryCounts(client.userId).catch(() => {});
 
             // Re-fetch and return updated profile
             const updated = await db.user.findUnique({

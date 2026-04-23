@@ -12,6 +12,15 @@ import { logger } from '@/config/logger';
 
 const DEFAULT_MAX_DISTANCE = 50; // km
 
+/**
+ * Shared fetch limit for the whole discovery pipeline (swipe, counts, search).
+ * This is the maximum number of candidates we load from the DB before JS scoring.
+ * Over this threshold, counts are capped (the UI shows "999+").
+ * Keep it aligned across `get-candidates`, `get-candidate-counts`,
+ * `search-with-token` and `preview-search` so every screen reports the same number.
+ */
+export const DISCOVERY_FETCH_LIMIT = 999;
+
 // Full include used for candidate DB queries
 const candidateQueryInclude = {
     ...candidateInclude,
@@ -223,6 +232,17 @@ function buildPipelineWhere(
         };
     }
 
+    // ── Social vibe ad-hoc filter ────────────────────────────────
+    if (filters?.socialVibes && filters.socialVibes.length > 0) {
+        profileWhere.socialVibe = { in: filters.socialVibes };
+        where.profile = profileWhere;
+    }
+
+    // ── Preferred period ad-hoc filter ───────────────────────────
+    if (filters?.preferredPeriods && filters.preferredPeriods.length > 0) {
+        where.preferredPeriod = { in: filters.preferredPeriods };
+    }
+
     // ── Free-text query filter (name or bio contains text) ───────
     if (filters?.query && filters.query.trim() !== '') {
         const q = filters.query.trim();
@@ -242,22 +262,11 @@ function buildPipelineWhere(
 }
 
 /**
- * COUNT-only variant: returns the number of users matching the pipeline filters
- * without fetching rows or running JS scoring. ~20-50× cheaper than runPipelineQuery.
- * Counts may be slightly higher than qualified.length (no JS distance/score filtering)
- * but are accurate enough for badge/indicator purposes.
- */
-export async function countPipelineQuery(setup: PipelineSetup, filters?: SearchFilters): Promise<number> {
-    const db = getDatabase();
-    const prefIntentions = filters?.intentions;
-    const prefRemote = filters?.remote ?? setup.storedRemote;
-    const where = buildPipelineWhere(setup, filters, prefIntentions, prefRemote);
-    return db.user.count({ where });
-}
-
-/**
  * Run the SQL query + scoring pipeline using a pre-built context.
  * `filters` override stored preferences (intentions, distance, remote, languages).
+ *
+ * This is the SINGLE source of truth for "how many candidates match these filters".
+ * The returned `qualified.length` is what every screen (carte/swipe/recherche) displays.
  */
 export async function runPipelineQuery(
     setup: PipelineSetup,

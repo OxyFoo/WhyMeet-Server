@@ -5,7 +5,7 @@ import { mapUserToCandidate } from '@/services/userMapper';
 import { getQuota } from '@/services/swipeQuotaService';
 import { getBoostedUserIds } from '@/services/boostService';
 import { interleaveByBoost } from '@/services/interleaveResults';
-import { runDiscoveryPipeline } from '@/services/discoveryPipeline';
+import { runDiscoveryPipeline, DISCOVERY_FETCH_LIMIT } from '@/services/discoveryPipeline';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_GetCandidates>(
@@ -14,7 +14,7 @@ registerCommand<WSRequest_GetCandidates>(
         const filters = payload.filters;
 
         try {
-            const { qualified, ctx } = await runDiscoveryPipeline(client, filters, 5000);
+            const { qualified, ctx } = await runDiscoveryPipeline(client, filters, DISCOVERY_FETCH_LIMIT);
 
             // Take top 20 and map to client-facing candidates
             const scoredCandidates = qualified.slice(0, 20).map((s) => {
