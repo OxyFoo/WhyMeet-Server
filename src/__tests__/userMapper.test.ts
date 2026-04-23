@@ -54,6 +54,7 @@ describe('mapUserToProfile', () => {
             name: 'Alice',
             age: computeAge(BIRTH_DATE),
             birthDate: BIRTH_DATE.toISOString(),
+            birthDateLastChangedAt: null,
             gender: 'female',
             photos: [{ id: 'photo-1', key: 'photos/user-1/abc.webp', description: '', position: 0 }],
             city: 'Paris',

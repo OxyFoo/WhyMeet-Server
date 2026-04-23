@@ -106,7 +106,13 @@ registerCommand<WSRequest_UpdateProfile>(
                     select: { birthDate: true, birthDateLastChangedAt: true }
                 });
                 previousBirthDate = currentUser?.birthDate ?? null;
-                if (previousBirthDate && currentUser?.birthDateLastChangedAt) {
+                const incomingBirthDate = new Date(data.birthDate);
+                const isSameDate =
+                    previousBirthDate !== null &&
+                    !isNaN(incomingBirthDate.getTime()) &&
+                    previousBirthDate.getTime() === incomingBirthDate.getTime();
+                // Only rate-limit actual changes, not no-op saves that resend the same date.
+                if (previousBirthDate && !isSameDate && currentUser?.birthDateLastChangedAt) {
                     const msPerYear = 365 * 24 * 60 * 60 * 1000;
                     if (Date.now() - currentUser.birthDateLastChangedAt.getTime() < msPerYear) {
                         return { command: 'update-profile', payload: { error: 'birthDateChangeRateLimited' } };
@@ -126,8 +132,15 @@ registerCommand<WSRequest_UpdateProfile>(
                         const parsed = new Date(data.birthDate);
                         if (!isNaN(parsed.getTime()) && computeAge(parsed) >= 18) {
                             userData.birthDate = parsed;
-                            userData.birthDateLastChangedAt = new Date();
-                            newParsedBirthDate = parsed;
+                            // Only count as "modification" when a previous birthDate existed
+                            // AND the new date is actually different. The first definition and
+                            // no-op saves must not consume the yearly quota.
+                            const isActualChange =
+                                previousBirthDate !== null && previousBirthDate.getTime() !== parsed.getTime();
+                            if (isActualChange) {
+                                userData.birthDateLastChangedAt = new Date();
+                                newParsedBirthDate = parsed;
+                            }
                         }
                     }
                 }

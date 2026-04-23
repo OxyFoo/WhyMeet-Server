@@ -94,6 +94,7 @@ export function mapUserToProfile(user: {
     id: string;
     name: string;
     birthDate: Date | null;
+    birthDateLastChangedAt?: Date | null;
     gender: string;
     city: string;
     verified: boolean;
@@ -154,6 +155,7 @@ export function mapUserToProfile(user: {
         isBoosted: false,
         badges: mapBadges(user.badges),
         bio: user.profile?.bio ?? '',
+        birthDateLastChangedAt: user.birthDateLastChangedAt?.toISOString() ?? null,
         socialVibe: (user.profile?.socialVibe ?? 'chill') as Profile['socialVibe'],
         interests: (user.tags ?? [])
             .filter((t) => t.type === 'interest')
