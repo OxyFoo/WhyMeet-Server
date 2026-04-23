@@ -508,15 +508,57 @@ authRouter.post('/apple-signin', oauthLimiter, async (req, res) => {
 
 // ─── GET /auth/validate-email/:token ─────────────────────────────────
 
-const statusPage = (title: string, message: string, success: boolean) =>
-    renderTemplate('status-page.html', { title, message, icon: success ? '✅' : '❌' });
+const STATUS_STRINGS: Record<
+    string,
+    {
+        invalidLink: { title: string; message: string };
+        missingToken: { title: string; message: string };
+        confirmed: { title: string; message: string };
+        error: { title: string; message: string };
+        footer: string;
+    }
+> = {
+    fr: {
+        invalidLink: {
+            title: 'Lien invalide',
+            message: "Ce lien de confirmation est invalide ou a expiré. Demande-en un nouveau depuis l'application."
+        },
+        missingToken: { title: 'Lien invalide', message: 'Token manquant.' },
+        confirmed: {
+            title: 'Appareil confirmé',
+            message: "Ton appareil a été confirmé avec succès. Tu peux maintenant retourner dans l'application."
+        },
+        error: { title: 'Erreur', message: 'Une erreur inattendue s\'est produite. Réessaie plus tard.' },
+        footer: '© 2026 WhyMeet — Tous droits réservés'
+    },
+    en: {
+        invalidLink: {
+            title: 'Invalid Link',
+            message: 'This confirmation link is invalid or has expired. Please request a new one from the app.'
+        },
+        missingToken: { title: 'Invalid Link', message: 'Missing token.' },
+        confirmed: {
+            title: 'Device Confirmed',
+            message: 'Your device has been confirmed successfully. You can now return to the app.'
+        },
+        error: { title: 'Error', message: 'An unexpected error occurred. Please try again later.' },
+        footer: '© 2026 WhyMeet — All rights reserved'
+    }
+};
+
+const statusPage = (title: string, message: string, success: boolean, lang = 'en', footer = STATUS_STRINGS.en.footer) =>
+    renderTemplate('status-page.html', { title, message, icon: success ? '✅' : '❌', lang, footer });
 
 authRouter.get('/validate-email/:token', async (req, res) => {
     const token = req.params.token;
+    const rawLang = typeof req.query.lang === 'string' ? req.query.lang : 'en';
+    const lang = rawLang in STATUS_STRINGS ? rawLang : 'en';
+    const s = STATUS_STRINGS[lang];
+
     if (typeof token !== 'string') {
         res.status(400)
             .type('html')
-            .send(statusPage('Invalid Link', 'Missing token.', false));
+            .send(statusPage(s.missingToken.title, s.missingToken.message, false, lang, s.footer));
         return;
     }
 
@@ -525,29 +567,17 @@ authRouter.get('/validate-email/:token', async (req, res) => {
         if (!result) {
             res.status(400)
                 .type('html')
-                .send(
-                    statusPage(
-                        'Invalid Link',
-                        'This confirmation link is invalid or has expired. Please request a new one from the app.',
-                        false
-                    )
-                );
+                .send(statusPage(s.invalidLink.title, s.invalidLink.message, false, lang, s.footer));
             return;
         }
 
         logger.info(`[Auth] Email validated: user=${result.userId}, device=${result.deviceId}`);
-        res.type('html').send(
-            statusPage(
-                'Device Confirmed',
-                'Your device has been confirmed successfully. You can now return to the app.',
-                true
-            )
-        );
+        res.type('html').send(statusPage(s.confirmed.title, s.confirmed.message, true, lang, s.footer));
     } catch (error) {
         logger.error('[Auth] Validate email error', error);
         res.status(500)
             .type('html')
-            .send(statusPage('Error', 'An unexpected error occurred. Please try again later.', false));
+            .send(statusPage(s.error.title, s.error.message, false, lang, s.footer));
     }
 });
 

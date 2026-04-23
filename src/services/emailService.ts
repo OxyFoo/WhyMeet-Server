@@ -17,8 +17,8 @@ export function isSmtpConfigured(): boolean {
     return transporter !== null;
 }
 
-function buildValidationUrl(token: string): string {
-    return `${env.PUBLIC_APP_URL}/auth/validate-email/${encodeURIComponent(token)}`;
+function buildValidationUrl(token: string, language: string): string {
+    return `${env.PUBLIC_APP_URL}/auth/validate-email/${encodeURIComponent(token)}?lang=${encodeURIComponent(language)}`;
 }
 
 // ─── Email i18n ──────────────────────────────────────────────────────
@@ -61,7 +61,7 @@ function getEmailStrings(language: string) {
 // ─── Send confirmation email ─────────────────────────────────────────
 
 export async function sendConfirmationEmail(to: string, mailToken: string, language = 'fr'): Promise<void> {
-    const link = buildValidationUrl(mailToken);
+    const link = buildValidationUrl(mailToken, language);
 
     if (!transporter) {
         logger.warn(`[Email] No SMTP configured — validation link: ${link}`);
