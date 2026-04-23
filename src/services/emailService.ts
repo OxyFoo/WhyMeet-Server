@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { join } from 'path';
 import { env } from '@/config/env';
 import { logger } from '@/config/logger';
 import { renderTemplate } from '@/services/templateService';
@@ -83,7 +84,14 @@ export async function sendConfirmationEmail(to: string, mailToken: string, langu
             from: env.EMAIL_FROM,
             to,
             subject: s.subject,
-            html
+            html,
+            attachments: [
+                {
+                    filename: 'logo.png',
+                    path: join(process.cwd(), 'templates', 'logo.png'),
+                    cid: 'logo'
+                }
+            ]
         });
         logger.info(`[Email] Confirmation email sent to ${to} (lang=${language})`);
     } catch (error) {
