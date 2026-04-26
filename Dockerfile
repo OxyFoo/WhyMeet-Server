@@ -22,6 +22,8 @@ RUN addgroup -g 1002 whymeet \
 
 COPY --from=builder /app ./
 
+RUN mkdir -p /app/logs && chown node:node /app/logs
+
 USER node
 
 CMD ["npm", "start"]

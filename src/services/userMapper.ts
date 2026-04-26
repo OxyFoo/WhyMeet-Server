@@ -117,6 +117,7 @@ export function mapUserToProfile(user: {
         spokenLanguages: string[];
         trustScore: number;
         completedHostedCount: number;
+        preferredDiscoveryView?: string;
     } | null;
     tags?: { type: string; source?: string | null; tag: { id: string; label: string } }[];
     badges?: {
@@ -165,6 +166,7 @@ export function mapUserToProfile(user: {
             .map((t) => ({ id: t.tag.id, label: t.tag.label, source: t.source ?? null })),
         intentions: (user.profile?.intentions ?? []) as IntentionKey[],
         spokenLanguages: user.profile?.spokenLanguages ?? [],
+        preferredDiscoveryView: (user.profile?.preferredDiscoveryView ?? 'swipe') as Profile['preferredDiscoveryView'],
         location: {
             country: user.profile?.country ?? '',
             region: user.profile?.region ?? '',

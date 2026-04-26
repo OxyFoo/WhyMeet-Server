@@ -108,6 +108,9 @@ model Profile {
     completedHostedCount Int @default(0)
     cancelledHostedCount Int @default(0)
 
+    // UI preference: last discovery view ("swipe" | "advanced"). Stored for stats + UX.
+    preferredDiscoveryView String @default("swipe")
+
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
     @@map("profiles")

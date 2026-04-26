@@ -15,6 +15,7 @@ import './profile/get-profile';
 import './profile/get-user-profile';
 import './profile/get-profile-popular-tags';
 import './profile/update-profile';
+import './profile/set-discovery-view';
 import './messaging/get-conversations';
 import './messaging/get-messages';
 import './messaging/send-message';
