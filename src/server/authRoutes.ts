@@ -76,7 +76,9 @@ const refreshLimiter = rateLimit({
 
 const deviceSchema = z.object({
     uuid: z.string().uuid().optional(),
-    sessionToken: z.string().min(1).optional()
+    sessionToken: z.string().min(1).optional(),
+    name: z.string().max(128).optional(),
+    os: z.string().max(64).optional()
 });
 
 const enterSchema = z.object({
@@ -161,7 +163,7 @@ authRouter.post('/device', deviceLimiter, async (req, res) => {
         return;
     }
 
-    const { uuid, sessionToken } = parsed.data;
+    const { uuid, sessionToken, name, os } = parsed.data;
     const db = getDatabase();
 
     try {
@@ -173,7 +175,9 @@ authRouter.post('/device', deviceLimiter, async (req, res) => {
                 data: {
                     uuid: newUuid,
                     sessionTokenHash: tokenManager.hashToken(newSessionToken),
-                    status: 'pending'
+                    status: 'pending',
+                    name: name ?? '',
+                    os: os ?? ''
                 }
             });
 
@@ -201,6 +205,17 @@ authRouter.post('/device', deviceLimiter, async (req, res) => {
         }
 
         const newSessionToken = await tokenManager.session.cycle(device.id);
+
+        // Refresh name/os if mobile reported them (and they changed)
+        if ((name && name !== device.name) || (os && os !== device.os)) {
+            await db.device.update({
+                where: { id: device.id },
+                data: {
+                    ...(name && name !== device.name ? { name } : {}),
+                    ...(os && os !== device.os ? { os } : {})
+                }
+            });
+        }
 
         logger.debug(`[Auth] Device returning: uuid=${uuid}`);
         const response: HTTPResponse_Device = { status: 'returning', newSessionToken };
