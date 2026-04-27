@@ -13,6 +13,7 @@ import { Client } from './Client';
 import { routeCommand } from './Router';
 import { authRouter } from './authRoutes';
 import { uploadRouter } from './uploadRoutes';
+import { createAdminRouter } from './adminRoutes';
 import { tokenManager } from '@/services/tokenManager';
 import { getDatabase } from '@/services/database';
 import { isMaintenanceMode } from '@/services/maintenanceService';
@@ -55,7 +56,13 @@ function createHttpServer(): http.Server | https.Server {
     const app = express();
     app.use(helmet());
     app.use(cors());
-    app.use(express.json());
+
+    // express.json must NOT consume the body of /admin/* requests:
+    // the admin router does its own raw-body parsing for HMAC verification.
+    app.use((req, res, next) => {
+        if (req.path.startsWith('/admin/') || req.path === '/admin') return next();
+        return express.json()(req, res, next);
+    });
 
     // Global rate limit (per IP)
     app.use(globalLimiter);
@@ -69,7 +76,11 @@ function createHttpServer(): http.Server | https.Server {
         });
     });
 
-    // Maintenance mode middleware (blocks all routes except /health)
+    // Admin Console API (HMAC-signed). Mounted BEFORE maintenance guard so the
+    // console can toggle maintenance mode even while the server is in maintenance.
+    app.use('/admin', createAdminRouter());
+
+    // Maintenance mode middleware (blocks all routes except /health and /admin)
     app.use((req, res, next) => {
         if (isMaintenanceMode()) {
             const accept = req.headers.accept ?? '';
@@ -218,7 +229,8 @@ export function startServer(port: number): Promise<void> {
                         return;
                     }
 
-                    // Check if the user is banned, suspended, or deleted
+                    // Banned/deleted/suspended users cannot connect via WS.
+                    // Appeals are submitted via POST /auth/appeal (HTTP, no WS needed).
                     const user = await db.user.findUnique({
                         where: { id: payload.userId },
                         select: { banned: true, suspended: true, deleted: true }

@@ -11,7 +11,8 @@ import type {
     HTTPResponse_ResendEmail,
     HTTPResponse_SignOut,
     HTTPResponse_IntegrityChallenge,
-    HTTPResponse_IntegrityVerify
+    HTTPResponse_IntegrityVerify,
+    HTTPResponse_AppealSuspension
 } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { tokenManager } from '@/services/tokenManager';
@@ -615,7 +616,11 @@ authRouter.post('/refresh-ws-token', refreshLimiter, async (req, res) => {
             return;
         }
 
-        if (user.banned || user.suspended || user.deleted) {
+        // `deleted` users cannot refresh.
+        // `banned`/`suspended` users still get a fresh token + their profile
+        // (with `banned`/`suspended` flags set) so the mobile app can route to
+        // the dedicated banned/suspended screens instead of bouncing to login.
+        if (user.deleted) {
             res.status(403).json({ error: 'Account unavailable' });
             return;
         }
@@ -893,5 +898,82 @@ authRouter.post('/integrity-verify', refreshLimiter, async (req, res) => {
     } catch (error) {
         logger.error('[Auth] Integrity verify error', error);
         res.status(500).json({ error: 'Internal error' });
+    }
+});
+
+// ─── POST /auth/appeal ───────────────────────────────────────────────
+// Submit a suspension appeal. Requires device credentials (no WS needed).
+// The account must be suspended; banned/deleted accounts are rejected.
+
+const appealLimiter = rateLimit({
+    windowMs: 24 * 60 * 60 * 1000, // 24 h
+    limit: 3,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false
+});
+
+const appealSchema = z.object({
+    deviceUUID: z.string().uuid(),
+    sessionToken: z.string().min(1),
+    message: z.string().max(500).optional()
+});
+
+authRouter.post('/appeal', appealLimiter, async (req, res) => {
+    const parsed = appealSchema.safeParse(req.body);
+    if (!parsed.success) {
+        res.status(400).json({ error: 'Invalid request' } satisfies HTTPResponse_AppealSuspension);
+        return;
+    }
+
+    const { deviceUUID, sessionToken, message } = parsed.data;
+    const db = getDatabase();
+
+    try {
+        const device = await db.device.findUnique({ where: { uuid: deviceUUID } });
+        if (!device || !device.userId) {
+            res.status(401).json({ error: 'Invalid device' } satisfies HTTPResponse_AppealSuspension);
+            return;
+        }
+
+        if (!tokenManager.session.check(device.sessionTokenHash, sessionToken)) {
+            res.status(401).json({ error: 'Invalid session' } satisfies HTTPResponse_AppealSuspension);
+            return;
+        }
+
+        const user = await db.user.findUnique({
+            where: { id: device.userId },
+            select: { suspended: true, banned: true, deleted: true, appealRequestedAt: true }
+        });
+
+        if (!user || user.banned || user.deleted) {
+            res.status(403).json({
+                error: 'Account is not eligible for appeal'
+            } satisfies HTTPResponse_AppealSuspension);
+            return;
+        }
+
+        if (!user.suspended) {
+            res.status(409).json({ error: 'Account is not suspended' } satisfies HTTPResponse_AppealSuspension);
+            return;
+        }
+
+        if (user.appealRequestedAt) {
+            res.status(409).json({ error: 'Appeal already submitted' } satisfies HTTPResponse_AppealSuspension);
+            return;
+        }
+
+        await db.user.update({
+            where: { id: device.userId },
+            data: {
+                appealMessage: message ?? null,
+                appealRequestedAt: new Date()
+            }
+        });
+
+        logger.info(`[Moderation] User ${device.userId} appealed suspension via HTTP`);
+        res.json({ success: true } satisfies HTTPResponse_AppealSuspension);
+    } catch (error) {
+        logger.error('[Auth] Appeal error', error);
+        res.status(500).json({ error: 'Internal error' } satisfies HTTPResponse_AppealSuspension);
     }
 });

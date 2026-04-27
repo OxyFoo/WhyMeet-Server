@@ -98,3 +98,14 @@ export async function sendConfirmationEmail(to: string, mailToken: string, langu
         logger.error(`[Email] Failed to send to ${to}`, error);
     }
 }
+
+// ─── Generic send (used by the admin console) ───────────────────────
+
+export async function sendArbitraryEmail(to: string, subject: string, html: string): Promise<void> {
+    if (!transporter) {
+        logger.warn(`[Email] No SMTP configured — email to ${to} dropped (subject: ${subject})`);
+        return;
+    }
+    await transporter.sendMail({ from: env.EMAIL_FROM, to, subject, html });
+    logger.info(`[Email] Arbitrary email sent to ${to} (subject: ${subject})`);
+}

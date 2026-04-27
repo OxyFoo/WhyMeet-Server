@@ -136,3 +136,50 @@ export async function pushToUser(userId: string, payload: PushPayload, notifType
         logger.error('[Push] Failed to send push notification', error);
     }
 }
+
+/**
+ * Broadcast a push notification to ALL active devices (admin console only),
+ * or to a targeted set of users when `userIds` is provided.
+ * Returns counts of successes and failures. Use with care.
+ */
+export async function broadcastPush(
+    payload: PushPayload & { userIds?: string[] }
+): Promise<{ success: number; failure: number; total: number }> {
+    if (!ensureInitialized()) return { success: 0, failure: 0, total: 0 };
+    const db = getDatabase();
+    const targetUserIds = payload.userIds && payload.userIds.length > 0 ? payload.userIds : undefined;
+    const devices = await db.device.findMany({
+        where: {
+            status: 'active',
+            pushToken: { not: null },
+            pushProvider: 'fcm',
+            ...(targetUserIds ? { userId: { in: targetUserIds } } : {})
+        },
+        select: { id: true, pushToken: true }
+    });
+    const tokens = devices.map((d) => d.pushToken).filter((t): t is string => !!t);
+    if (tokens.length === 0) return { success: 0, failure: 0, total: 0 };
+
+    // FCM multicast caps at 500 per call
+    let success = 0;
+    let failure = 0;
+    for (let i = 0; i < tokens.length; i += 500) {
+        const slice = tokens.slice(i, i + 500);
+        try {
+            const response = await admin.messaging().sendEachForMulticast({
+                tokens: slice,
+                notification: { title: payload.title, body: payload.body },
+                data: payload.data,
+                android: { priority: 'high' },
+                apns: { payload: { aps: { sound: 'default' } } }
+            });
+            success += response.successCount;
+            failure += response.failureCount;
+        } catch (error) {
+            logger.error('[Push] broadcastPush batch failed', error);
+            failure += slice.length;
+        }
+    }
+    logger.info(`[Push] Broadcast delivered: success=${success} failure=${failure} total=${tokens.length}`);
+    return { success, failure, total: tokens.length };
+}

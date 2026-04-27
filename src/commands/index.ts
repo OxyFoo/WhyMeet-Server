@@ -28,7 +28,6 @@ import './moderation/get-blocked-users';
 import './moderation/unblock-user';
 import './moderation/report-user';
 import './moderation/unmatch';
-import './moderation/appeal-suspension';
 import './feedback/submit-feedback';
 import './settings/get-settings';
 import './settings/update-settings';

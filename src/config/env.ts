@@ -12,6 +12,9 @@ const envSchema = z.object({
     LOG_PATH: z.string().default('./logs'),
     LOG_KEEP_DAYS: z.coerce.number().int().positive().default(30),
 
+    // Admin Console (HMAC-signed /admin/* API)
+    ADMIN_API_SECRET: z.string().default(''),
+
     SSL_PRIVATE_KEY_PATH: z.string().default(''),
     SSL_CERTIFICATE_PATH: z.string().default(''),
 
