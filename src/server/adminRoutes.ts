@@ -11,7 +11,6 @@ import { APP_VERSION } from '@/config/version';
 import { isMaintenanceMode, setMaintenanceMode } from '@/services/maintenanceService';
 import { getConnectedClients } from '@/server/Server';
 import { getDatabase } from '@/services/database';
-import { sendArbitraryEmail } from '@/services/emailService';
 import { broadcastPush } from '@/services/pushService';
 
 // ─── HMAC verification middleware ────────────────────────────────────
@@ -270,26 +269,6 @@ export function createAdminRouter(): Router {
             res.json({ name, content });
         } catch (err) {
             res.status(400).json({ error: (err as Error).message });
-        }
-    });
-
-    const emailSchema = z.object({
-        to: z.string().email(),
-        subject: z.string().min(1).max(200),
-        html: z.string().min(1).max(50_000)
-    });
-    router.post('/send-email', async (req, res) => {
-        const parsed = emailSchema.safeParse(getJson(req));
-        if (!parsed.success) {
-            res.status(400).json({ error: 'invalid_payload' });
-            return;
-        }
-        try {
-            await sendArbitraryEmail(parsed.data.to, parsed.data.subject, parsed.data.html);
-            res.json({ ok: true });
-        } catch (err) {
-            logger.error('[AdminAPI] send-email failed', err);
-            res.status(500).json({ error: 'send_failed' });
         }
     });
 
