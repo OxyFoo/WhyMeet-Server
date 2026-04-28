@@ -20,6 +20,7 @@
         "db:generate": "prisma generate",
         "db:migrate": "prisma migrate dev",
         "db:push": "prisma db push",
+        "db:migrate:deploy": "prisma migrate deploy",
         "db:studio": "prisma studio",
         "db:seed": "tsx prisma/seed.ts"
     },
