@@ -31,7 +31,7 @@ const envSchema = z.object({
     SMTP_PORT: z.coerce.number().int().default(587),
     SMTP_USER: z.string().default(''),
     SMTP_PASS: z.string().default(''),
-    EMAIL_FROM: z.string().default('noreply@whymeet.app'),
+    EMAIL_FROM: z.string().default(''),
 
     // S3 / Minio Storage
     S3_ENDPOINT: z.string().default(''),
@@ -63,7 +63,7 @@ const envSchema = z.object({
     // Apple IAP Promotional Offer signing
     APPLE_IAP_KEY_ID: z.string().default(''),
     APPLE_IAP_PRIVATE_KEY: z.string().default(''),
-    APP_BUNDLE_ID: z.string().default('com.whymeet.app'),
+    APP_BUNDLE_ID: z.string().default(''),
 
     // Subscription / token / swipe tuning
     FREE_DAILY_SWIPE_LIMIT: z.coerce.number().int().positive().default(20),
