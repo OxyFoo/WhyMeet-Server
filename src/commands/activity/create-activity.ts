@@ -4,6 +4,7 @@ import type { WSRequest_CreateActivity, WSResponse_CreateActivity } from '@oxyfo
 import { createActivity } from '@/services/activityService';
 import { logger } from '@/config/logger';
 import { createActivitySchema } from '@/config/validation';
+import { isProfileComplete, loadUserForCompletion } from '@/services/profileCompletion';
 
 registerCommand<WSRequest_CreateActivity>(
     'create-activity',
@@ -15,6 +16,11 @@ registerCommand<WSRequest_CreateActivity>(
         }
 
         try {
+            const user = await loadUserForCompletion(client.userId);
+            if (!user || !isProfileComplete(user)) {
+                return { command: 'create-activity', payload: { error: 'profileIncomplete' } };
+            }
+
             const activity = await createActivity(client.userId, payload);
             return { command: 'create-activity', payload: { activity } };
         } catch (error) {

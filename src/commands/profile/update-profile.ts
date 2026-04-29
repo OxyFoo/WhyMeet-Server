@@ -12,6 +12,14 @@ import { invalidateCandidate } from '@/services/candidateCache';
 import { invalidatePipelineSetup } from '@/services/pipelineSetupCache';
 import { invalidateDiscoveryCounts } from '@/services/discoveryCountsCache';
 import { logAudit } from '@/services/auditLogService';
+import { isProfileComplete } from '@/services/profileCompletion';
+
+class ProfileWouldBecomeIncompleteError extends Error {
+    constructor() {
+        super('profileWouldBecomeIncomplete');
+        this.name = 'ProfileWouldBecomeIncompleteError';
+    }
+}
 
 const TAG_MAX_LENGTH = 40;
 
@@ -135,6 +143,14 @@ registerCommand<WSRequest_UpdateProfile>(
             }
             // ─────────────────────────────────────────────────────────────────────
 
+            // Snapshot completion state before mutating, so we can refuse a
+            // change that would regress a fully-completed profile.
+            const beforeUser = await db.user.findUnique({
+                where: { id: client.userId },
+                include: profileInclude
+            });
+            const wasComplete = beforeUser ? isProfileComplete(beforeUser) : false;
+
             await db.$transaction(async (tx) => {
                 // Update user base fields
                 const userData: Record<string, unknown> = {};
@@ -215,6 +231,17 @@ registerCommand<WSRequest_UpdateProfile>(
                         'skill'
                     );
                 }
+
+                // Refuse to persist a regression from complete → incomplete.
+                if (wasComplete) {
+                    const after = await tx.user.findUnique({
+                        where: { id: client.userId },
+                        include: profileInclude
+                    });
+                    if (!after || !isProfileComplete(after)) {
+                        throw new ProfileWouldBecomeIncompleteError();
+                    }
+                }
             });
 
             logger.info(`[Profile] Updated profile for user: ${client.userId}`);
@@ -248,6 +275,9 @@ registerCommand<WSRequest_UpdateProfile>(
 
             return { command: 'update-profile', payload: { user: mapUserToProfile(updated) } };
         } catch (error) {
+            if (error instanceof ProfileWouldBecomeIncompleteError) {
+                return { command: 'update-profile', payload: { error: 'profileWouldBecomeIncomplete' } };
+            }
             logger.error('[Profile] Update profile error', error);
             return { command: 'update-profile', payload: { error: 'Internal error' } };
         }
