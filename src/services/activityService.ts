@@ -458,6 +458,17 @@ export async function reportActivity(
 
     logger.info(`[Activity] User ${reporterId} reported activity ${activityId} (${reason})`);
 
+    // Remove the reporter from the activity & its group conversation so the
+    // activity disappears from their lists and the chat doesn't linger in their inbox.
+    await db.activityParticipant.deleteMany({
+        where: { activityId, userId: reporterId }
+    });
+    if (activity.conversationId) {
+        await db.conversationParticipant.deleteMany({
+            where: { conversationId: activity.conversationId, userId: reporterId }
+        });
+    }
+
     // Auto-archive if threshold reached
     const reportCount = await db.activityReport.count({ where: { activityId, isLegitimate: true } });
     if (reportCount >= ACTIVITY_ARCHIVE_THRESHOLD && !activity.isArchived) {
