@@ -14,6 +14,7 @@ import { routeCommand } from './Router';
 import { authRouter } from './authRoutes';
 import { uploadRouter } from './uploadRoutes';
 import { createAdminRouter } from './adminRoutes';
+import { placesRouter } from './placesRoutes';
 import { tokenManager } from '@/services/tokenManager';
 import { getDatabase } from '@/services/database';
 import { isMaintenanceMode } from '@/services/maintenanceService';
@@ -104,6 +105,9 @@ function createHttpServer(): http.Server | https.Server {
 
     // HTTP upload routes
     app.use('/upload', uploadLimiter, uploadRouter);
+
+    // HTTP places routes (Mapbox static-map proxy)
+    app.use('/places', placesRouter);
 
     if (env.SSL_PRIVATE_KEY_PATH && env.SSL_CERTIFICATE_PATH) {
         try {

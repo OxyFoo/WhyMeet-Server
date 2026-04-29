@@ -357,18 +357,39 @@ model IpLog {
 // ─── Audit Logs ───────────────────────────────────────────────────
 
 model AuditLog {
-    id        String   @id @default(cuid())
-    userId    String?
-    action    String
-    metadata  Json?
-    ip        String?
-    createdAt DateTime @default(now())
+    id               String   @id @default(cuid())
+    userId           String?
+    action           String
+    targetActivityId String?
+    metadata         Json?
+    ip               String?
+    createdAt        DateTime @default(now())
 
-    user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+    user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+    activity Activity? @relation(fields: [targetActivityId], references: [id], onDelete: SetNull)
 
     @@index([userId, action])
+    @@index([targetActivityId, createdAt])
     @@index([createdAt])
     @@map("audit_logs")
+}
+
+// ─── External API usage tracking ──────────────────────────────
+
+model ApiUsageEvent {
+    id        String   @id @default(cuid())
+    provider  String // "mapbox", "openai", ...
+    endpoint  String // "geocoding/suggest", "chat/completions", ...
+    status    Int // HTTP status code (0 if network error)
+    latencyMs Int
+    userId    String?
+    errorCode String?
+    metadata  Json?
+    createdAt DateTime @default(now())
+
+    @@index([provider, createdAt])
+    @@index([provider, status, createdAt])
+    @@map("api_usage_events")
 }
 
 // ─── Subscription & Monetization ────────────────────────────────────
@@ -433,9 +454,9 @@ model Activity {
     description           String    @default("")
     category              String // InterestCategoryKey
     dateTime              DateTime?
-    locationName          String    @default("")
-    latitude              Float?
-    longitude             Float?
+    locationName          String
+    latitude              Float
+    longitude             Float
     maxParticipants       Int?
     isCancelled           Boolean   @default(false)
     isArchived            Boolean   @default(false)
@@ -454,6 +475,7 @@ model Activity {
     photos          ActivityPhoto[]
     reports         ActivityReport[]
     scheduledNotifs ActivityScheduledNotif[]
+    auditLogs       AuditLog[]
 
     @@index([hostId])
     @@index([category])

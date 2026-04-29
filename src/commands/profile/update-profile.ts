@@ -227,7 +227,7 @@ registerCommand<WSRequest_UpdateProfile>(
                     client.userId,
                     'BIRTH_DATE_CHANGED',
                     { oldDate: previousBirthDate?.toISOString() ?? null, newDate: capturedNewBirthDate.toISOString() },
-                    client.ip
+                    { ip: client.ip }
                 );
             }
 

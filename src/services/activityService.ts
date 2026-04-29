@@ -12,7 +12,7 @@ import type { Prisma } from '@prisma/client';
 import { getDatabase } from '@/services/database';
 import { getDistanceKm } from '@/services/userMapper';
 import { computeAge } from '@/services/userMapper';
-import { discretizePosition } from '@/services/geoUtils';
+import { logAudit, diffObjects } from '@/services/auditLogService';
 import { logger } from '@/config/logger';
 import { checkAndAwardBadges } from '@/services/badgeService';
 
@@ -55,8 +55,8 @@ interface PrismaActivityWithRelations {
     category: string;
     dateTime: Date | null;
     locationName: string;
-    latitude: number | null;
-    longitude: number | null;
+    latitude: number;
+    longitude: number;
     maxParticipants: number | null;
     conversationId: string | null;
     isCancelled: boolean;
@@ -147,23 +147,14 @@ export async function createActivity(
         category: string;
         dateTime?: string;
         locationName: string;
-        latitude?: number;
-        longitude?: number;
+        latitude: number;
+        longitude: number;
         maxParticipants?: number;
         targetGenders?: Gender[];
         targetAgeRange?: [number, number];
     }
 ): Promise<Activity> {
     const db = getDatabase();
-
-    // Discretize position if provided
-    let lat = data.latitude ?? null;
-    let lng = data.longitude ?? null;
-    if (lat != null && lng != null) {
-        const disc = discretizePosition(lat, lng);
-        lat = disc.latitude;
-        lng = disc.longitude;
-    }
 
     // Create conversation for the activity (group chat)
     const conversation = await db.conversation.create({
@@ -184,8 +175,8 @@ export async function createActivity(
             category: data.category,
             dateTime: data.dateTime ? new Date(data.dateTime) : null,
             locationName: data.locationName,
-            latitude: lat,
-            longitude: lng,
+            latitude: data.latitude,
+            longitude: data.longitude,
             maxParticipants: data.maxParticipants ?? null,
             conversationId: conversation.id,
             ...(data.targetGenders ? { targetGenders: data.targetGenders } : {}),
@@ -201,6 +192,26 @@ export async function createActivity(
     if (activity.dateTime) {
         await scheduleActivityNotifs(activity.id, activity.dateTime);
     }
+
+    logAudit(
+        hostId,
+        'activity.create',
+        {
+            snapshot: {
+                title: activity.title,
+                description: activity.description,
+                category: activity.category,
+                dateTime: activity.dateTime?.toISOString() ?? null,
+                locationName: activity.locationName,
+                latitude: activity.latitude,
+                longitude: activity.longitude,
+                maxParticipants: activity.maxParticipants,
+                targetGenders: activity.targetGenders,
+                targetAgeRange: activity.targetAgeRange
+            }
+        },
+        { targetActivityId: activity.id }
+    );
 
     // Get viewer location for distance
     const hostProfile = await db.profile.findUnique({
@@ -222,8 +233,8 @@ export async function updateActivity(
         category?: string;
         dateTime?: string | null;
         locationName?: string;
-        latitude?: number | null;
-        longitude?: number | null;
+        latitude?: number;
+        longitude?: number;
         maxParticipants?: number | null;
         targetGenders?: Gender[];
         targetAgeRange?: [number, number];
@@ -235,22 +246,13 @@ export async function updateActivity(
     if (!existing || existing.hostId !== hostId) return null;
     if (existing.isCancelled || existing.isArchived) return null;
 
-    // Discretize position if provided
-    let lat = data.latitude;
-    let lng = data.longitude;
-    if (lat != null && lng != null) {
-        const disc = discretizePosition(lat, lng);
-        lat = disc.latitude;
-        lng = disc.longitude;
-    }
-
     const updateData: Prisma.ActivityUpdateInput = {};
     if (data.title !== undefined) updateData.title = data.title;
     if (data.description !== undefined) updateData.description = data.description;
     if (data.category !== undefined) updateData.category = data.category;
     if (data.locationName !== undefined) updateData.locationName = data.locationName;
-    if (data.latitude !== undefined) updateData.latitude = lat;
-    if (data.longitude !== undefined) updateData.longitude = lng;
+    if (data.latitude !== undefined) updateData.latitude = data.latitude;
+    if (data.longitude !== undefined) updateData.longitude = data.longitude;
     if (data.maxParticipants !== undefined) updateData.maxParticipants = data.maxParticipants;
     if (data.targetGenders !== undefined) updateData.targetGenders = data.targetGenders;
     if (data.targetAgeRange !== undefined) updateData.targetAgeRange = data.targetAgeRange;
@@ -270,9 +272,29 @@ export async function updateActivity(
         if (activity.dateTime) {
             await scheduleActivityNotifs(activity.id, activity.dateTime);
         } else {
-            // Remove scheduled notifs if dateTime cleared
             await db.activityScheduledNotif.deleteMany({ where: { activityId } });
         }
+    }
+
+    const TRACKED = [
+        'title',
+        'description',
+        'category',
+        'dateTime',
+        'locationName',
+        'latitude',
+        'longitude',
+        'maxParticipants',
+        'targetGenders',
+        'targetAgeRange'
+    ] as const;
+    const changes = diffObjects(
+        existing as unknown as Record<string, unknown>,
+        activity as unknown as Record<string, unknown>,
+        TRACKED
+    );
+    if (Object.keys(changes).length > 0) {
+        logAudit(hostId, 'activity.update', { changes }, { targetActivityId: activity.id });
     }
 
     const hostProfile = await db.profile.findUnique({
@@ -300,6 +322,7 @@ export async function cancelActivity(activityId: string, hostId: string): Promis
     // Remove scheduled notifications
     await db.activityScheduledNotif.deleteMany({ where: { activityId } });
 
+    logAudit(hostId, 'activity.cancel', {}, { targetActivityId: activityId });
     logger.info(`[Activity] Activity ${activityId} cancelled by host ${hostId}`);
     return true;
 }

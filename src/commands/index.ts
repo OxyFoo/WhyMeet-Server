@@ -34,6 +34,7 @@ import './settings/update-settings';
 import './settings/get-preferences';
 import './settings/update-preferences';
 import './tags/tag-suggest';
+import './places/autocomplete';
 import './account/delete-account';
 import './subscription/get-subscription';
 import './subscription/validate-receipt';

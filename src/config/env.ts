@@ -76,7 +76,10 @@ const envSchema = z.object({
     INTEGRITY_CHECK_ENABLED: z.preprocess((v) => v === 'true' || v === '1' || v === true, z.boolean()).default(false),
     GOOGLE_CLOUD_PROJECT_NUMBER: z.string().default(''),
     GOOGLE_SERVICE_ACCOUNT_KEY: z.string().default(''),
-    APPLE_APP_ATTEST_ENVIRONMENT: z.enum(['production', 'development']).default('production')
+    APPLE_APP_ATTEST_ENVIRONMENT: z.enum(['production', 'development']).default('production'),
+
+    // Mapbox (geocoding + static map proxy)
+    MAPBOX_ACCESS_TOKEN: z.string().default('')
 });
 
 const parsed = envSchema.safeParse(process.env);

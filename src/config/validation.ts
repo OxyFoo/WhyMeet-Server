@@ -45,7 +45,9 @@ export const createActivitySchema = z.object({
     title: z.string().trim().min(LIMITS.ACTIVITY_TITLE_MIN).max(LIMITS.ACTIVITY_TITLE_MAX),
     description: z.string().trim().max(LIMITS.ACTIVITY_DESC_MAX).optional(),
     category: z.enum(INTEREST_CATEGORY_KEYS as unknown as [string, ...string[]]),
-    locationName: z.string().trim().max(LIMITS.LOCATION_NAME_MAX).optional(),
+    locationName: z.string().trim().min(3).max(LIMITS.LOCATION_NAME_MAX),
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
     maxParticipants: z.number().int().min(LIMITS.PARTICIPANTS_MIN).max(LIMITS.PARTICIPANTS_MAX).optional(),
     targetGenders: z
         .array(z.enum(GENDERS as unknown as [string, ...string[]]))
@@ -60,24 +62,42 @@ export const createActivitySchema = z.object({
         .optional()
 });
 
-export const updateActivitySchema = z.object({
-    title: z.string().trim().min(LIMITS.ACTIVITY_TITLE_MIN).max(LIMITS.ACTIVITY_TITLE_MAX).optional(),
-    description: z.string().trim().max(LIMITS.ACTIVITY_DESC_MAX).optional(),
-    category: z.enum(INTEREST_CATEGORY_KEYS as unknown as [string, ...string[]]).optional(),
-    locationName: z.string().trim().max(LIMITS.LOCATION_NAME_MAX).optional(),
-    maxParticipants: z.number().int().min(LIMITS.PARTICIPANTS_MIN).max(LIMITS.PARTICIPANTS_MAX).optional(),
-    targetGenders: z
-        .array(z.enum(GENDERS as unknown as [string, ...string[]]))
-        .min(1)
-        .optional(),
-    targetAgeRange: z.tuple([z.number().int().min(18).max(80), z.number().int().min(18).max(80)]).optional(),
-    dateTime: z
-        .string()
-        .refine((d) => !isNaN(new Date(d).getTime()) && new Date(d) > new Date(), {
-            message: 'dateTime must be a valid date in the future'
-        })
-        .optional()
-});
+export const updateActivitySchema = z
+    .object({
+        title: z.string().trim().min(LIMITS.ACTIVITY_TITLE_MIN).max(LIMITS.ACTIVITY_TITLE_MAX).optional(),
+        description: z.string().trim().max(LIMITS.ACTIVITY_DESC_MAX).optional(),
+        category: z.enum(INTEREST_CATEGORY_KEYS as unknown as [string, ...string[]]).optional(),
+        locationName: z.string().trim().min(3).max(LIMITS.LOCATION_NAME_MAX).optional(),
+        latitude: z.number().min(-90).max(90).optional(),
+        longitude: z.number().min(-180).max(180).optional(),
+        maxParticipants: z
+            .number()
+            .int()
+            .min(LIMITS.PARTICIPANTS_MIN)
+            .max(LIMITS.PARTICIPANTS_MAX)
+            .nullable()
+            .optional(),
+        targetGenders: z
+            .array(z.enum(GENDERS as unknown as [string, ...string[]]))
+            .min(1)
+            .optional(),
+        targetAgeRange: z.tuple([z.number().int().min(18).max(80), z.number().int().min(18).max(80)]).optional(),
+        dateTime: z
+            .string()
+            .refine((d) => !isNaN(new Date(d).getTime()) && new Date(d) > new Date(), {
+                message: 'dateTime must be a valid date in the future'
+            })
+            .nullable()
+            .optional()
+    })
+    .refine(
+        (d) => {
+            // Location triplet must come together (all or none).
+            const provided = [d.locationName, d.latitude, d.longitude].filter((v) => v !== undefined).length;
+            return provided === 0 || provided === 3;
+        },
+        { message: 'locationName, latitude and longitude must be updated together' }
+    );
 
 // ─── Inline helpers for update-profile ────────────────────────────────────────
 
