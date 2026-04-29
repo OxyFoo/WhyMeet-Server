@@ -384,6 +384,65 @@ uploadRouter.delete('/activity-photo/:id', uploadLimiter, async (req, res) => {
     }
 });
 
+/**
+ * POST /upload/reorder-activity-photos
+ * Headers: x-device-uuid, x-session-token
+ * Body: { activityId: string; photos: { id: string; position: number }[] }
+ */
+uploadRouter.post('/reorder-activity-photos', uploadLimiter, async (req, res) => {
+    const auth = await authenticateDevice(req, res);
+    if (!auth) return;
+    const { userId, db } = auth;
+
+    const { activityId, photos } = req.body as {
+        activityId?: string;
+        photos?: { id: string; position: number }[];
+    };
+    if (!activityId || !Array.isArray(photos) || photos.length === 0) {
+        res.status(400).json({ error: 'Missing activityId or photos array' });
+        return;
+    }
+
+    const positions = photos.map((p) => p.position);
+    const validPositions = positions.every((pos) => Number.isInteger(pos) && pos >= 0 && pos < photos.length);
+    const uniquePositions = new Set(positions).size === positions.length;
+    if (!validPositions || !uniquePositions) {
+        res.status(400).json({ error: 'Invalid photo positions' });
+        return;
+    }
+
+    try {
+        const activity = await db.activity.findUnique({ where: { id: activityId } });
+        if (!activity || activity.hostId !== userId) {
+            res.status(403).json({ error: 'Only the host can reorder activity photos' });
+            return;
+        }
+
+        const activityPhotos = await db.activityPhoto.findMany({ where: { activityId } });
+        const activityPhotoIds = new Set(activityPhotos.map((p) => p.id));
+
+        for (const item of photos) {
+            if (!activityPhotoIds.has(item.id)) {
+                res.status(400).json({ error: `Photo ${item.id} not found` });
+                return;
+            }
+        }
+
+        for (const item of photos) {
+            await db.activityPhoto.update({
+                where: { id: item.id },
+                data: { position: item.position }
+            });
+        }
+
+        logger.info(`[Upload] Activity photos reordered for activity ${activityId} by user ${userId}`);
+        res.json({ success: true });
+    } catch (error) {
+        logger.error('[Upload] Activity photos reorder error', error);
+        res.status(500).json({ error: 'Reorder failed' });
+    }
+});
+
 // Handle multer errors (file too large, etc.)
 uploadRouter.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof multer.MulterError) {
