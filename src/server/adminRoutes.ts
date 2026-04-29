@@ -9,9 +9,18 @@ import { env } from '@/config/env';
 import { logger, listLogFiles, readLogFile } from '@/config/logger';
 import { APP_VERSION } from '@/config/version';
 import { isMaintenanceMode, setMaintenanceMode } from '@/services/maintenanceService';
+import {
+    isFeatureEnabled,
+    listFeatureFlags,
+    setFeatureEnabled,
+    type FeatureFlagKey
+} from '@/services/featureFlagService';
 import { getConnectedClients } from '@/server/Server';
 import { getDatabase } from '@/services/database';
 import { broadcastPush } from '@/services/pushService';
+
+const FEATURE_FLAG_KEYS = ['mapbox'] as const;
+const featureFlagKeySchema = z.enum(FEATURE_FLAG_KEYS);
 
 // ─── HMAC verification middleware ────────────────────────────────────
 
@@ -253,6 +262,54 @@ export function createAdminRouter(): Router {
             }
         }
         res.json({ enabled: parsed.data.enabled });
+    });
+
+    // ─── Feature flags ────────────────────────────────────────────────
+    router.get('/feature-flags', async (_req, res) => {
+        try {
+            const flags = await listFeatureFlags();
+            res.json({ flags });
+        } catch (err) {
+            logger.error('[AdminAPI] feature-flags list failed', err);
+            res.status(500).json({ error: 'feature_flags_failed' });
+        }
+    });
+
+    const featureFlagBodySchema = z.object({ enabled: z.boolean() });
+    router.get('/feature-flags/:key', async (req, res) => {
+        const parsedKey = featureFlagKeySchema.safeParse(req.params.key);
+        if (!parsedKey.success) {
+            res.status(400).json({ error: 'unknown_feature_flag' });
+            return;
+        }
+        try {
+            const enabled = await isFeatureEnabled(parsedKey.data as FeatureFlagKey);
+            res.json({ key: parsedKey.data, enabled });
+        } catch (err) {
+            logger.error('[AdminAPI] feature-flag get failed', err);
+            res.status(500).json({ error: 'feature_flag_failed' });
+        }
+    });
+
+    router.post('/feature-flags/:key', async (req, res) => {
+        const parsedKey = featureFlagKeySchema.safeParse(req.params.key);
+        if (!parsedKey.success) {
+            res.status(400).json({ error: 'unknown_feature_flag' });
+            return;
+        }
+        const parsedBody = featureFlagBodySchema.safeParse(getJson(req));
+        if (!parsedBody.success) {
+            res.status(400).json({ error: 'invalid_payload' });
+            return;
+        }
+        try {
+            await setFeatureEnabled(parsedKey.data as FeatureFlagKey, parsedBody.data.enabled);
+            logger.info(`[AdminAPI] Feature flag "${parsedKey.data}" set to ${parsedBody.data.enabled}`);
+            res.json({ key: parsedKey.data, enabled: parsedBody.data.enabled });
+        } catch (err) {
+            logger.error('[AdminAPI] feature-flag set failed', err);
+            res.status(500).json({ error: 'feature_flag_failed' });
+        }
     });
 
     router.get('/logs', (_req, res) => {

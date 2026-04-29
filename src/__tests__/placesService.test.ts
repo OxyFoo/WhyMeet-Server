@@ -17,6 +17,10 @@ jest.mock('@/config/env', () => ({
     env: { MAPBOX_ACCESS_TOKEN: 'tok-xyz' }
 }));
 
+jest.mock('@/services/featureFlagService', () => ({
+    isFeatureEnabled: jest.fn().mockResolvedValue(true)
+}));
+
 import { searchPlaces } from '@/services/placesService';
 
 const realFetch = global.fetch;

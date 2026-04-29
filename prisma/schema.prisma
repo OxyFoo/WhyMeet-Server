@@ -392,6 +392,16 @@ model ApiUsageEvent {
     @@map("api_usage_events")
 }
 
+// ─── Server-wide feature flags ────────────────────────────────
+
+model FeatureFlag {
+    key       String   @id
+    enabled   Boolean
+    updatedAt DateTime @updatedAt
+
+    @@map("feature_flags")
+}
+
 // ─── Subscription & Monetization ────────────────────────────────────
 
 model Subscription {

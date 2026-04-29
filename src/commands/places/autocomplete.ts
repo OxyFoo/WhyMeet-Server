@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_PlacesAutocomplete, WSResponse_PlacesAutocomplete } from '@oxyfoo/whymeet-types';
-import { searchPlaces } from '@/services/placesService';
+import { searchPlaces, MapboxDisabledError } from '@/services/placesService';
 import { logger } from '@/config/logger';
 
 const placesAutocompleteSchema = z.object({
@@ -31,6 +31,9 @@ registerCommand<WSRequest_PlacesAutocomplete>(
             });
             return { command: 'places-autocomplete', payload: { suggestions } };
         } catch (error) {
+            if (error instanceof MapboxDisabledError) {
+                return { command: 'places-autocomplete', payload: { error: 'mapbox_disabled' } };
+            }
             logger.error('[Places] Autocomplete error', error);
             return { command: 'places-autocomplete', payload: { error: 'Internal error' } };
         }

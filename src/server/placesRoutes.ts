@@ -1,7 +1,7 @@
 import express from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { logger } from '@/config/logger';
-import { fetchStaticMap } from '@/services/placesService';
+import { fetchStaticMap, MapboxDisabledError } from '@/services/placesService';
 
 export const placesRouter = express.Router();
 
@@ -55,6 +55,10 @@ placesRouter.get('/static-map', staticMapLimiter, async (req, res) => {
         res.setHeader('Cache-Control', 'public, max-age=86400');
         res.send(buffer);
     } catch (err) {
+        if (err instanceof MapboxDisabledError) {
+            res.status(503).json({ error: 'mapbox_disabled' });
+            return;
+        }
         logger.warn('[Places] static-map proxy failed', err);
         res.status(502).json({ error: 'upstream_error' });
     }

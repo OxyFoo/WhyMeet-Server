@@ -2,6 +2,14 @@ import type { PlaceSuggestion } from '@oxyfoo/whymeet-types';
 import { env } from '@/config/env';
 import { logger } from '@/config/logger';
 import { recordApiUsage } from '@/services/apiMetricsService';
+import { isFeatureEnabled } from '@/services/featureFlagService';
+
+export class MapboxDisabledError extends Error {
+    constructor() {
+        super('mapbox_disabled');
+        this.name = 'MapboxDisabledError';
+    }
+}
 
 const MAPBOX_BASE = 'https://api.mapbox.com/search/searchbox/v1';
 const PROVIDER = 'mapbox';
@@ -125,6 +133,9 @@ export async function searchPlaces(args: {
     longitude?: number;
     userId: string;
 }): Promise<PlaceSuggestion[]> {
+    if (!(await isFeatureEnabled('mapbox'))) {
+        throw new MapboxDisabledError();
+    }
     const token = env.MAPBOX_ACCESS_TOKEN;
     if (!token) {
         logger.warn('[Places] MAPBOX_ACCESS_TOKEN is not configured');
@@ -202,6 +213,9 @@ export async function fetchStaticMap(args: {
     height: number;
     retina: boolean;
 }): Promise<{ buffer: Buffer; contentType: string }> {
+    if (!(await isFeatureEnabled('mapbox'))) {
+        throw new MapboxDisabledError();
+    }
     const token = env.MAPBOX_ACCESS_TOKEN;
     if (!token) throw new Error('mapbox_token_missing');
 
