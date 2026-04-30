@@ -16,6 +16,7 @@ import { logAudit, diffObjects } from '@/services/auditLogService';
 import { logger } from '@/config/logger';
 import { checkAndAwardBadges } from '@/services/badgeService';
 import { emitGroupSystemMessage } from '@/services/messagingEvents';
+import { ActivityWouldBecomeIncompleteError, isActivityComplete } from '@/services/activityCompletion';
 
 const ACTIVITY_ARCHIVE_THRESHOLD = 4;
 
@@ -243,9 +244,16 @@ export async function updateActivity(
 ): Promise<Activity | null> {
     const db = getDatabase();
 
-    const existing = await db.activity.findUnique({ where: { id: activityId } });
+    const existing = await db.activity.findUnique({
+        where: { id: activityId },
+        include: { photos: { select: { id: true } } }
+    });
     if (!existing || existing.hostId !== hostId) return null;
     if (existing.isCancelled || existing.isArchived) return null;
+
+    // Snapshot completion state so we can refuse a regression
+    // (a previously-complete activity must not be saved as incomplete).
+    const wasComplete = isActivityComplete(existing);
 
     const updateData: Prisma.ActivityUpdateInput = {};
     if (data.title !== undefined) updateData.title = data.title;
@@ -262,10 +270,16 @@ export async function updateActivity(
         updateData.dateTime = data.dateTime ? new Date(data.dateTime) : null;
     }
 
-    const activity = await db.activity.update({
-        where: { id: activityId },
-        data: updateData,
-        include: activityInclude
+    const activity = await db.$transaction(async (tx) => {
+        const updated = await tx.activity.update({
+            where: { id: activityId },
+            data: updateData,
+            include: activityInclude
+        });
+        if (wasComplete && !isActivityComplete(updated)) {
+            throw new ActivityWouldBecomeIncompleteError();
+        }
+        return updated;
     });
 
     // Reschedule notifications if dateTime changed
