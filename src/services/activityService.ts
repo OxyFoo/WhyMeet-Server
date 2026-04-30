@@ -17,6 +17,9 @@ import { logger } from '@/config/logger';
 import { checkAndAwardBadges } from '@/services/badgeService';
 import { emitGroupSystemMessage } from '@/services/messagingEvents';
 import { ActivityWouldBecomeIncompleteError, isActivityComplete } from '@/services/activityCompletion';
+import { sendTrackedMail } from '@/services/emailService';
+import { renderReportAck } from '@/services/moderationEmails';
+import { getUserLanguage } from '@/services/notifI18n';
 
 const ACTIVITY_ARCHIVE_THRESHOLD = 4;
 
@@ -528,6 +531,28 @@ export async function reportActivity(
         });
         logger.warn(`[Activity] Activity ${activityId} auto-archived (${reportCount} reports)`);
     }
+
+    // Acknowledgement email to the reporter (best-effort, never blocks the caller).
+    void (async () => {
+        try {
+            const reporter = await db.user.findUnique({
+                where: { id: reporterId },
+                select: { email: true }
+            });
+            if (!reporter?.email) return;
+            const lang = await getUserLanguage(reporterId);
+            const tpl = renderReportAck(lang);
+            await sendTrackedMail('report.received_ack', {
+                to: reporter.email,
+                subject: tpl.subject,
+                html: tpl.html,
+                recipientUserId: reporterId,
+                metadata: { activityId, reason }
+            });
+        } catch (e) {
+            logger.error('[Activity] Failed to send report.received_ack', e);
+        }
+    })();
 
     return {};
 }

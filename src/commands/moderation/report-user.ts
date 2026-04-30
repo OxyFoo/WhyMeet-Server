@@ -10,6 +10,9 @@ import { getDatabase } from '@/services/database';
 import { addExcluded } from '@/services/excludeCache';
 import { logger } from '@/config/logger';
 import { getConnectedClients } from '@/server/Server';
+import { sendTrackedMail } from '@/services/emailService';
+import { renderReportAck } from '@/services/moderationEmails';
+import { getUserLanguage } from '@/services/notifI18n';
 
 const VALID_REASONS: ReportReason[] = ['spam', 'fake_profile', 'inappropriate', 'hate_speech', 'underage', 'other'];
 const VALID_SOURCE_TYPES: ReportSourceType[] = ['profile', 'conversation', 'activity'];
@@ -64,6 +67,28 @@ registerCommand<WSRequest_ReportUser>(
 
             logger.info(`[Moderation] User ${client.userId} reported ${reportedId} (${reason}, ${sourceType})`);
             addExcluded(client.userId, reportedId).catch(() => {});
+
+            // Send acknowledgement email to the reporter (best-effort, never blocks the response).
+            void (async () => {
+                try {
+                    const reporter = await db.user.findUnique({
+                        where: { id: client.userId },
+                        select: { email: true }
+                    });
+                    if (!reporter?.email) return;
+                    const lang = await getUserLanguage(client.userId);
+                    const tpl = renderReportAck(lang);
+                    await sendTrackedMail('report.received_ack', {
+                        to: reporter.email,
+                        subject: tpl.subject,
+                        html: tpl.html,
+                        recipientUserId: client.userId,
+                        metadata: { reportedId, reason, sourceType }
+                    });
+                } catch (e) {
+                    logger.error('[Moderation] Failed to send report.received_ack', e);
+                }
+            })();
 
             // Check if the reported user should be suspended
             const reportCount = await db.report.count({

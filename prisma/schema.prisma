@@ -413,6 +413,42 @@ model FeatureFlag {
     @@map("feature_flags")
 }
 
+// ─── Email tracking ───────────────────────────────────────────────
+
+/// Every email dispatched by the system (Server or Console) is logged here.
+/// Powers the `/emails` dashboard in the Console.
+model EmailLog {
+    id              String   @id @default(cuid())
+    type            String // EmailTypeKey from @oxyfoo/whymeet-types
+    recipientEmail  String
+    recipientUserId String?
+    subject         String
+    status          String // "sent" | "failed" | "skipped"
+    errorMessage    String?
+    metadata        Json?
+    sentBy          String // "server" | "console"
+    actorAdminId    String? // AdminUser.id (Console scope only)
+    createdAt       DateTime @default(now())
+
+    @@index([type, createdAt])
+    @@index([recipientEmail])
+    @@index([status, createdAt])
+    @@index([createdAt])
+    @@map("email_logs")
+}
+
+/// Per-type override allowing admins to disable an automatic email type
+/// without changing code. Only types where `toggleable: true` in the
+/// `EMAIL_TYPES` catalog respect this flag. Missing row = enabled.
+model EmailAutoConfig {
+    type      String   @id // EmailTypeKey
+    enabled   Boolean  @default(true)
+    updatedAt DateTime @updatedAt
+    updatedBy String? // AdminUser.id
+
+    @@map("email_auto_config")
+}
+
 // ─── Subscription & Monetization ────────────────────────────────────
 
 model Subscription {

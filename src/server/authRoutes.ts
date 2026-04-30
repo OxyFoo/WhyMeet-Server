@@ -146,7 +146,7 @@ async function linkDeviceAndSendMail(
             }
         });
         const lang = language ?? (await getUserLanguage(userId));
-        await sendConfirmationEmail(email, mailToken, lang);
+        await sendConfirmationEmail(email, mailToken, lang, userId);
     }
     return false; // emailSkipped = false
 }
@@ -739,7 +739,7 @@ authRouter.post('/resend-email', resendLimiter, async (req, res) => {
         });
 
         const lang = await getUserLanguage(device.userId);
-        await sendConfirmationEmail(device.user.email, mailToken, lang);
+        await sendConfirmationEmail(device.user.email, mailToken, lang, device.userId);
 
         logger.info(`[Auth] Resent confirmation email: device=${device.id}`);
         res.json({ success: true, message: 'Confirmation email sent' } satisfies HTTPResponse_ResendEmail);

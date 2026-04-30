@@ -3,6 +3,8 @@ import { join } from 'path';
 import { env } from '@/config/env';
 import { logger } from '@/config/logger';
 import { renderTemplate } from '@/services/templateService';
+import { getDatabase } from '@/services/database';
+import { type EmailTypeKey, type EmailLogStatus, getEmailTypeDescriptor } from '@oxyfoo/whymeet-types';
 
 const transporter = env.SMTP_HOST
     ? nodemailer.createTransport({
@@ -60,15 +62,20 @@ function getEmailStrings(language: string) {
 
 // ─── Send confirmation email ─────────────────────────────────────────
 
-export async function sendConfirmationEmail(to: string, mailToken: string, language = 'fr'): Promise<void> {
+export async function sendConfirmationEmail(
+    to: string,
+    mailToken: string,
+    language = 'fr',
+    recipientUserId?: string | null
+): Promise<void> {
     const link = buildValidationUrl(mailToken, language);
+    const s = getEmailStrings(language);
 
     if (!transporter) {
         logger.warn(`[Email] No SMTP configured — validation link: ${link}`);
         return;
     }
 
-    const s = getEmailStrings(language);
     const html = renderTemplate('confirmation-email.html', {
         link,
         ttlMinutes: String(env.MAIL_TOKEN_TTL_MINUTES),
@@ -79,22 +86,99 @@ export async function sendConfirmationEmail(to: string, mailToken: string, langu
         footer: s.footer
     });
 
+    await sendTrackedMail('auth.device_confirmation', {
+        to,
+        subject: s.subject,
+        html,
+        recipientUserId: recipientUserId ?? null,
+        attachments: [
+            {
+                filename: 'logo.png',
+                path: join(process.cwd(), 'templates', 'logo.png'),
+                cid: 'logo'
+            }
+        ],
+        metadata: { language }
+    });
+}
+
+// ─── Tracked send (server scope) ─────────────────────────────────────
+
+export type ServerTrackedSendInput = {
+    to: string;
+    subject: string;
+    html: string;
+    text?: string;
+    recipientUserId?: string | null;
+    metadata?: Record<string, unknown>;
+    attachments?: Array<{ filename: string; path: string; cid?: string }>;
+};
+
+/**
+ * Send an email and persist a row in `EmailLog`. Honors the `EmailAutoConfig`
+ * toggle for `toggleable` types (skipped row when disabled). Never throws —
+ * failures are logged with `status: 'failed'` and the returned status reflects
+ * the outcome.
+ */
+export async function sendTrackedMail(type: EmailTypeKey, input: ServerTrackedSendInput): Promise<EmailLogStatus> {
+    const descriptor = getEmailTypeDescriptor(type);
+    const db = getDatabase();
+
+    if (descriptor.toggleable) {
+        const cfg = await db.emailAutoConfig.findUnique({ where: { type } }).catch(() => null);
+        if (cfg && !cfg.enabled) {
+            await persistLog(type, input, 'skipped', null);
+            return 'skipped';
+        }
+    }
+
+    if (!transporter) {
+        logger.warn(`[Email] No SMTP configured — would have sent ${type} to ${input.to}`);
+        await persistLog(type, input, 'skipped', 'smtp_not_configured');
+        return 'skipped';
+    }
+
     try {
         await transporter.sendMail({
             from: env.EMAIL_FROM,
-            to,
-            subject: s.subject,
-            html,
-            attachments: [
-                {
-                    filename: 'logo.png',
-                    path: join(process.cwd(), 'templates', 'logo.png'),
-                    cid: 'logo'
-                }
-            ]
+            to: input.to,
+            subject: input.subject,
+            html: input.html,
+            text: input.text,
+            attachments: input.attachments
         });
-        logger.info(`[Email] Confirmation email sent to ${to} (lang=${language})`);
+        logger.info(`[Email] sent type=${type} to=${input.to}`);
+        await persistLog(type, input, 'sent', null);
+        return 'sent';
     } catch (error) {
-        logger.error(`[Email] Failed to send to ${to}`, error);
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(`[Email] Failed type=${type} to=${input.to}: ${message}`);
+        await persistLog(type, input, 'failed', message);
+        return 'failed';
+    }
+}
+
+async function persistLog(
+    type: EmailTypeKey,
+    input: ServerTrackedSendInput,
+    status: EmailLogStatus,
+    errorMessage: string | null
+): Promise<void> {
+    try {
+        const db = getDatabase();
+        await db.emailLog.create({
+            data: {
+                type,
+                recipientEmail: input.to,
+                recipientUserId: input.recipientUserId ?? null,
+                subject: input.subject,
+                status,
+                errorMessage,
+                metadata: input.metadata ? (input.metadata as object) : undefined,
+                sentBy: 'server'
+            }
+        });
+    } catch (e) {
+        logger.error('[Email] Failed to persist EmailLog row', e);
     }
 }
