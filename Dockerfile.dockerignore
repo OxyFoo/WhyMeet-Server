@@ -7,4 +7,5 @@ WhyMeet/
 # Build outputs that will be regenerated
 WhyMeet-Server/dist
 WhyMeet-Server/logs
+WhyMeet-Server/cache
 WhyMeet-Types/dist

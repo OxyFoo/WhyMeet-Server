@@ -117,6 +117,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - ./logs:/app/logs
+      - ./cache:/app/cache
       - /etc/ssl/whymeet-certs/fullchain.pem:/etc/letsencrypt/live/whymeet/fullchain.pem:ro
       - /etc/ssl/whymeet-certs/privkey.pem:/etc/letsencrypt/live/whymeet/privkey.pem:ro
     deploy:

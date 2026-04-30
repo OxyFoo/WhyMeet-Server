@@ -1,8 +1,9 @@
-import type { PlaceSuggestion } from '@oxyfoo/whymeet-types';
+import type { PlaceSuggestion, PlaceSuggestionLite } from '@oxyfoo/whymeet-types';
 import { env } from '@/config/env';
 import { logger } from '@/config/logger';
 import { recordApiUsage } from '@/services/apiMetricsService';
 import { isFeatureEnabled } from '@/services/featureFlagService';
+import { getCachedStaticMap, putCachedStaticMap } from '@/services/staticMapCache';
 
 export class MapboxDisabledError extends Error {
     constructor() {
@@ -16,14 +17,20 @@ const PROVIDER = 'mapbox';
 const ENDPOINT_SUGGEST = 'searchbox/suggest';
 const ENDPOINT_RETRIEVE = 'searchbox/retrieve';
 const SESSION_TTL_MS = 60 * 60 * 1000; // 1 h, Mapbox session window
-const CACHE_TTL_MS = 60 * 60 * 1000;
-const CACHE_MAX = 500;
+const SUGGEST_CACHE_TTL_MS = 60 * 60 * 1000;
+const SUGGEST_CACHE_MAX = 500;
+const RETRIEVE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const RETRIEVE_CACHE_MAX = 2000;
 
-type SuggestionEntry = { value: PlaceSuggestion[]; expiresAt: number };
-const cache = new Map<string, SuggestionEntry>();
+type SuggestEntry = { value: PlaceSuggestionLite[]; expiresAt: number };
+const suggestCache = new Map<string, SuggestEntry>();
 
-// Mapbox Search Box billing model: a session = one suggest+retrieve cycle.
-// We keep one session per user so a single search isn't double-billed.
+type RetrieveEntry = { value: PlaceSuggestion; expiresAt: number };
+const retrieveCache = new Map<string, RetrieveEntry>();
+
+// Mapbox Search Box billing model: a session = one or more /suggest calls
+// followed by a single /retrieve. We keep one session per user so that
+// successive keystrokes for the same search are billed once.
 const userSessions = new Map<string, { id: string; expiresAt: number }>();
 
 function getSessionToken(userId: string): string {
@@ -35,25 +42,41 @@ function getSessionToken(userId: string): string {
     return id;
 }
 
-function cacheKey(query: string, language: string, lat?: number, lng?: number): string {
+/**
+ * Reset the session token for a user. Called after a successful /retrieve so
+ * the next search opens a fresh billing session, matching Mapbox's spec
+ * ("calling /suggest followed by /retrieve with a common session_token" ends
+ * the session).
+ */
+function endSession(userId: string): void {
+    userSessions.delete(userId);
+}
+
+function suggestCacheKey(query: string, language: string, lat?: number, lng?: number): string {
     const latR = lat != null ? lat.toFixed(2) : '-';
     const lngR = lng != null ? lng.toFixed(2) : '-';
     return `${language}|${latR}|${lngR}|${query.toLowerCase().trim()}`;
 }
 
-function cachePut(key: string, value: PlaceSuggestion[]): void {
-    if (cache.size >= CACHE_MAX) {
-        const oldest = cache.keys().next().value;
-        if (oldest !== undefined) cache.delete(oldest);
+function lruPut<V>(
+    map: Map<string, { value: V; expiresAt: number }>,
+    max: number,
+    key: string,
+    value: V,
+    ttl: number
+): void {
+    if (map.size >= max) {
+        const oldest = map.keys().next().value;
+        if (oldest !== undefined) map.delete(oldest);
     }
-    cache.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
+    map.set(key, { value, expiresAt: Date.now() + ttl });
 }
 
-function cacheGet(key: string): PlaceSuggestion[] | null {
-    const entry = cache.get(key);
+function lruGet<V>(map: Map<string, { value: V; expiresAt: number }>, key: string): V | null {
+    const entry = map.get(key);
     if (!entry) return null;
     if (entry.expiresAt < Date.now()) {
-        cache.delete(key);
+        map.delete(key);
         return null;
     }
     return entry.value;
@@ -122,9 +145,10 @@ async function callMapbox<T>(
 }
 
 /**
- * Fetch up to 5 place suggestions for a free-text query. Results contain
- * latitude/longitude resolved via Mapbox's retrieve endpoint so the client can
- * persist a precise position.
+ * Fetch up to 5 lightweight place suggestions for a free-text query. Does
+ * NOT resolve coordinates — the client must call {@link retrievePlace} once
+ * the user picks a result. This split is required to avoid being billed for
+ * one Mapbox session per displayed suggestion.
  */
 export async function searchPlaces(args: {
     query: string;
@@ -132,7 +156,7 @@ export async function searchPlaces(args: {
     latitude?: number;
     longitude?: number;
     userId: string;
-}): Promise<PlaceSuggestion[]> {
+}): Promise<PlaceSuggestionLite[]> {
     if (!(await isFeatureEnabled('mapbox'))) {
         throw new MapboxDisabledError();
     }
@@ -146,8 +170,8 @@ export async function searchPlaces(args: {
     if (query.length < 2) return [];
 
     const language = (args.language ?? 'fr').slice(0, 5);
-    const key = cacheKey(query, language, args.latitude, args.longitude);
-    const cached = cacheGet(key);
+    const key = suggestCacheKey(query, language, args.latitude, args.longitude);
+    const cached = lruGet(suggestCache, key);
     if (cached) return cached;
 
     const session = getSessionToken(args.userId);
@@ -170,32 +194,65 @@ export async function searchPlaces(args: {
     if (!suggestRes.ok) return [];
     const raw = suggestRes.data.suggestions ?? [];
 
-    // Resolve coordinates for each suggestion via /retrieve. Done in parallel.
-    const retrieved = await Promise.all(
-        raw.map(async (s) => {
-            const url = new URL(`${MAPBOX_BASE}/retrieve/${encodeURIComponent(s.mapbox_id)}`);
-            url.searchParams.set('session_token', session);
-            url.searchParams.set('access_token', token);
-            const res = await callMapbox<{ features: MapboxFeature[] }>(ENDPOINT_RETRIEVE, url.toString(), args.userId);
-            if (!res.ok) return null;
-            const f = res.data.features?.[0];
-            if (!f) return null;
-            const lng = f.properties.coordinates?.longitude ?? f.geometry?.coordinates?.[0];
-            const lat = f.properties.coordinates?.latitude ?? f.geometry?.coordinates?.[1];
-            if (lat == null || lng == null) return null;
-            return {
-                id: s.mapbox_id,
-                name: s.name,
-                fullAddress: s.full_address ?? s.place_formatted ?? s.name,
-                latitude: lat,
-                longitude: lng
-            } satisfies PlaceSuggestion;
-        })
-    );
-
-    const suggestions = retrieved.filter((x): x is PlaceSuggestion => x !== null);
-    cachePut(key, suggestions);
+    const suggestions: PlaceSuggestionLite[] = raw.map((s) => ({
+        id: s.mapbox_id,
+        name: s.name,
+        fullAddress: s.full_address ?? s.place_formatted ?? s.name
+    }));
+    lruPut(suggestCache, SUGGEST_CACHE_MAX, key, suggestions, SUGGEST_CACHE_TTL_MS);
     return suggestions;
+}
+
+/**
+ * Resolve coordinates for a single suggestion. Must be called with the same
+ * `userId` that produced the suggestion so that Mapbox bills one session for
+ * the whole `/suggest` → `/retrieve` cycle.
+ */
+export async function retrievePlace(args: {
+    id: string;
+    language?: string;
+    userId: string;
+}): Promise<PlaceSuggestion | null> {
+    if (!(await isFeatureEnabled('mapbox'))) {
+        throw new MapboxDisabledError();
+    }
+    const token = env.MAPBOX_ACCESS_TOKEN;
+    if (!token) {
+        logger.warn('[Places] MAPBOX_ACCESS_TOKEN is not configured');
+        return null;
+    }
+
+    const language = (args.language ?? 'fr').slice(0, 5);
+    const cacheKey = `${language}|${args.id}`;
+    const cached = lruGet(retrieveCache, cacheKey);
+    if (cached) return cached;
+
+    const session = getSessionToken(args.userId);
+
+    const url = new URL(`${MAPBOX_BASE}/retrieve/${encodeURIComponent(args.id)}`);
+    url.searchParams.set('session_token', session);
+    url.searchParams.set('language', language);
+    url.searchParams.set('access_token', token);
+
+    const res = await callMapbox<{ features: MapboxFeature[] }>(ENDPOINT_RETRIEVE, url.toString(), args.userId);
+    // /retrieve closes the Mapbox billing session — drop the token so the next
+    // search starts a new one.
+    endSession(args.userId);
+    if (!res.ok) return null;
+    const f = res.data.features?.[0];
+    if (!f) return null;
+    const lng = f.properties.coordinates?.longitude ?? f.geometry?.coordinates?.[0];
+    const lat = f.properties.coordinates?.latitude ?? f.geometry?.coordinates?.[1];
+    if (lat == null || lng == null) return null;
+    const place: PlaceSuggestion = {
+        id: args.id,
+        name: f.properties.name,
+        fullAddress: f.properties.full_address ?? f.properties.place_formatted ?? f.properties.name,
+        latitude: lat,
+        longitude: lng
+    };
+    lruPut(retrieveCache, RETRIEVE_CACHE_MAX, cacheKey, place, RETRIEVE_CACHE_TTL_MS);
+    return place;
 }
 
 const STATIC_BASE = 'https://api.mapbox.com/styles/v1/mapbox/streets-v12/static';
@@ -218,6 +275,9 @@ export async function fetchStaticMap(args: {
     }
     const token = env.MAPBOX_ACCESS_TOKEN;
     if (!token) throw new Error('mapbox_token_missing');
+
+    const cached = await getCachedStaticMap(args);
+    if (cached) return cached;
 
     const lng = args.longitude.toFixed(5);
     const lat = args.latitude.toFixed(5);
@@ -251,10 +311,12 @@ export async function fetchStaticMap(args: {
             latencyMs: latency,
             userId: null
         });
-        return {
+        const payload = {
             buffer: Buffer.from(arrayBuf),
             contentType: res.headers.get('content-type') ?? 'image/png'
         };
+        await putCachedStaticMap(args, payload);
+        return payload;
     } catch (err) {
         const latency = Date.now() - start;
         recordApiUsage({

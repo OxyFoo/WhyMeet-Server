@@ -79,7 +79,11 @@ const envSchema = z.object({
     APPLE_APP_ATTEST_ENVIRONMENT: z.enum(['production', 'development']).default('production'),
 
     // Mapbox (geocoding + static map proxy)
-    MAPBOX_ACCESS_TOKEN: z.string().default('')
+    MAPBOX_ACCESS_TOKEN: z.string().default(''),
+
+    // Disk cache for Mapbox static map images. Persistent forever (images
+    // are immutable). Mount as a Docker volume in production.
+    STATIC_MAP_CACHE_DIR: z.string().default('./cache/static-maps')
 });
 
 const parsed = envSchema.safeParse(process.env);
