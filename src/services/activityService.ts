@@ -15,6 +15,7 @@ import { computeAge } from '@/services/userMapper';
 import { logAudit, diffObjects } from '@/services/auditLogService';
 import { logger } from '@/config/logger';
 import { checkAndAwardBadges } from '@/services/badgeService';
+import { emitGroupSystemMessage } from '@/services/messagingEvents';
 
 const ACTIVITY_ARCHIVE_THRESHOLD = 4;
 
@@ -394,6 +395,11 @@ export async function joinActivity(
             create: { conversationId: activity.conversationId, userId },
             update: {}
         });
+
+        // Emit "user joined" system message (activityParticipant.create above
+        // would have thrown on duplicate, so reaching this point means a real
+        // new join).
+        await emitGroupSystemMessage(activity.conversationId, userId, 'user_joined');
     }
 
     // Fetch full activity
@@ -435,6 +441,13 @@ export async function leaveActivity(activityId: string, userId: string): Promise
     await db.activityParticipant.delete({
         where: { activityId_userId: { activityId, userId } }
     });
+
+    // Emit system message before removing the participant from the group
+    // conversation so the actor is not increment-targeted (filtered by
+    // userId !== actorUserId anyway).
+    if (activity.conversationId) {
+        await emitGroupSystemMessage(activity.conversationId, userId, 'user_left');
+    }
 
     // Remove from group conversation
     if (activity.conversationId) {

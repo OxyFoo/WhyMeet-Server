@@ -1,6 +1,6 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
-import type { WSRequest_GetMessages, WSResponse_GetMessages } from '@oxyfoo/whymeet-types';
+import type { WSRequest_GetMessages, WSResponse_GetMessages, MessageType } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { logger } from '@/config/logger';
 
@@ -42,7 +42,8 @@ registerCommand<WSRequest_GetMessages>(
                         text: m.text,
                         senderId: m.senderId,
                         timestamp: m.timestamp.toISOString(),
-                        read: m.read
+                        read: m.read,
+                        type: (m.type ?? 'text') as MessageType
                     })),
                     hasMore
                 }

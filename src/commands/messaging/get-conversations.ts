@@ -6,7 +6,8 @@ import type {
     Conversation,
     Gender,
     PreferredPeriod,
-    ProfilePhoto
+    ProfilePhoto,
+    MessageType
 } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import type { Prisma } from '@prisma/client';
@@ -97,6 +98,8 @@ registerCommand<WSRequest_GetConversations>(
                         id: conv.id,
                         lastMessage: lastMsg?.text,
                         lastMessageTime: lastMsg?.timestamp.toISOString(),
+                        lastMessageType: lastMsg ? ((lastMsg.type ?? 'text') as MessageType) : undefined,
+                        lastMessageSenderId: lastMsg?.senderId,
                         unreadCount: p.unreadCount,
                         isGroup
                     };

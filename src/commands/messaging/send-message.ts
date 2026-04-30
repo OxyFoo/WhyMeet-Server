@@ -42,7 +42,8 @@ registerCommand<WSRequest_SendMessage>(
                 data: {
                     conversationId,
                     senderId: client.userId,
-                    text
+                    text,
+                    type: 'text'
                 }
             });
 
@@ -57,7 +58,8 @@ registerCommand<WSRequest_SendMessage>(
                 text: message.text,
                 senderId: message.senderId,
                 timestamp: message.timestamp.toISOString(),
-                read: false
+                read: false,
+                type: 'text' as const
             };
 
             // Push to other connected participants

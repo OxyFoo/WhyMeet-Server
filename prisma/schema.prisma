@@ -273,6 +273,7 @@ model Message {
     conversationId String
     senderId       String
     text           String
+    type           String   @default("text") // text | user_joined | user_left
     read           Boolean  @default(false)
     timestamp      DateTime @default(now())
 
