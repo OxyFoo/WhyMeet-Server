@@ -83,8 +83,8 @@ registerCommand<WSRequest_GetUserProfile>(
                 const myTagData = buildTagScoringData(currentUser.tags);
                 const scoringCtx: ScoringContext = {
                     myIntentions: (currentUser.profile.intentions ?? []) as IntentionKey[],
-                    myInterestTagIds: myTagData.interestTagIds,
-                    mySkillTagIds: myTagData.skillTagIds,
+                    myInterestLabels: myTagData.interestLabels,
+                    mySkillLabels: myTagData.skillLabels,
                     myDomainCounts: myTagData.domainCounts,
                     myLanguages: currentUser.profile.spokenLanguages ?? [],
                     myLatitude: currentUser.profile.latitude,
@@ -97,8 +97,8 @@ registerCommand<WSRequest_GetUserProfile>(
                 const theirTagData = buildTagScoringData(targetUser.tags);
                 const scoringCandidate: ScoringCandidate = {
                     intentions: (targetUser.profile?.intentions ?? []) as IntentionKey[],
-                    interestTagIds: theirTagData.interestTagIds,
-                    skillTagIds: theirTagData.skillTagIds,
+                    interestLabels: theirTagData.interestLabels,
+                    skillLabels: theirTagData.skillLabels,
                     domainCounts: theirTagData.domainCounts,
                     spokenLanguages: targetUser.profile?.spokenLanguages ?? [],
                     latitude: targetUser.profile?.latitude ?? null,

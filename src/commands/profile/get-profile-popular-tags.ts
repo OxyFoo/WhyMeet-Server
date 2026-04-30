@@ -12,17 +12,19 @@ const CACHE_TTL_S = 3600; // 1 hour
 async function fetchFromDb(): Promise<{ interests: string[]; skills: string[] }> {
     const db = getDatabase();
 
-    // Group UserTag by tagId for each type, ordered by count desc
+    // Group UserTag by labelLower (raw user-typed label, case-folded). This
+    // counts the labels actually written by users — including those without
+    // any canonical Tag link — instead of canonical popularity.
     const [interestCounts, skillCounts] = await Promise.all([
         db.userTag.groupBy({
-            by: ['tagId'],
+            by: ['labelLower'],
             where: { type: 'interest' },
             _count: { id: true },
             orderBy: { _count: { id: 'desc' } },
             take: TOP_LIMIT
         }),
         db.userTag.groupBy({
-            by: ['tagId'],
+            by: ['labelLower'],
             where: { type: 'skill' },
             _count: { id: true },
             orderBy: { _count: { id: 'desc' } },
@@ -30,19 +32,32 @@ async function fetchFromDb(): Promise<{ interests: string[]; skills: string[] }>
         })
     ]);
 
-    const interestTagIds = interestCounts.map((r) => r.tagId);
-    const skillTagIds = skillCounts.map((r) => r.tagId);
-    const allIds = [...new Set([...interestTagIds, ...skillTagIds])];
+    // Resolve a representative (display-cased) label per labelLower.
+    async function resolveDisplayLabels(labelLowers: string[], type: 'interest' | 'skill') {
+        if (labelLowers.length === 0) return new Map<string, string>();
+        const rows = await db.userTag.findMany({
+            where: { type, labelLower: { in: labelLowers } },
+            select: { label: true, labelLower: true },
+            distinct: ['labelLower']
+        });
+        return new Map(rows.map((r) => [r.labelLower, r.label]));
+    }
 
-    const tags = await db.tag.findMany({
-        where: { id: { in: allIds } },
-        select: { id: true, label: true }
-    });
+    const [interestLabels, skillLabels] = await Promise.all([
+        resolveDisplayLabels(
+            interestCounts.map((r) => r.labelLower),
+            'interest'
+        ),
+        resolveDisplayLabels(
+            skillCounts.map((r) => r.labelLower),
+            'skill'
+        )
+    ]);
 
-    const labelById = new Map(tags.map((t) => [t.id, t.label]));
-
-    const interests = interestTagIds.map((id) => labelById.get(id)).filter((l): l is string => Boolean(l));
-    const skills = skillTagIds.map((id) => labelById.get(id)).filter((l): l is string => Boolean(l));
+    const interests = interestCounts
+        .map((r) => interestLabels.get(r.labelLower))
+        .filter((l): l is string => Boolean(l));
+    const skills = skillCounts.map((r) => skillLabels.get(r.labelLower)).filter((l): l is string => Boolean(l));
 
     return { interests, skills };
 }

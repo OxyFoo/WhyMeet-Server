@@ -7,6 +7,7 @@ import { profileInclude } from '@/services/userMapper';
  * value in `WhyMeet/src/features/profile/utils/computeCompletion.ts`.
  */
 export const PROFILE_MIN_TAGS = 5;
+export const PROFILE_MIN_BIO_LENGTH = 10;
 
 type LoadedUser = NonNullable<Awaited<ReturnType<ReturnType<typeof getDatabase>['user']['findUnique']>>> & {
     profile: NonNullable<unknown> | null;
@@ -21,7 +22,7 @@ export function isProfileComplete(user: LoadedUser): boolean {
     const skills = (user.tags ?? []).filter((t) => t.type === 'skill').length;
     return (
         (user.photos ?? []).length > 0 &&
-        ((profile?.bio as string | null | undefined) ?? '') !== '' &&
+        ((profile?.bio as string | null | undefined) ?? '').trim().length >= PROFILE_MIN_BIO_LENGTH &&
         Array.isArray(profile?.intentions) &&
         (profile?.intentions as unknown[]).length > 0 &&
         interests >= PROFILE_MIN_TAGS &&

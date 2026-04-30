@@ -4,8 +4,8 @@ import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
 function baseCtx(overrides: Partial<ScoringContext> = {}): ScoringContext {
     return {
         myIntentions: ['dating'],
-        myInterestTagIds: new Set(),
-        mySkillTagIds: new Set(),
+        myInterestLabels: new Set(),
+        mySkillLabels: new Set(),
         myDomainCounts: new Map(),
         myLanguages: ['fr'],
         myLatitude: 48.85,
@@ -21,8 +21,8 @@ function baseCtx(overrides: Partial<ScoringContext> = {}): ScoringContext {
 function baseCandidate(overrides: Partial<ScoringCandidate> = {}): ScoringCandidate {
     return {
         intentions: ['dating'],
-        interestTagIds: new Set(),
-        skillTagIds: new Set(),
+        interestLabels: new Set(),
+        skillLabels: new Set(),
         domainCounts: new Map(),
         spokenLanguages: ['fr'],
         latitude: 48.85,
@@ -41,19 +41,19 @@ function baseCandidate(overrides: Partial<ScoringCandidate> = {}): ScoringCandid
 describe('scoreInterests — fuzzy matching tiers', () => {
     it('same-type strict overlap scores higher than cross-type strict overlap', () => {
         const sameTypeCtx = baseCtx({
-            myInterestTagIds: new Set(['tagA']),
+            myInterestLabels: new Set(['tagA']),
             myDomainCounts: new Map([['sports', 1]])
         });
         const sameTypeCand = baseCandidate({
-            interestTagIds: new Set(['tagA']),
+            interestLabels: new Set(['tagA']),
             domainCounts: new Map([['sports', 1]])
         });
         const crossCtx = baseCtx({
-            myInterestTagIds: new Set(['tagA']),
+            myInterestLabels: new Set(['tagA']),
             myDomainCounts: new Map([['sports', 1]])
         });
         const crossCand = baseCandidate({
-            skillTagIds: new Set(['tagA']),
+            skillLabels: new Set(['tagA']),
             domainCounts: new Map([['sports', 1]])
         });
 
@@ -66,21 +66,21 @@ describe('scoreInterests — fuzzy matching tiers', () => {
 
     it('cross-type strict overlap scores higher than same-domain-only overlap', () => {
         const crossCtx = baseCtx({
-            myInterestTagIds: new Set(['tagA']),
+            myInterestLabels: new Set(['tagA']),
             myDomainCounts: new Map([['music', 1]])
         });
         const crossCand = baseCandidate({
-            skillTagIds: new Set(['tagA']),
+            skillLabels: new Set(['tagA']),
             domainCounts: new Map([['music', 1]])
         });
 
         // Domain-only: different tag IDs, same domain
         const domainCtx = baseCtx({
-            myInterestTagIds: new Set(['tagA']),
+            myInterestLabels: new Set(['tagA']),
             myDomainCounts: new Map([['music', 1]])
         });
         const domainCand = baseCandidate({
-            interestTagIds: new Set(['tagB']),
+            interestLabels: new Set(['tagB']),
             domainCounts: new Map([['music', 1]])
         });
 
@@ -93,11 +93,11 @@ describe('scoreInterests — fuzzy matching tiers', () => {
 
     it('no overlap at all scores zero interests', () => {
         const ctx = baseCtx({
-            myInterestTagIds: new Set(['tagA']),
+            myInterestLabels: new Set(['tagA']),
             myDomainCounts: new Map([['music', 1]])
         });
         const cand = baseCandidate({
-            interestTagIds: new Set(['tagB']),
+            interestLabels: new Set(['tagB']),
             domainCounts: new Map([['sports', 1]])
         });
         expect(computeMatchScore(ctx, cand).interests).toBe(0);
@@ -113,12 +113,12 @@ describe('scoreInterests — fuzzy matching tiers', () => {
 
     it('does not double-count strict matches in the domain bonus', () => {
         const ctx = baseCtx({
-            myInterestTagIds: new Set(['tagA']),
+            myInterestLabels: new Set(['tagA']),
             myDomainCounts: new Map([['music', 1]])
         });
         // Exact same tag on both profiles → strict same-type match + its domain count.
         const cand = baseCandidate({
-            interestTagIds: new Set(['tagA']),
+            interestLabels: new Set(['tagA']),
             domainCounts: new Map([['music', 1]])
         });
         // Same tag, no extra domain overlap: score should correspond to a pure
@@ -126,8 +126,8 @@ describe('scoreInterests — fuzzy matching tiers', () => {
         const both = computeMatchScore(ctx, cand).interests;
 
         // Reference: pure strict match isolated
-        const pureStrictCtx = baseCtx({ myInterestTagIds: new Set(['tagA']) });
-        const pureStrictCand = baseCandidate({ interestTagIds: new Set(['tagA']) });
+        const pureStrictCtx = baseCtx({ myInterestLabels: new Set(['tagA']) });
+        const pureStrictCand = baseCandidate({ interestLabels: new Set(['tagA']) });
         const pureStrict = computeMatchScore(pureStrictCtx, pureStrictCand).interests;
 
         expect(both).toBeCloseTo(pureStrict, 5);

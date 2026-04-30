@@ -442,11 +442,17 @@ async function main() {
                             create: [
                                 ...interests.map((label) => ({
                                     type: 'interest',
-                                    tagId: tagMap.get(label)!
+                                    label,
+                                    labelLower: label.toLowerCase(),
+                                    tagId: tagMap.get(label)!,
+                                    source: 'popular'
                                 })),
                                 ...skills.map((label) => ({
                                     type: 'skill',
-                                    tagId: tagMap.get(label)!
+                                    label,
+                                    labelLower: label.toLowerCase(),
+                                    tagId: tagMap.get(label)!,
+                                    source: 'popular'
                                 }))
                             ]
                         }

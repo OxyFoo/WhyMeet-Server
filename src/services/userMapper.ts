@@ -119,7 +119,14 @@ export function mapUserToProfile(user: {
         completedHostedCount: number;
         preferredDiscoveryView?: string;
     } | null;
-    tags?: { type: string; source?: string | null; tag: { id: string; label: string } }[];
+    tags?: {
+        id: string;
+        type: string;
+        source?: string | null;
+        label: string;
+        labelLower: string;
+        tag: { id: string; label: string; domainKey?: string | null } | null;
+    }[];
     badges?: {
         badgeKey: string;
         earned: boolean;
@@ -160,10 +167,10 @@ export function mapUserToProfile(user: {
         socialVibe: (user.profile?.socialVibe ?? 'chill') as Profile['socialVibe'],
         interests: (user.tags ?? [])
             .filter((t) => t.type === 'interest')
-            .map((t) => ({ id: t.tag.id, label: t.tag.label, source: t.source ?? null })),
+            .map((t) => ({ id: t.id, label: t.label, source: t.source ?? null })),
         skills: (user.tags ?? [])
             .filter((t) => t.type === 'skill')
-            .map((t) => ({ id: t.tag.id, label: t.tag.label, source: t.source ?? null })),
+            .map((t) => ({ id: t.id, label: t.label, source: t.source ?? null })),
         intentions: (user.profile?.intentions ?? []) as IntentionKey[],
         spokenLanguages: user.profile?.spokenLanguages ?? [],
         preferredDiscoveryView: (user.profile?.preferredDiscoveryView ?? 'swipe') as Profile['preferredDiscoveryView'],
@@ -276,8 +283,8 @@ export function mapUserToCandidate(
         },
         intentions: sorted,
         bio: user.profile?.bio ?? '',
-        interests: (user.tags ?? []).filter((t) => t.type === 'interest').map((t) => t.tag.label),
-        skills: (user.tags ?? []).filter((t) => t.type === 'skill').map((t) => t.tag.label),
+        interests: (user.tags ?? []).filter((t) => t.type === 'interest').map((t) => t.label),
+        skills: (user.tags ?? []).filter((t) => t.type === 'skill').map((t) => t.label),
         distance: formatDistance(
             refLatLng?.latitude,
             refLatLng?.longitude,

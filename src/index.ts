@@ -6,6 +6,7 @@ import { initStorage } from '@/services/storageService';
 import { startServer, stopServer } from '@/server/Server';
 import { getRegisteredCommands } from '@/server/Router';
 import { startActivityNotifScheduler, stopActivityNotifScheduler } from '@/services/activityNotifScheduler';
+import { startTagPromotionScheduler, stopTagPromotionScheduler } from '@/services/tagPromotion';
 import { connectRedis, disconnectRedis } from '@/services/redisService';
 
 // Register all commands
@@ -52,6 +53,10 @@ async function main(): Promise<void> {
     startActivityNotifScheduler();
     printService('Scheduler', 'ok', 'Started (900s interval)');
 
+    // Start tag promotion scheduler (canonicalises raw user labels in batch)
+    startTagPromotionScheduler();
+    printService('TagPromotion', 'ok', 'Started (24h interval)');
+
     // Final ready message
     const commands = getRegisteredCommands();
     printReady(commands.length);
@@ -65,6 +70,7 @@ async function onExit(): Promise<void> {
 
     logger.info('[Main] Shutting down...');
     stopActivityNotifScheduler();
+    stopTagPromotionScheduler();
     await stopServer();
     await disconnectRedis();
     await disconnectDatabase();

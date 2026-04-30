@@ -114,8 +114,9 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
         }
 
         if (filters.tags && filters.tags.length > 0) {
+            const lowers = filters.tags.map((t) => t.toLowerCase());
             where.tags = {
-                some: { tag: { label: { in: filters.tags } } }
+                some: { labelLower: { in: lowers } }
             };
         }
 
@@ -151,8 +152,8 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
 
         const scoringCtx: ScoringContext = {
             myIntentions,
-            myInterestTagIds: myTagScoringData.interestTagIds,
-            mySkillTagIds: myTagScoringData.skillTagIds,
+            myInterestLabels: myTagScoringData.interestLabels,
+            mySkillLabels: myTagScoringData.skillLabels,
             myDomainCounts: myTagScoringData.domainCounts,
             myLanguages,
             myLatitude: myLatLng.latitude,
@@ -177,8 +178,8 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
                 const theirTagData = buildTagScoringData(u.tags);
                 const scoringCandidate: ScoringCandidate = {
                     intentions: theirIntentions,
-                    interestTagIds: theirTagData.interestTagIds,
-                    skillTagIds: theirTagData.skillTagIds,
+                    interestLabels: theirTagData.interestLabels,
+                    skillLabels: theirTagData.skillLabels,
                     domainCounts: theirTagData.domainCounts,
                     spokenLanguages: u.profile?.spokenLanguages ?? [],
                     latitude: u.profile?.latitude ?? null,

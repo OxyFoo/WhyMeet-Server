@@ -4,7 +4,6 @@ import type { WSRequest_UpdateProfile, WSResponse_UpdateProfile } from '@oxyfoo/
 import { GENDERS, PREFERRED_PERIODS } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { mapUserToProfile, profileInclude, computeAge } from '@/services/userMapper';
-import { ensureTagEmbedding } from '@/services/embedding';
 import { discretizePosition } from '@/services/geoUtils';
 import { logger } from '@/config/logger';
 import { validateProfileData } from '@/config/validation';
@@ -42,28 +41,26 @@ function sanitizeTagLabel(raw: string): string {
 }
 
 /**
- * Resolve a user-submitted label to a canonical tag.
- * 1. Exact match on Tag.label
- * 2. Alias match on TagAlias.alias → canonical Tag
- * 3. Create new tag + generate embedding
+ * Resolve a sanitised user-submitted label to an existing canonical tag,
+ * if any. Returns the tagId or null — we never create new canonical tags
+ * at profile-save time. Promotion to a canonical tag happens in a separate
+ * batch job once enough users converge on the same raw label.
+ *
+ *   1. Exact match on Tag.label
+ *   2. Alias match on TagAlias.alias → canonical Tag
+ *   3. null (the UserTag stays unlinked, scoring uses its raw label)
  */
-async function resolveTag(db: ReturnType<typeof getDatabase>, label: string): Promise<{ id: string; label: string }> {
-    // 1. Exact match
-    const exact = await db.tag.findUnique({ where: { label } });
-    if (exact) return { id: exact.id, label: exact.label };
+async function resolveCanonical(db: ReturnType<typeof getDatabase>, label: string): Promise<string | null> {
+    const exact = await db.tag.findUnique({ where: { label }, select: { id: true } });
+    if (exact) return exact.id;
 
-    // 2. Alias match (case-insensitive)
     const alias = await db.tagAlias.findFirst({
         where: { alias: { equals: label, mode: 'insensitive' } },
-        include: { tag: { select: { id: true, label: true } } }
+        select: { tagId: true }
     });
-    if (alias) return { id: alias.tag.id, label: alias.tag.label };
+    if (alias) return alias.tagId;
 
-    // 3. Create new tag + embedding
-    const newTag = await db.tag.create({ data: { label } });
-    // Fire-and-forget embedding generation (non-blocking)
-    ensureTagEmbedding(newTag.id, label).catch(() => {});
-    return { id: newTag.id, label: newTag.label };
+    return null;
 }
 
 async function syncTags(
@@ -72,14 +69,15 @@ async function syncTags(
     incoming: { label: string; source?: string | null }[],
     type: 'interest' | 'skill'
 ) {
-    // Snapshot existing sources per canonical tagId so we can preserve provenance
-    // across saves that don't specify `source` (e.g. regular profile edits).
+    // Snapshot existing sources keyed by labelLower so we can preserve
+    // provenance across saves that don't specify `source` (e.g. regular
+    // profile edits).
     const previous = await db.userTag.findMany({
         where: { userId, type },
-        select: { tagId: true, source: true }
+        select: { labelLower: true, source: true }
     });
-    const previousSourceByTagId = new Map<string, string | null>();
-    for (const row of previous) previousSourceByTagId.set(row.tagId, row.source);
+    const previousSourceByLabelLower = new Map<string, string | null>();
+    for (const row of previous) previousSourceByLabelLower.set(row.labelLower, row.source);
 
     await db.userTag.deleteMany({ where: { userId, type } });
 
@@ -89,18 +87,17 @@ async function syncTags(
     for (const raw of incoming) {
         const label = sanitizeTagLabel(raw.label);
         if (!label) continue;
-        const tag = await resolveTag(db, label);
-        // Avoid duplicates (different labels resolving to same canonical tag)
-        if (seen.has(tag.id)) continue;
-        seen.add(tag.id);
+        const labelLower = label.toLowerCase();
+        if (seen.has(labelLower)) continue;
+        seen.add(labelLower);
 
-        // Preserve previous source when the client didn't include one — this is
-        // the normal case for generic profile edits. Explicit `null` from the
-        // client still resets to null (opt-out).
-        const source = raw.source !== undefined ? raw.source : (previousSourceByTagId.get(tag.id) ?? null);
+        const tagId = await resolveCanonical(db, label);
+
+        // Preserve previous source when the client didn't include one.
+        const source = raw.source !== undefined ? raw.source : (previousSourceByLabelLower.get(labelLower) ?? null);
 
         await db.userTag.create({
-            data: { userId, tagId: tag.id, type, source }
+            data: { userId, type, label, labelLower, tagId, source }
         });
     }
 }

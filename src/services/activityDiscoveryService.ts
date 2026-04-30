@@ -117,13 +117,14 @@ export async function getActivities(
         ];
     }
 
-    // Tag filter: match against host's interest tags
+    // Tag filter: match against host's interest tags by lowercased raw label
     if (filters?.tags && filters.tags.length > 0) {
+        const lowers = filters.tags.map((t) => t.toLowerCase());
         const hostAnd: Prisma.UserWhereInput = {
             tags: {
                 some: {
                     type: 'interest',
-                    tag: { label: { in: filters.tags } }
+                    labelLower: { in: lowers }
                 }
             }
         };
@@ -284,7 +285,7 @@ export async function getPopularActivityTags(userId: string, category: InterestC
                 select: {
                     tags: {
                         where: { type: 'interest' },
-                        select: { tag: { select: { label: true } } }
+                        select: { label: true }
                     }
                 }
             }
@@ -296,7 +297,7 @@ export async function getPopularActivityTags(userId: string, category: InterestC
     for (const a of activities) {
         if (!passesAgeFilter(viewer.birthDate, a.targetAgeRange)) continue;
         for (const t of a.host.tags) {
-            counts.set(t.tag.label, (counts.get(t.tag.label) ?? 0) + 1);
+            counts.set(t.label, (counts.get(t.label) ?? 0) + 1);
         }
     }
 

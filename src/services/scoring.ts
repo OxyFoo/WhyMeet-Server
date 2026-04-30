@@ -6,16 +6,18 @@ const VIBE_SCALE: readonly SocialVibe[] = ['reserved', 'calm', 'balanced', 'outg
 // ─── Types ──────────────────────────────────────────────────────────
 
 /**
- * Tag data needed for scoring. We use stable canonical tag IDs (not labels)
- * so that aliases/re-casings don't break equality.
+ * Tag data needed for scoring. We match by lowercased raw label so two users
+ * who typed the same word match even when neither is yet linked to a
+ * canonical Tag (canonicals are promoted in a separate batch job).
  * `domainCounts` aggregates how many interest+skill tags the user has per
  * canonical InterestCategoryKey domain — lets us reward "same domain"
  * affinities even when exact tags differ ("guitare" vs "piano" → both music).
+ * UserTags without a canonical link contribute nothing to `domainCounts`.
  */
 export interface ScoringCandidate {
     intentions: IntentionKey[];
-    interestTagIds: Set<string>;
-    skillTagIds: Set<string>;
+    interestLabels: Set<string>;
+    skillLabels: Set<string>;
     domainCounts: Map<InterestCategoryKey, number>;
     spokenLanguages: string[];
     latitude: number | null;
@@ -31,8 +33,8 @@ export interface ScoringCandidate {
 
 export interface ScoringContext {
     myIntentions: IntentionKey[];
-    myInterestTagIds: Set<string>;
-    mySkillTagIds: Set<string>;
+    myInterestLabels: Set<string>;
+    mySkillLabels: Set<string>;
     myDomainCounts: Map<InterestCategoryKey, number>;
     myLanguages: string[];
     myLatitude: number | null;
@@ -122,25 +124,25 @@ function scoreDistance(ctx: ScoringContext, candidate: ScoringCandidate): number
 }
 
 function scoreInterests(ctx: ScoringContext, candidate: ScoringCandidate): number {
-    const mySize = ctx.myInterestTagIds.size + ctx.mySkillTagIds.size;
-    const theirSize = candidate.interestTagIds.size + candidate.skillTagIds.size;
+    const mySize = ctx.myInterestLabels.size + ctx.mySkillLabels.size;
+    const theirSize = candidate.interestLabels.size + candidate.skillLabels.size;
     const max = Math.max(mySize, theirSize);
     if (max === 0) return 0;
 
     // 1. Strict same-type overlap (interest↔interest, skill↔skill)
     let strictSame = 0;
-    for (const id of candidate.interestTagIds) if (ctx.myInterestTagIds.has(id)) strictSame++;
-    for (const id of candidate.skillTagIds) if (ctx.mySkillTagIds.has(id)) strictSame++;
+    for (const label of candidate.interestLabels) if (ctx.myInterestLabels.has(label)) strictSame++;
+    for (const label of candidate.skillLabels) if (ctx.mySkillLabels.has(label)) strictSame++;
 
     // 2. Strict cross-type overlap (my interest ↔ their skill, and vice-versa)
-    //    Only count each tag ID once per direction to avoid double-counting
+    //    Only count each label once per direction to avoid double-counting
     //    when a user has the same tag in both lists.
     let crossSame = 0;
-    for (const id of candidate.skillTagIds) {
-        if (ctx.myInterestTagIds.has(id) && !ctx.mySkillTagIds.has(id)) crossSame++;
+    for (const label of candidate.skillLabels) {
+        if (ctx.myInterestLabels.has(label) && !ctx.mySkillLabels.has(label)) crossSame++;
     }
-    for (const id of candidate.interestTagIds) {
-        if (ctx.mySkillTagIds.has(id) && !ctx.myInterestTagIds.has(id)) crossSame++;
+    for (const label of candidate.interestLabels) {
+        if (ctx.mySkillLabels.has(label) && !ctx.myInterestLabels.has(label)) crossSame++;
     }
 
     // 3. Domain affinity = min-overlap of per-domain counts, MINUS the strict

@@ -35,9 +35,27 @@ function baseUser() {
             completedHostedCount: 0
         },
         tags: [
-            { type: 'interest', tag: { id: 'tag-1', label: 'Photographie' } },
-            { type: 'interest', tag: { id: 'tag-2', label: 'Randonnée' } },
-            { type: 'skill', tag: { id: 'tag-3', label: 'JavaScript' } }
+            {
+                id: 'ut-1',
+                type: 'interest',
+                label: 'Photographie',
+                labelLower: 'photographie',
+                tag: { id: 'tag-1', label: 'Photographie' }
+            },
+            {
+                id: 'ut-2',
+                type: 'interest',
+                label: 'Randonnée',
+                labelLower: 'randonnée',
+                tag: { id: 'tag-2', label: 'Randonnée' }
+            },
+            {
+                id: 'ut-3',
+                type: 'skill',
+                label: 'JavaScript',
+                labelLower: 'javascript',
+                tag: { id: 'tag-3', label: 'JavaScript' }
+            }
         ]
     };
 }
@@ -68,10 +86,10 @@ describe('mapUserToProfile', () => {
             bio: 'Hello world',
             socialVibe: 'chill',
             interests: [
-                { id: 'tag-1', label: 'Photographie', source: null },
-                { id: 'tag-2', label: 'Randonnée', source: null }
+                { id: 'ut-1', label: 'Photographie', source: null },
+                { id: 'ut-2', label: 'Randonnée', source: null }
             ],
-            skills: [{ id: 'tag-3', label: 'JavaScript', source: null }],
+            skills: [{ id: 'ut-3', label: 'JavaScript', source: null }],
             intentions: ['dating', 'friendship'],
             spokenLanguages: ['fr', 'en'],
             location: {
@@ -109,21 +127,45 @@ describe('mapUserToProfile', () => {
     it('separates interests from skills correctly', () => {
         const user = makePrismaUser({
             tags: [
-                { type: 'skill', tag: { id: 's1', label: 'Python' } },
-                { type: 'interest', tag: { id: 'i1', label: 'Yoga' } },
-                { type: 'skill', tag: { id: 's2', label: 'DevOps' } },
-                { type: 'interest', tag: { id: 'i2', label: 'Café' } }
+                {
+                    id: 'us-1',
+                    type: 'skill',
+                    label: 'Python',
+                    labelLower: 'python',
+                    tag: { id: 's1', label: 'Python' }
+                },
+                {
+                    id: 'ui-1',
+                    type: 'interest',
+                    label: 'Yoga',
+                    labelLower: 'yoga',
+                    tag: { id: 'i1', label: 'Yoga' }
+                },
+                {
+                    id: 'us-2',
+                    type: 'skill',
+                    label: 'DevOps',
+                    labelLower: 'devops',
+                    tag: { id: 's2', label: 'DevOps' }
+                },
+                {
+                    id: 'ui-2',
+                    type: 'interest',
+                    label: 'Café',
+                    labelLower: 'café',
+                    tag: { id: 'i2', label: 'Café' }
+                }
             ]
         });
         const profile = mapUserToProfile(user);
 
         expect(profile.interests).toEqual([
-            { id: 'i1', label: 'Yoga', source: null },
-            { id: 'i2', label: 'Café', source: null }
+            { id: 'ui-1', label: 'Yoga', source: null },
+            { id: 'ui-2', label: 'Café', source: null }
         ]);
         expect(profile.skills).toEqual([
-            { id: 's1', label: 'Python', source: null },
-            { id: 's2', label: 'DevOps', source: null }
+            { id: 'us-1', label: 'Python', source: null },
+            { id: 'us-2', label: 'DevOps', source: null }
         ]);
     });
 });

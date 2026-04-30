@@ -60,7 +60,15 @@ function prismaUser(id: string, overrides: Record<string, unknown> = {}) {
             intentions: ['dating'],
             spokenLanguages: ['fr']
         },
-        tags: [{ type: 'interest', tag: { id: 't1', label: 'Hiking' } }],
+        tags: [
+            {
+                id: 'ut1',
+                type: 'interest',
+                label: 'Hiking',
+                labelLower: 'hiking',
+                tag: { id: 't1', label: 'Hiking' }
+            }
+        ],
         _count: { receivedReports: 0 },
         ...overrides
     };
@@ -160,7 +168,7 @@ describe('search command', () => {
 
         const where = mockFindMany.mock.calls[0][0].where;
         expect(where.tags).toEqual({
-            some: { tag: { label: { in: ['Yoga', 'Café'] } } }
+            some: { labelLower: { in: ['yoga', 'café'] } }
         });
     });
 

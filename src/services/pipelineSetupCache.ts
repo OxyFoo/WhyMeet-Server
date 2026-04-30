@@ -14,9 +14,9 @@ function key(userId: string): string {
 }
 
 // Set<>/Map<> are not JSON-serializable — store as arrays
-type SerializedSetup = Omit<PipelineSetup, 'myInterestTagIds' | 'mySkillTagIds' | 'myDomainCounts'> & {
-    myInterestTagIds: string[];
-    mySkillTagIds: string[];
+type SerializedSetup = Omit<PipelineSetup, 'myInterestLabels' | 'mySkillLabels' | 'myDomainCounts'> & {
+    myInterestLabels: string[];
+    mySkillLabels: string[];
     myDomainCounts: Array<[InterestCategoryKey, number]>;
 };
 
@@ -36,8 +36,8 @@ export async function getPipelineSetup(userId: string): Promise<PipelineSetup | 
         const data = JSON.parse(raw) as SerializedSetup;
         return {
             ...data,
-            myInterestTagIds: new Set(data.myInterestTagIds),
-            mySkillTagIds: new Set(data.mySkillTagIds),
+            myInterestLabels: new Set(data.myInterestLabels),
+            mySkillLabels: new Set(data.mySkillLabels),
             myDomainCounts: new Map(data.myDomainCounts)
         };
     } catch (error) {
@@ -56,8 +56,8 @@ export async function setPipelineSetup(userId: string, setup: PipelineSetup): Pr
     try {
         const serialized: SerializedSetup = {
             ...setup,
-            myInterestTagIds: [...setup.myInterestTagIds],
-            mySkillTagIds: [...setup.mySkillTagIds],
+            myInterestLabels: [...setup.myInterestLabels],
+            mySkillLabels: [...setup.mySkillLabels],
             myDomainCounts: [...setup.myDomainCounts]
         };
         await getRedis().set(key(userId), JSON.stringify(serialized), 'EX', env.REDIS_TTL_SETUP_S);

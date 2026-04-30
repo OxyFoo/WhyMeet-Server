@@ -203,21 +203,31 @@ model TagAlias {
 }
 
 model UserTag {
-    id     String  @id @default(cuid())
-    userId String
-    tagId  String
-    type   String // "interest" | "skill"
+    id         String  @id @default(cuid())
+    userId     String
+    // Raw user-typed (sanitised) label. This is the source of truth for what
+    // is displayed on the profile and what scoring matches between users.
+    label      String
+    // Lowercased label, used for case-insensitive equality / grouping.
+    labelLower String
+    // Optional link to a canonical Tag. Populated when the label resolves to
+    // an existing canonical via exact / alias match at save time, or by the
+    // tag-promotion job that retroactively links clusters.
+    tagId      String?
+    type       String // "interest" | "skill"
     // Provenance marker — how this tag was added to the user profile.
     // Values: "free" (typed), "popular" (popular-tags chip),
     // "refine:<step_key>" (chosen from a refine wizard step), or null (legacy).
-    source String?
+    source     String?
 
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-    tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+    tag  Tag? @relation(fields: [tagId], references: [id], onDelete: SetNull)
 
-    @@unique([userId, tagId, type])
+    @@unique([userId, type, labelLower])
     @@index([tagId])
     @@index([userId, source])
+    @@index([labelLower])
+    @@index([type, labelLower])
     @@map("user_tags")
 }
 

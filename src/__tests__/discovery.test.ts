@@ -92,7 +92,13 @@ function prismaUser(id: string, intentions: string[] = ['dating'], tagLabels: st
             intentions,
             spokenLanguages: ['fr']
         },
-        tags: tagLabels.map((label, i) => ({ type: 'interest', tag: { id: `t${i}`, label } })),
+        tags: tagLabels.map((label, i) => ({
+            id: `ut${i}`,
+            type: 'interest',
+            label,
+            labelLower: label.toLowerCase(),
+            tag: { id: `t${i}`, label }
+        })),
         _count: { receivedReports: 0 }
     };
 }

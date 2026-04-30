@@ -37,32 +37,35 @@ async function computePopularTags(client: Client, intention: IntentionKey, subCa
     const qualifiedIds = qualified.map((q) => q.user.id);
 
     const db = getDatabase();
-    const tagCountsRaw = await db.userTag.findMany({
-        where: { userId: { in: qualifiedIds } },
-        select: { tagId: true }
+    // Count UserTag rows by raw lowercased label among qualified candidates,
+    // restricted to the static scope (sub-intention curated labels).
+    const scopeLowers = new Set(scopeTags.map((l) => l.toLowerCase()));
+    const tagRows = await db.userTag.findMany({
+        where: { userId: { in: qualifiedIds }, labelLower: { in: [...scopeLowers] } },
+        select: { label: true, labelLower: true }
     });
 
     const countMap = new Map<string, number>();
-    for (const { tagId } of tagCountsRaw) {
-        countMap.set(tagId, (countMap.get(tagId) ?? 0) + 1);
+    const displayByLower = new Map<string, string>();
+    for (const { label, labelLower } of tagRows) {
+        countMap.set(labelLower, (countMap.get(labelLower) ?? 0) + 1);
+        if (!displayByLower.has(labelLower)) displayByLower.set(labelLower, label);
     }
 
-    const tagIds = [...countMap.entries()]
+    const ordered = [...countMap.entries()]
         .sort((a, b) => b[1] - a[1])
         .slice(0, TOP_TAGS_LIMIT)
-        .map(([id]) => id);
+        .map(([lower]) => displayByLower.get(lower))
+        .filter((l): l is string => Boolean(l));
 
-    if (tagIds.length === 0) {
+    if (ordered.length === 0) {
         return scopeTags.slice(0, TOP_TAGS_LIMIT);
     }
 
-    const tags = await db.tag.findMany({
-        where: { id: { in: tagIds } },
-        select: { id: true, label: true }
-    });
-
-    const labelById = new Map(tags.map((t) => [t.id, t.label]));
-    return tagIds.map((id) => labelById.get(id)).filter((l): l is string => l !== undefined);
+    // Prefer the canonical scope spelling when we have one, fall back on the
+    // raw user-typed label captured above.
+    const scopeByLower = new Map(scopeTags.map((l) => [l.toLowerCase(), l]));
+    return ordered.map((l) => scopeByLower.get(l.toLowerCase()) ?? l);
 }
 
 registerCommand<WSRequest_GetPopularTags>(

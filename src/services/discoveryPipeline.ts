@@ -55,8 +55,8 @@ export interface PipelineContext {
 /** Pre-computed data shared across multiple pipeline queries for the same user. */
 export interface PipelineSetup {
     myIntentions: IntentionKey[];
-    myInterestTagIds: Set<string>;
-    mySkillTagIds: Set<string>;
+    myInterestLabels: Set<string>;
+    mySkillLabels: Set<string>;
     myDomainCounts: Map<InterestCategoryKey, number>;
     myLatLng: { latitude: number | null; longitude: number | null };
     myGender: string;
@@ -76,48 +76,54 @@ export interface PipelineSetup {
 }
 
 /**
- * Shape of a joined user_tag row used by `buildTagScoringData`. Keeping it
- * loose (non-Prisma-typed) lets us reuse the helper with cached/deserialised
- * shapes (candidateCache returns plain objects). `tagEmbedding` is optional;
- * when provided it is used to resolve a missing `tagDomainKey` lazily.
+ * Shape of a joined user_tag row used by `buildTagScoringData`. Loose typing
+ * lets us reuse the helper with cached/deserialised shapes (candidateCache
+ * returns plain objects). The canonical `tag` is optional — a user_tag may
+ * not yet be linked to one (promotion happens in a batch job).
  */
 type TagRow = {
     type: string;
-    tag: { id: string; label?: string; domainKey?: string | null; embedding?: number[] | null };
+    label?: string;
+    labelLower?: string;
+    tag?: { id: string; label?: string; domainKey?: string | null; embedding?: number[] | null } | null;
 };
 
 /**
- * Derive the 3 structures needed by the scoring engine from a list of user
- * tag rows. Fires lazy domain-resolution for tags that still have a null
- * `domainKey` but do carry an embedding — fire-and-forget, so the current
- * request is not penalised. Subsequent queries will benefit.
+ * Derive the structures needed by the scoring engine from a list of user
+ * tag rows. Match between users uses the lowercased raw label (so two users
+ * who typed the same word match even without a canonical link). The domain
+ * affinity bonus only kicks in for canonically-linked tags. Lazy domain
+ * backfill is fire-and-forget for canonical tags missing a `domainKey`.
  */
 export function buildTagScoringData(tags: TagRow[] | undefined): {
-    interestTagIds: Set<string>;
-    skillTagIds: Set<string>;
+    interestLabels: Set<string>;
+    skillLabels: Set<string>;
     domainCounts: Map<InterestCategoryKey, number>;
 } {
-    const interestTagIds = new Set<string>();
-    const skillTagIds = new Set<string>();
+    const interestLabels = new Set<string>();
+    const skillLabels = new Set<string>();
     const domainCounts = new Map<InterestCategoryKey, number>();
 
     for (const row of tags ?? []) {
-        const tagId = row.tag?.id;
-        if (!tagId) continue;
-        if (row.type === 'interest') interestTagIds.add(tagId);
-        else if (row.type === 'skill') skillTagIds.add(tagId);
+        const labelLower = row.labelLower ?? row.label?.toLowerCase() ?? row.tag?.label?.toLowerCase();
+        if (!labelLower) continue;
+        if (row.type === 'interest') interestLabels.add(labelLower);
+        else if (row.type === 'skill') skillLabels.add(labelLower);
         else continue;
 
-        const domain = row.tag.domainKey as InterestCategoryKey | null | undefined;
+        // Domain affinity is only available for canonically-linked tags.
+        const canonical = row.tag;
+        if (!canonical) continue;
+        const domain = canonical.domainKey as InterestCategoryKey | null | undefined;
         if (domain) {
             domainCounts.set(domain, (domainCounts.get(domain) ?? 0) + 1);
-        } else if (row.tag.embedding && row.tag.embedding.length > 0) {
+        } else if (canonical.embedding && canonical.embedding.length > 0 && canonical.id) {
             // Backfill lazily: resolve a domain for this tag, persist, forget.
-            lazyResolveDomain(tagId, row.tag.embedding).catch(() => {});
+            lazyResolveDomain(canonical.id, canonical.embedding).catch(() => {});
         }
     }
 
-    return { interestTagIds, skillTagIds, domainCounts };
+    return { interestLabels, skillLabels, domainCounts };
 }
 
 async function lazyResolveDomain(tagId: string, embedding: number[]): Promise<void> {
@@ -155,8 +161,8 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
 
     const myIntentions = (currentUser?.profile?.intentions ?? []) as IntentionKey[];
     const {
-        interestTagIds: myInterestTagIds,
-        skillTagIds: mySkillTagIds,
+        interestLabels: myInterestLabels,
+        skillLabels: mySkillLabels,
         domainCounts: myDomainCounts
     } = buildTagScoringData(currentUser?.tags);
     const myLatLng = {
@@ -196,8 +202,8 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
 
     const setup: PipelineSetup = {
         myIntentions,
-        myInterestTagIds,
-        mySkillTagIds,
+        myInterestLabels,
+        mySkillLabels,
         myDomainCounts,
         myLatLng,
         myGender,
@@ -295,9 +301,10 @@ function buildPipelineWhere(
 
     // ── Tags filter (user must have at least one matching tag) ───
     if (filters?.tags && filters.tags.length > 0) {
+        const lowers = filters.tags.map((t) => t.toLowerCase());
         where.tags = {
             some: {
-                tag: { label: { in: filters.tags } }
+                labelLower: { in: lowers }
             }
         };
     }
@@ -385,8 +392,8 @@ export async function runPipelineQuery(
     // ── Score & post-filter ──────────────────────────────────────
     const scoringCtx: ScoringContext = {
         myIntentions: setup.myIntentions,
-        myInterestTagIds: setup.myInterestTagIds,
-        mySkillTagIds: setup.mySkillTagIds,
+        myInterestLabels: setup.myInterestLabels,
+        mySkillLabels: setup.mySkillLabels,
         myDomainCounts: setup.myDomainCounts,
         myLanguages: setup.myLanguages,
         myLatitude: setup.myLatLng.latitude,
@@ -410,8 +417,8 @@ export async function runPipelineQuery(
 
             const candidate: ScoringCandidate = {
                 intentions: theirIntentions,
-                interestTagIds: theirTagData.interestTagIds,
-                skillTagIds: theirTagData.skillTagIds,
+                interestLabels: theirTagData.interestLabels,
+                skillLabels: theirTagData.skillLabels,
                 domainCounts: theirTagData.domainCounts,
                 spokenLanguages: u.profile?.spokenLanguages ?? [],
                 latitude: u.profile?.latitude ?? null,
