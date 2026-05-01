@@ -4,9 +4,29 @@ Vue d'ensemble de tous les services externes nécessaires au fonctionnement du s
 
 > Les services marqués **optionnel** se désactivent automatiquement s'ils ne sont pas configurés (dégradation gracieuse).
 
+## Sommaire des services
+
+| Service                                                  | Description / Intérêt                                               | Optionnel ?                                 | Détails                                  |
+| -------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------- | ---------------------------------------- |
+| [Secrets cryptographiques](#service-secrets)             | Signature des tokens JWT + chiffrement AES-128-GCM des tokens email | ❌ Requis                                   | `JWT_SECRET`, `CRYPT_KEY_MAIL`           |
+| [PostgreSQL — Base de données](#service-postgresql)      | BDD principale (Prisma ORM + pgvector pour les embeddings)          | ❌ Requis                                   | Ports `5432` / `5433` (PgBouncer)        |
+| [PgBouncer — Connection pooling](#service-pgbouncer)     | Pool de connexions PostgreSQL (20 pool size, 200–300 max clients)   | ❌ Requis                                   | Port `5433`                              |
+| [SSL/TLS — HTTPS](#service-ssl-tls)                      | Chiffrement HTTPS pour le serveur HTTP + WebSocket                  | ✅ Fallback HTTP                            | Certificats Let's Encrypt                |
+| [Redis — Cache](#service-redis)                          | Cache 3 niveaux : profils candidats, pipeline, exclude list         | ✅ Requêtes DB directes si absent           | Port `6379`                              |
+| [MinIO — Stockage objets (dev)](#service-minio)          | Stockage des photos de profil en développement (S3-compatible)      | ✅ Uploads désactivés si absent             | Ports `9000` (API) / `9001` (console)    |
+| [Amazon S3 — Stockage objets (prod)](#service-amazon-s3) | Stockage des photos de profil en production (remplace MinIO)        | ✅ Uploads désactivés si aucun S3           | `@aws-sdk/client-s3`                     |
+| [Firebase (FCM) — Push notifications](#service-firebase) | Envoi de push notifications (match, like, message, rappels)         | ✅ Notifs push désactivées                  | `firebase-admin`                         |
+| [OpenAI — Embeddings](#service-openai)                   | Recherche sémantique de tags (`text-embedding-3-small`, 1536 dim)   | ✅ Similarité de tags désactivée            | `openai`                                 |
+| [SMTP — Emails](#service-smtp)                           | Envoi d'emails de confirmation lors de la validation de device      | ✅ Lien affiché en console                  | `nodemailer`, port `587`                 |
+| [Google OAuth — Sign-in](#service-google-oauth)          | Vérification des ID tokens Google pour le sign-in                   | ✅ Route `/auth/google-signin` indisponible | `google-auth-library`                    |
+| [Apple Sign-In](#service-apple-signin)                   | Vérification des ID tokens Apple pour le sign-in                    | ✅ Route `/auth/apple-signin` indisponible  | `apple-signin-auth`                      |
+| [Device Integrity](#service-device-integrity)            | Vérifie que l'app tourne sur un vrai appareil (anti-émulateur)      | ✅ Désactivé par défaut                     | Google Play Integrity + Apple App Attest |
+
 ---
 
 ## Services obligatoires
+
+<a id="service-postgresql"></a>
 
 ### PostgreSQL — Base de données
 
@@ -17,6 +37,8 @@ Vue d'ensemble de tous les services externes nécessaires au fonctionnement du s
 | **Variables** | `DATABASE_URL`                                             |
 | **Docker**    | `postgres:16-alpine` (dev) / `postgres:17-alpine` (prod)   |
 | **Si absent** | Le serveur ne démarre pas (`process.exit(1)`)              |
+
+<a id="service-secrets"></a>
 
 ### Secrets cryptographiques
 
@@ -29,6 +51,8 @@ Vue d'ensemble de tous les services externes nécessaires au fonctionnement du s
 
 ## Infrastructure (docker-compose)
 
+<a id="service-pgbouncer"></a>
+
 ### PgBouncer — Connection pooling
 
 |            |                                                |
@@ -37,6 +61,8 @@ Vue d'ensemble de tous les services externes nécessaires au fonctionnement du s
 | **Port**   | `5433` (dev debug) / interne uniquement (prod) |
 | **Config** | 20 pool size, 200–300 max clients              |
 | **Docker** | `edoburu/pgbouncer:latest`                     |
+
+<a id="service-redis"></a>
 
 ### Redis — Cache
 
@@ -47,6 +73,8 @@ Vue d'ensemble de tous les services externes nécessaires au fonctionnement du s
 | **Variables** | `REDIS_URL`, `REDIS_TTL_CANDIDATE_S`, `REDIS_TTL_SETUP_S`                               |
 | **Docker**    | `redis:7-alpine` (dev sans persistance) / 512 MB + LRU eviction (prod)                  |
 | **Si absent** | Cache désactivé, requêtes DB directes — **optionnel**                                   |
+
+<a id="service-minio"></a>
 
 ### MinIO — Stockage objets (S3-compatible)
 
@@ -62,6 +90,8 @@ Vue d'ensemble de tous les services externes nécessaires au fonctionnement du s
 
 ## Services cloud
 
+<a id="service-amazon-s3"></a>
+
 ### Amazon S3 — Stockage objets (prod)
 
 |               |                                                                                                               |
@@ -70,6 +100,8 @@ Vue d'ensemble de tous les services externes nécessaires au fonctionnement du s
 | **Variables** | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION`, `S3_PUBLIC_URL`, `UPLOAD_MAX_SIZE` |
 | **Packages**  | `@aws-sdk/client-s3`                                                                                          |
 | **Si absent** | MinIO utilisé en dev, S3 en prod — **optionnel** (uploads désactivés si aucun des deux n'est configuré)       |
+
+<a id="service-firebase"></a>
 
 ### Firebase (FCM) — Push notifications
 
@@ -80,6 +112,8 @@ Vue d'ensemble de tous les services externes nécessaires au fonctionnement du s
 | **Packages**  | `firebase-admin`                                                     |
 | **Si absent** | Notifications push désactivées — **optionnel**                       |
 
+<a id="service-openai"></a>
+
 ### OpenAI — Embeddings
 
 |               |                                                                                                   |
@@ -88,6 +122,8 @@ Vue d'ensemble de tous les services externes nécessaires au fonctionnement du s
 | **Variables** | `OPENAI_API_KEY`                                                                                  |
 | **Packages**  | `openai`                                                                                          |
 | **Si absent** | Recherche par similarité de tags désactivée — **optionnel**                                       |
+
+<a id="service-smtp"></a>
 
 ### SMTP — Emails
 
@@ -98,6 +134,8 @@ Vue d'ensemble de tous les services externes nécessaires au fonctionnement du s
 | **Packages**  | `nodemailer`                                                                  |
 | **Si absent** | Le lien de validation est affiché dans la console — **optionnel**             |
 
+<a id="service-google-oauth"></a>
+
 ### Google OAuth — Sign-in
 
 |               |                                                          |
@@ -106,6 +144,8 @@ Vue d'ensemble de tous les services externes nécessaires au fonctionnement du s
 | **Variables** | `GOOGLE_CLIENT_ID`                                       |
 | **Packages**  | `google-auth-library`                                    |
 | **Si absent** | Route `/auth/google-signin` indisponible — **optionnel** |
+
+<a id="service-apple-signin"></a>
 
 ### Apple Sign-In
 
@@ -117,6 +157,8 @@ Vue d'ensemble de tous les services externes nécessaires au fonctionnement du s
 | **Si absent** | Route `/auth/apple-signin` indisponible — **optionnel**                 |
 
 ---
+
+<a id="service-ssl-tls"></a>
 
 ## SSL/TLS — HTTPS
 
@@ -163,6 +205,8 @@ npm run dev
 Tous les autres services (Redis, S3, SMTP, Firebase, OpenAI, Google, Apple) sont optionnels et se désactivent automatiquement.
 
 ---
+
+<a id="service-device-integrity"></a>
 
 ## Device Integrity (optionnel)
 
