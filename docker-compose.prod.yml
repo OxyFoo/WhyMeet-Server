@@ -100,7 +100,7 @@ services:
       REDIS_URL: redis://whymeet-redis-prod:6379
     networks:
       oxyfoo-network:
-        ipv4_address: 172.16.0.10
+        ipv4_address: 172.16.0.40
       network-server-web:
         ipv4_address: 170.16.0.40
     user: node
