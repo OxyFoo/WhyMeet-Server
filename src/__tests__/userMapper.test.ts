@@ -110,7 +110,7 @@ describe('mapUserToProfile', () => {
         const profile = mapUserToProfile(user);
 
         expect(profile.bio).toBe('');
-        expect(profile.socialVibe).toBe('chill');
+        expect(profile.socialVibe).toBe('balanced');
         expect(profile.intentions).toEqual([]);
         expect(profile.location).toEqual({ country: '', region: '', city: '', latitude: null, longitude: null });
         expect(profile.stats).toEqual({ connections: 0, matches: 0, vibes: 0 });

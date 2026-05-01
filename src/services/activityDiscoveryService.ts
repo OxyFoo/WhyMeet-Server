@@ -2,6 +2,7 @@ import type { ActivitySummary, ActivitySearchFilters, InterestCategoryKey, Gende
 import type { Prisma } from '@prisma/client';
 import { getDatabase } from '@/services/database';
 import { getDistanceKm, geoBoundingBox, computeAge } from '@/services/userMapper';
+import { isFeatureEnabled } from '@/services/featureFlagService';
 import { INTEREST_CATEGORY_KEYS } from '@oxyfoo/whymeet-types';
 
 interface ViewerContext {
@@ -9,6 +10,10 @@ interface ViewerContext {
     longitude: number | null;
     gender: string | null;
     birthDate: Date | null;
+    /** Synthetic stresstest account flag — bots only see other bots' activities. */
+    isBot: boolean;
+    /** When true, the bot/user isolation is broken (stresstest.bot_user_mixing). */
+    mixBots: boolean;
     activityGenders: string[];
     activityMaxDistance: number;
     activityRemoteMode: boolean;
@@ -18,12 +23,18 @@ interface ViewerContext {
 
 async function loadViewerContext(userId: string): Promise<ViewerContext> {
     const db = getDatabase();
-    const [user, settings] = await Promise.all([
+    const [user, settings, mixBots] = await Promise.all([
         db.user.findUnique({
             where: { id: userId },
-            select: { gender: true, birthDate: true, profile: { select: { latitude: true, longitude: true } } }
+            select: {
+                gender: true,
+                birthDate: true,
+                bot: true,
+                profile: { select: { latitude: true, longitude: true } }
+            }
         }),
-        db.settings.findUnique({ where: { userId } })
+        db.settings.findUnique({ where: { userId } }),
+        isFeatureEnabled('stresstest.bot_user_mixing')
     ]);
 
     return {
@@ -31,6 +42,8 @@ async function loadViewerContext(userId: string): Promise<ViewerContext> {
         longitude: user?.profile?.longitude ?? null,
         gender: user?.gender ?? null,
         birthDate: user?.birthDate ?? null,
+        isBot: user?.bot ?? false,
+        mixBots,
         activityGenders: settings?.activityGenders ?? [],
         activityMaxDistance: settings?.activityMaxDistance ?? 50,
         activityRemoteMode: settings?.activityRemoteMode ?? false,
@@ -56,7 +69,8 @@ function buildHostWhere(viewer: ViewerContext): Prisma.UserWhereInput {
     const hostWhere: Prisma.UserWhereInput = {
         banned: false,
         suspended: false,
-        deleted: false
+        deleted: false,
+        ...(viewer.mixBots ? {} : { bot: viewer.isBot })
     };
     if (viewer.activityGenders.length > 0) {
         hostWhere.gender = { in: viewer.activityGenders };

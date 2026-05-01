@@ -164,7 +164,7 @@ export function mapUserToProfile(user: {
         badges: mapBadges(user.badges),
         bio: user.profile?.bio ?? '',
         birthDateLastChangedAt: user.birthDateLastChangedAt?.toISOString() ?? null,
-        socialVibe: (user.profile?.socialVibe ?? 'chill') as Profile['socialVibe'],
+        socialVibe: (user.profile?.socialVibe ?? 'balanced') as Profile['socialVibe'],
         interests: (user.tags ?? [])
             .filter((t) => t.type === 'interest')
             .map((t) => ({ id: t.id, label: t.label, source: t.source ?? null })),

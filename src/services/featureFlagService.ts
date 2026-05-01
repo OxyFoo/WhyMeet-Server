@@ -8,7 +8,12 @@ const cache = new Map<string, CacheEntry>();
 
 /** Default values used when the flag has never been written to DB. */
 const DEFAULTS: Record<string, boolean> = {
-    mapbox: true
+    mapbox: true,
+    // Stresstest: when ON, synthetic bot accounts and real users are no
+    // longer isolated — bots see real users (and vice-versa) across all
+    // discovery surfaces (people, activities, search). When OFF (default),
+    // the symmetric `bot=viewer.bot` filter applies everywhere.
+    'stresstest.bot_user_mixing': false
 };
 
 export type FeatureFlagKey = keyof typeof DEFAULTS;

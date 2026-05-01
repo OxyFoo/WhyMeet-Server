@@ -15,11 +15,13 @@ import {
     setFeatureEnabled,
     type FeatureFlagKey
 } from '@/services/featureFlagService';
+import { invalidateAllPipelineSetup } from '@/services/pipelineSetupCache';
 import { getConnectedClients } from '@/server/Server';
 import { getDatabase } from '@/services/database';
 import { broadcastPush } from '@/services/pushService';
+import { spawnBot, cleanupBots, countBots } from '@/services/stresstestService';
 
-const FEATURE_FLAG_KEYS = ['mapbox'] as const;
+const FEATURE_FLAG_KEYS = ['mapbox', 'stresstest.bot_user_mixing'] as const;
 const featureFlagKeySchema = z.enum(FEATURE_FLAG_KEYS);
 
 // ─── HMAC verification middleware ────────────────────────────────────
@@ -305,6 +307,14 @@ export function createAdminRouter(): Router {
         try {
             await setFeatureEnabled(parsedKey.data as FeatureFlagKey, parsedBody.data.enabled);
             logger.info(`[AdminAPI] Feature flag "${parsedKey.data}" set to ${parsedBody.data.enabled}`);
+            // Some flags affect cached PipelineSetup (e.g. bot/user mixing).
+            // Wipe every cached setup so the next discovery query rebuilds
+            // with the new flag value — otherwise users see stale results
+            // for up to ~60s.
+            if (parsedKey.data === 'stresstest.bot_user_mixing') {
+                const wiped = await invalidateAllPipelineSetup();
+                logger.info(`[AdminAPI] Pipeline setup cache invalidated (${wiped} entries)`);
+            }
             res.json({ key: parsedKey.data, enabled: parsedBody.data.enabled });
         } catch (err) {
             logger.error('[AdminAPI] feature-flag set failed', err);
@@ -386,6 +396,58 @@ export function createAdminRouter(): Router {
         } catch (err) {
             logger.error('[AdminAPI] reset-profile failed', err);
             res.status(500).json({ error: 'reset_failed' });
+        }
+    });
+
+    // ─── Stresstest (synthetic accounts) ──────────────────────────────
+    const spawnBotSchema = z.object({
+        completeProfile: z.boolean().default(true)
+    });
+    router.post('/stresstest/spawn-bot', async (req, res) => {
+        const parsed = spawnBotSchema.safeParse(getJson(req));
+        if (!parsed.success) {
+            res.status(400).json({ error: 'invalid_payload' });
+            return;
+        }
+        try {
+            const bot = await spawnBot(parsed.data);
+            res.json(bot);
+        } catch (err) {
+            logger.error('[AdminAPI] spawn-bot failed', err);
+            res.status(500).json({ error: 'spawn_failed' });
+        }
+    });
+
+    router.post('/stresstest/cleanup', async (_req, res) => {
+        try {
+            const result = await cleanupBots();
+            res.json(result);
+        } catch (err) {
+            logger.error('[AdminAPI] cleanup-bots failed', err);
+            res.status(500).json({ error: 'cleanup_failed' });
+        }
+    });
+
+    router.get('/stresstest/status', async (_req, res) => {
+        try {
+            const total = await countBots();
+            let connected = 0;
+            // Count active bot WS connections by joining clients with DB.
+            // For larger fleets a Redis Set would be cheaper, but at <500
+            // bots a single COUNT IN (...) is fine.
+            const clientsMap = getConnectedClients();
+            if (clientsMap.size > 0) {
+                const ids = Array.from(clientsMap.values()).map((c) => c.userId);
+                const matchingBots = await getDatabase().user.findMany({
+                    where: { id: { in: ids }, bot: true },
+                    select: { id: true }
+                });
+                connected = matchingBots.length;
+            }
+            res.json({ totalBots: total, connectedBots: connected });
+        } catch (err) {
+            logger.error('[AdminAPI] stresstest-status failed', err);
+            res.status(500).json({ error: 'status_failed' });
         }
     });
 

@@ -7,7 +7,7 @@ import type { InterestCategoryKey } from '@oxyfoo/whymeet-types';
 const KEY_PREFIX = 'pipeline:setup:';
 // Bump this when the serialized shape changes so that in-flight Redis entries
 // are ignored (rather than deserialised with a stale shape).
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 4;
 
 function key(userId: string): string {
     return `${KEY_PREFIX}v${CACHE_VERSION}:${userId}`;
@@ -78,5 +78,34 @@ export async function invalidatePipelineSetup(userId: string): Promise<void> {
         logger.debug(`[PipelineSetupCache] Invalidated setup for user ${userId}`);
     } catch (error) {
         logger.warn('[PipelineSetupCache] Redis error on invalidate', error);
+    }
+}
+
+/**
+ * Invalidate the setup cache for ALL users. Used when a global flag that
+ * affects every cached setup changes (e.g. stresstest.bot_user_mixing) so the
+ * next discovery query rebuilds with the new flag value.
+ */
+export async function invalidateAllPipelineSetup(): Promise<number> {
+    if (!isRedisAvailable()) return 0;
+
+    try {
+        const redis = getRedis();
+        const pattern = `${KEY_PREFIX}v${CACHE_VERSION}:*`;
+        let cursor = '0';
+        let total = 0;
+        do {
+            const [next, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 500);
+            cursor = next;
+            if (keys.length > 0) {
+                await redis.del(...keys);
+                total += keys.length;
+            }
+        } while (cursor !== '0');
+        logger.debug(`[PipelineSetupCache] Invalidated ${total} setup entries`);
+        return total;
+    } catch (error) {
+        logger.warn('[PipelineSetupCache] Redis error on invalidateAll', error);
+        return 0;
     }
 }

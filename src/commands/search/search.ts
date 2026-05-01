@@ -19,6 +19,7 @@ import {
 import { computeMatchScore } from '@/services/scoring';
 import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
 import { buildTagScoringData } from '@/services/discoveryPipeline';
+import { isFeatureEnabled } from '@/services/featureFlagService';
 import { getBalance } from '@/services/tokenService';
 import { getBoostedUserIds } from '@/services/boostService';
 import { interleaveByBoost } from '@/services/interleaveResults';
@@ -54,11 +55,16 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
         const myLanguages = currentUser?.profile?.spokenLanguages ?? [];
         const myPreferredPeriod = (currentUser?.preferredPeriod ?? 'any') as PreferredPeriod;
         const mySocialVibe = (currentUser?.profile?.socialVibe ?? 'balanced') as SocialVibe;
+        const myIsBot = currentUser?.bot ?? false;
+        const mixBots = await isFeatureEnabled('stresstest.bot_user_mixing');
 
         const where: Record<string, unknown> = {
             id: { not: client.userId },
             banned: false,
             suspended: false,
+            // Stresstest bots only match other bots; real users never see bots.
+            // Bypassed when `stresstest.bot_user_mixing` is enabled.
+            ...(mixBots ? {} : { bot: myIsBot }),
             // Only show candidates with a complete profile
             birthDate: { not: null },
             photos: { some: {} },

@@ -14,6 +14,7 @@ import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
 import { getExcludeIds } from '@/services/excludeCache';
 import { getCandidates, setCandidates } from '@/services/candidateCache';
 import { getPipelineSetup, setPipelineSetup } from '@/services/pipelineSetupCache';
+import { isFeatureEnabled } from '@/services/featureFlagService';
 import { resolveDomain } from '@/services/tagDomain';
 import { logger } from '@/config/logger';
 
@@ -65,6 +66,18 @@ export interface PipelineSetup {
     myPreferredPeriod: PreferredPeriod;
     mySocialVibe: SocialVibe;
     myProfileComplete: boolean;
+    /**
+     * Synthetic stresstest account flag. Bots only see other bots in
+     * discovery; real users only see real users. Never expose this flag to
+     * the client.
+     */
+    myIsBot: boolean;
+    /**
+     * When true, the bot/user isolation is broken: bots see real users and
+     * real users see bots. Driven by the `stresstest.bot_user_mixing` feature
+     * flag — false in production. Loaded once per setup build and cached.
+     */
+    mixBots: boolean;
     prefAgeMin: number;
     prefAgeMax: number;
     prefGenders: string[];
@@ -159,6 +172,8 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
         db.settings.findUnique({ where: { userId: client.userId } })
     ]);
 
+    const mixBots = await isFeatureEnabled('stresstest.bot_user_mixing');
+
     const myIntentions = (currentUser?.profile?.intentions ?? []) as IntentionKey[];
     const {
         interestLabels: myInterestLabels,
@@ -212,6 +227,8 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
         myPreferredPeriod,
         mySocialVibe,
         myProfileComplete,
+        myIsBot: currentUser?.bot ?? false,
+        mixBots,
         prefAgeMin,
         prefAgeMax,
         prefGenders,
@@ -243,6 +260,10 @@ function buildPipelineWhere(
         banned: false,
         suspended: false,
         deleted: false,
+        // Synthetic stresstest accounts only see other synthetic accounts;
+        // real accounts never see bots. Bypassed when `stresstest.bot_user_mixing`
+        // is enabled (driven by the global feature flag).
+        ...(setup.mixBots ? {} : { bot: setup.myIsBot }),
         birthDate: { not: null },
         photos: { some: {} },
         tags: { some: {} },
