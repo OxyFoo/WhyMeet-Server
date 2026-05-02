@@ -50,6 +50,7 @@ model User {
     activeBoost            ActiveBoost?
     tokenBalance           TokenBalance?
     swipeQuota             SwipeQuota?
+    activityViewQuota      ActivityViewQuota?
     hostedActivities       Activity[]                @relation("ActivityHost")
     activityParticipations ActivityParticipant[]
     activityReports        ActivityReport[]
@@ -417,6 +418,16 @@ model FeatureFlag {
     @@map("feature_flags")
 }
 
+/// Global numeric settings for runtime-tunable app behavior.
+/// Keys are human-readable strings (for example: "counter.swipe.daily.free").
+model AppConfig {
+    key       String   @id
+    valueInt  Int
+    updatedAt DateTime @updatedAt
+
+    @@map("app_config")
+}
+
 // ─── Email tracking ───────────────────────────────────────────────
 
 /// Every email dispatched by the system (Server or Console) is logged here.
@@ -496,14 +507,25 @@ model TokenBalance {
 }
 
 model SwipeQuota {
-    id         String   @id @default(cuid())
-    userId     String   @unique
-    swipesUsed Int      @default(0)
-    resetAt    DateTime @default(now())
+    id              String   @id @default(cuid())
+    userId          String   @unique
+    swipesRemaining Int      @default(20)
+    resetAt         DateTime @default(now())
 
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
     @@map("swipe_quotas")
+}
+
+model ActivityViewQuota {
+    id                     String   @id @default(cuid())
+    userId                 String   @unique
+    activityViewsRemaining Int      @default(3)
+    resetAt                DateTime @default(now())
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@map("activity_view_quotas")
 }
 
 // ─── Activities ─────────────────────────────────────────────────────

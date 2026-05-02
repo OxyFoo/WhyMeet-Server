@@ -23,6 +23,7 @@ import { renderTemplate } from '@/services/templateService';
 import { logger } from '@/config/logger';
 import { env } from '@/config/env';
 import { isDisposableEmail, normalizeEmail } from '@/services/emailValidator';
+import { getUsageLimitConfig } from '@/services/usageLimitsService';
 import {
     generateChallenge,
     consumeChallenge,
@@ -336,14 +337,21 @@ authRouter.post('/enter', enterLimiter, async (req, res) => {
         });
 
         // Initialize token balance and swipe quota for new user
+        const limits = await getUsageLimitConfig();
         const nextMidnight = new Date();
         nextMidnight.setUTCDate(nextMidnight.getUTCDate() + 1);
         nextMidnight.setUTCHours(0, 0, 0, 0);
         await Promise.all([
             db.tokenBalance.create({
-                data: { userId: newUser.id, tokens: env.INITIAL_TOKEN_COUNT, lastRefillAt: new Date() }
+                data: { userId: newUser.id, tokens: limits.initialSearchTokens, lastRefillAt: new Date() }
             }),
-            db.swipeQuota.create({ data: { userId: newUser.id, swipesUsed: 0, resetAt: nextMidnight } })
+            db.swipeQuota.create({
+                data: {
+                    userId: newUser.id,
+                    swipesRemaining: limits.swipeDailyFree === -1 ? 0 : limits.swipeDailyFree,
+                    resetAt: nextMidnight
+                }
+            })
         ]);
 
         const emailSkippedSignup = await linkDeviceAndSendMail(newUser.id, device.id, email, language);

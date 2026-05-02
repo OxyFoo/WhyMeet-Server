@@ -1,7 +1,7 @@
 import { getDatabase } from '@/services/database';
 import type { UserBoost, BoostSource } from '@oxyfoo/whymeet-types';
 import { logger } from '@/config/logger';
-import { env } from '@/config/env';
+import { getUsageLimitConfig } from '@/services/usageLimitsService';
 
 /**
  * Check if user has an active boost (not expired).
@@ -76,6 +76,7 @@ export async function purchaseBoost(userId: string, durationDays: number): Promi
  */
 export async function grantSubscriptionBoost(userId: string): Promise<UserBoost> {
     const db = getDatabase();
+    const { subscriptionBoostDays } = await getUsageLimitConfig();
 
     const existing = await db.activeBoost.findUnique({ where: { userId } });
     if (existing && existing.expiresAt > new Date()) {
@@ -87,7 +88,7 @@ export async function grantSubscriptionBoost(userId: string): Promise<UserBoost>
     }
 
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + env.SUBSCRIPTION_BOOST_DAYS);
+    expiresAt.setDate(expiresAt.getDate() + subscriptionBoostDays);
 
     const boost = await db.activeBoost.create({
         data: { userId, expiresAt, source: 'subscription' }

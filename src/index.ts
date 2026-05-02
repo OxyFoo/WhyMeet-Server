@@ -8,7 +8,6 @@ import { getRegisteredCommands } from '@/server/Router';
 import { startActivityNotifScheduler, stopActivityNotifScheduler } from '@/services/activityNotifScheduler';
 import { startTagPromotionScheduler, stopTagPromotionScheduler } from '@/services/tagPromotion';
 import { connectRedis, disconnectRedis } from '@/services/redisService';
-import { ensureStresstestPhotosSeeded } from '@/services/stresstestService';
 
 // Register all commands
 import '@/commands';
@@ -32,12 +31,6 @@ async function main(): Promise<void> {
     const s3Configured = !!(env.S3_ENDPOINT && env.S3_ACCESS_KEY && env.S3_SECRET_KEY);
     if (s3Configured) {
         await initStorage();
-        // Pre-seed stresstest photos so the very first bot spawn already gets
-        // valid photo keys (instead of placeholder keys that would 404 on the
-        // mobile client). Fire-and-forget — failure is logged but non-fatal.
-        ensureStresstestPhotosSeeded().catch(() => {
-            logger.warn('[Main] Failed to seed stresstest photos');
-        });
     }
     printService(
         'Storage (S3)',

@@ -17,7 +17,8 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-RUN addgroup -g 1002 whymeet \
+RUN apk add --no-cache fontconfig \
+ && addgroup -g 1002 whymeet \
  && adduser node whymeet
 
 COPY --from=builder /app ./

@@ -1,7 +1,7 @@
 import { getDatabase } from '@/services/database';
 import type { SwipeQuotaInfo } from '@oxyfoo/whymeet-types';
 import { isPremium } from '@/services/subscriptionService';
-import { env } from '@/config/env';
+import { getUsageLimitConfig } from '@/services/usageLimitsService';
 
 /**
  * Get the next midnight UTC for quota reset.
@@ -18,11 +18,18 @@ function nextMidnight(): Date {
  */
 export async function getQuota(userId: string): Promise<SwipeQuotaInfo> {
     const db = getDatabase();
+    const [premium, config] = await Promise.all([isPremium(userId), getUsageLimitConfig()]);
+    const dailyLimit = premium ? config.swipeDailyPremium : config.swipeDailyFree;
+
+    if (dailyLimit === -1) {
+        return { swipesRemaining: -1, dailySwipeLimit: -1 };
+    }
+
     let record = await db.swipeQuota.findUnique({ where: { userId } });
 
     if (!record) {
         record = await db.swipeQuota.create({
-            data: { userId, swipesUsed: 0, resetAt: nextMidnight() }
+            data: { userId, swipesRemaining: dailyLimit, resetAt: nextMidnight() }
         });
     }
 
@@ -30,18 +37,21 @@ export async function getQuota(userId: string): Promise<SwipeQuotaInfo> {
     if (record.resetAt <= new Date()) {
         record = await db.swipeQuota.update({
             where: { userId },
-            data: { swipesUsed: 0, resetAt: nextMidnight() }
+            data: { swipesRemaining: dailyLimit, resetAt: nextMidnight() }
         });
     }
 
-    const premium = await isPremium(userId);
-    if (premium) {
-        return { swipesRemaining: -1, dailySwipeLimit: -1 };
+    // Apply runtime config changes even before the next reset.
+    if (record.swipesRemaining > dailyLimit) {
+        record = await db.swipeQuota.update({
+            where: { userId },
+            data: { swipesRemaining: dailyLimit }
+        });
     }
 
     return {
-        swipesRemaining: Math.max(0, env.FREE_DAILY_SWIPE_LIMIT - record.swipesUsed),
-        dailySwipeLimit: env.FREE_DAILY_SWIPE_LIMIT
+        swipesRemaining: Math.max(0, record.swipesRemaining),
+        dailySwipeLimit: dailyLimit
     };
 }
 
@@ -71,11 +81,11 @@ export async function useSwipe(userId: string): Promise<SwipeQuotaInfo> {
     const db = getDatabase();
     const record = await db.swipeQuota.update({
         where: { userId },
-        data: { swipesUsed: { increment: 1 } }
+        data: { swipesRemaining: { decrement: 1 } }
     });
 
     return {
-        swipesRemaining: Math.max(0, env.FREE_DAILY_SWIPE_LIMIT - record.swipesUsed),
-        dailySwipeLimit: env.FREE_DAILY_SWIPE_LIMIT
+        swipesRemaining: Math.max(0, record.swipesRemaining),
+        dailySwipeLimit: quota.dailySwipeLimit
     };
 }

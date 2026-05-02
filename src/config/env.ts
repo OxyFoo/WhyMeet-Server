@@ -12,9 +12,6 @@ const envSchema = z.object({
     LOG_PATH: z.string().default('./logs'),
     LOG_KEEP_DAYS: z.coerce.number().int().positive().default(30),
 
-    // Admin Console (HMAC-signed /admin/* API)
-    ADMIN_API_SECRET: z.string().default(''),
-
     SSL_PRIVATE_KEY_PATH: z.string().default(''),
     SSL_CERTIFICATE_PATH: z.string().default(''),
 
@@ -65,18 +62,14 @@ const envSchema = z.object({
     APPLE_IAP_PRIVATE_KEY: z.string().default(''),
     APP_BUNDLE_ID: z.string().default(''),
 
-    // Subscription / token / swipe tuning
-    FREE_DAILY_SWIPE_LIMIT: z.coerce.number().int().positive().default(20),
-    FREE_DAILY_TOKEN_REFILL: z.coerce.number().int().positive().default(3),
-    PREMIUM_DAILY_TOKEN_REFILL: z.coerce.number().int().positive().default(20),
-    INITIAL_TOKEN_COUNT: z.coerce.number().int().nonnegative().default(5),
-    SUBSCRIPTION_BOOST_DAYS: z.coerce.number().int().positive().default(10),
-
     // Device integrity verification
     INTEGRITY_CHECK_ENABLED: z.preprocess((v) => v === 'true' || v === '1' || v === true, z.boolean()).default(false),
     GOOGLE_CLOUD_PROJECT_NUMBER: z.string().default(''),
     GOOGLE_SERVICE_ACCOUNT_KEY: z.string().default(''),
     APPLE_APP_ATTEST_ENVIRONMENT: z.enum(['production', 'development']).default('production'),
+
+    // Admin Console (HMAC-signed /admin/* API)
+    ADMIN_API_SECRET: z.string().default(''),
 
     // Mapbox (geocoding + static map proxy)
     MAPBOX_ACCESS_TOKEN: z.string().default(''),
