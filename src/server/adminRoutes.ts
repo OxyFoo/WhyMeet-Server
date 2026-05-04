@@ -20,6 +20,7 @@ import { getConnectedClients } from '@/server/Server';
 import { getDatabase } from '@/services/database';
 import { broadcastPush } from '@/services/pushService';
 import { spawnBot, cleanupBots, countBots } from '@/services/stresstestService';
+import { runTagPromotionPass } from '@/services/tagPromotion';
 
 const FEATURE_FLAG_KEYS = ['mapbox', 'stresstest.bot_user_mixing'] as const;
 const featureFlagKeySchema = z.enum(FEATURE_FLAG_KEYS);
@@ -396,6 +397,122 @@ export function createAdminRouter(): Router {
         } catch (err) {
             logger.error('[AdminAPI] reset-profile failed', err);
             res.status(500).json({ error: 'reset_failed' });
+        }
+    });
+
+    // ─── Tags ─────────────────────────────────────────────────────────
+    router.post('/tags/run-promotion', async (_req, res) => {
+        try {
+            const start = Date.now();
+            const result = await runTagPromotionPass();
+            const durationMs = Date.now() - start;
+            const warnings = result.skipped > 0 ? ['embedding_unavailable'] : [];
+            logger.info(`[AdminAPI] Manual tag promotion pass completed: ${JSON.stringify(result)} in ${durationMs}ms`);
+            res.json({ ...result, durationMs, warnings });
+        } catch (err) {
+            logger.error('[AdminAPI] run-promotion failed', err);
+            res.status(500).json({ error: 'promotion_failed' });
+        }
+    });
+
+    const deleteCanonicalTagSchema = z.object({ tagId: z.string().min(1) });
+    router.post('/tags/delete-canonical', async (req, res) => {
+        const parsed = deleteCanonicalTagSchema.safeParse(getJson(req));
+        if (!parsed.success) {
+            res.status(400).json({ error: 'invalid_payload' });
+            return;
+        }
+
+        const db = getDatabase();
+        try {
+            const tag = await db.tag.findUnique({
+                where: { id: parsed.data.tagId },
+                select: {
+                    id: true,
+                    label: true,
+                    _count: { select: { userTags: true, aliases: true } }
+                }
+            });
+            if (!tag) {
+                res.status(404).json({ error: 'tag_not_found' });
+                return;
+            }
+
+            await db.tag.delete({ where: { id: tag.id } });
+            res.json({
+                deleted: true,
+                tagId: tag.id,
+                label: tag.label,
+                unlinkedUserTags: tag._count.userTags,
+                deletedAliases: tag._count.aliases
+            });
+        } catch (err) {
+            logger.error('[AdminAPI] delete-canonical failed', err);
+            res.status(500).json({ error: 'delete_failed' });
+        }
+    });
+
+    const deleteAliasSchema = z.object({ aliasId: z.string().min(1) });
+    router.post('/tags/delete-alias', async (req, res) => {
+        const parsed = deleteAliasSchema.safeParse(getJson(req));
+        if (!parsed.success) {
+            res.status(400).json({ error: 'invalid_payload' });
+            return;
+        }
+
+        const db = getDatabase();
+        try {
+            const alias = await db.tagAlias.findUnique({
+                where: { id: parsed.data.aliasId },
+                select: { id: true, alias: true, tagId: true }
+            });
+            if (!alias) {
+                res.status(404).json({ error: 'alias_not_found' });
+                return;
+            }
+
+            await db.tagAlias.delete({ where: { id: alias.id } });
+            res.json({ deleted: true, aliasId: alias.id, alias: alias.alias, tagId: alias.tagId });
+        } catch (err) {
+            logger.error('[AdminAPI] delete-alias failed', err);
+            res.status(500).json({ error: 'delete_failed' });
+        }
+    });
+
+    const deleteUserTagSchema = z.object({ userTagId: z.string().min(1) });
+    router.post('/tags/delete-user-tag', async (req, res) => {
+        const parsed = deleteUserTagSchema.safeParse(getJson(req));
+        if (!parsed.success) {
+            res.status(400).json({ error: 'invalid_payload' });
+            return;
+        }
+
+        const db = getDatabase();
+        try {
+            const userTag = await db.userTag.findUnique({
+                where: { id: parsed.data.userTagId },
+                select: { id: true, userId: true, label: true, type: true, tagId: true }
+            });
+            if (!userTag) {
+                res.status(404).json({ error: 'user_tag_not_found' });
+                return;
+            }
+
+            await db.userTag.delete({ where: { id: userTag.id } });
+            for (const client of getConnectedClients().values()) {
+                if (client.userId === userTag.userId) client.close(4002, 'Profile tags updated');
+            }
+            res.json({
+                deleted: true,
+                userTagId: userTag.id,
+                userId: userTag.userId,
+                label: userTag.label,
+                type: userTag.type,
+                tagId: userTag.tagId
+            });
+        } catch (err) {
+            logger.error('[AdminAPI] delete-user-tag failed', err);
+            res.status(500).json({ error: 'delete_failed' });
         }
     });
 

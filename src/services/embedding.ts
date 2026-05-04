@@ -9,6 +9,22 @@ const EMBEDDING_DIMENSIONS = 1536;
 
 let openaiClient: OpenAI | null = null;
 
+function cosineSimilarity(a: number[], b: number[]): number {
+    if (a.length !== b.length || a.length === 0) return 0;
+
+    let dot = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < a.length; i++) {
+        dot += a[i] * b[i];
+        normA += a[i] * a[i];
+        normB += b[i] * b[i];
+    }
+
+    if (normA === 0 || normB === 0) return 0;
+    return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
 function getOpenAI(): OpenAI | null {
     if (!env.OPENAI_API_KEY) return null;
     if (!openaiClient) {
@@ -40,8 +56,8 @@ export async function generateEmbedding(text: string): Promise<number[] | null> 
 
 /**
  * Find tags similar to the given embedding using cosine distance.
- * Uses raw SQL since Prisma doesn't natively support pgvector operators.
- * Falls back to empty array if embeddings aren't available.
+ * Embeddings are stored as Float[] in Prisma, so similarity is computed in app
+ * code instead of relying on the optional pgvector extension.
  */
 export async function findSimilarTags(
     embedding: number[],
@@ -51,28 +67,20 @@ export async function findSimilarTags(
     const db = getDatabase();
 
     try {
-        // Use raw SQL for pgvector cosine similarity
-        // cosine distance: 1 - similarity, so we filter where distance < (1 - threshold)
-        const maxDistance = 1 - threshold;
-        const vectorStr = `[${embedding.join(',')}]`;
+        const tags = await db.tag.findMany({
+            where: { NOT: { embedding: { isEmpty: true } } },
+            select: { id: true, label: true, embedding: true }
+        });
 
-        const results = await db.$queryRawUnsafe<Array<{ id: string; label: string; distance: number }>>(
-            `SELECT id, label, (embedding::vector <=> $1::vector) as distance
-             FROM tags
-             WHERE array_length(embedding, 1) IS NOT NULL
-               AND (embedding::vector <=> $1::vector) < $2
-             ORDER BY distance ASC
-             LIMIT $3`,
-            vectorStr,
-            maxDistance,
-            limit
-        );
-
-        return results.map((r) => ({
-            id: r.id,
-            label: r.label,
-            similarity: 1 - r.distance
-        }));
+        return tags
+            .map((tag) => ({
+                id: tag.id,
+                label: tag.label,
+                similarity: cosineSimilarity(embedding, tag.embedding)
+            }))
+            .filter((tag) => tag.similarity >= threshold)
+            .sort((a, b) => b.similarity - a.similarity)
+            .slice(0, limit);
     } catch (error) {
         logger.error('Failed to find similar tags via embeddings', error);
         return [];

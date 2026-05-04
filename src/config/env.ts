@@ -20,6 +20,15 @@ const envSchema = z.object({
     JWT_SECRET: z.string().min(16),
     JWT_EXPIRES_IN: z.string().default('7d'),
 
+    // Tag Promotion Batch Job (nocturne scheduling)
+    TAG_PROMOTION_ENABLED: z.preprocess((v) => v === 'true' || v === '1' || v === true, z.boolean()).default(true),
+    TAG_PROMOTION_WINDOW_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(2), // 02:00 UTC low-traffic window
+    TAG_PROMOTION_INTERVAL_MS: z.coerce
+        .number()
+        .int()
+        .positive()
+        .default(24 * 60 * 60 * 1000), // 24 hours
+
     CRYPT_KEY_MAIL: z.string().min(16),
     WS_TOKEN_EXPIRES_SECONDS: z.coerce.number().int().positive().default(60),
     MAIL_TOKEN_TTL_MINUTES: z.coerce.number().int().positive().default(15),

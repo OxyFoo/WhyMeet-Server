@@ -12,93 +12,12 @@ import { invalidatePipelineSetup } from '@/services/pipelineSetupCache';
 import { invalidateDiscoveryCounts } from '@/services/discoveryCountsCache';
 import { logAudit } from '@/services/auditLogService';
 import { isProfileComplete } from '@/services/profileCompletion';
+import { syncUserTags } from '@/services/userTagSync';
 
 class ProfileWouldBecomeIncompleteError extends Error {
     constructor() {
         super('profileWouldBecomeIncomplete');
         this.name = 'ProfileWouldBecomeIncompleteError';
-    }
-}
-
-const TAG_MAX_LENGTH = 40;
-
-/**
- * Sanitize a tag label:
- * - Strip invisible/control characters
- * - Collapse whitespace
- * - Trim
- * - Title-case first letter
- * - Max length
- */
-function sanitizeTagLabel(raw: string): string {
-    const s = raw
-        .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u2028-\u202F\uFEFF]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, TAG_MAX_LENGTH);
-    if (s.length === 0) return '';
-    return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-/**
- * Resolve a sanitised user-submitted label to an existing canonical tag,
- * if any. Returns the tagId or null — we never create new canonical tags
- * at profile-save time. Promotion to a canonical tag happens in a separate
- * batch job once enough users converge on the same raw label.
- *
- *   1. Exact match on Tag.label
- *   2. Alias match on TagAlias.alias → canonical Tag
- *   3. null (the UserTag stays unlinked, scoring uses its raw label)
- */
-async function resolveCanonical(db: ReturnType<typeof getDatabase>, label: string): Promise<string | null> {
-    const exact = await db.tag.findUnique({ where: { label }, select: { id: true } });
-    if (exact) return exact.id;
-
-    const alias = await db.tagAlias.findFirst({
-        where: { alias: { equals: label, mode: 'insensitive' } },
-        select: { tagId: true }
-    });
-    if (alias) return alias.tagId;
-
-    return null;
-}
-
-async function syncTags(
-    db: ReturnType<typeof getDatabase>,
-    userId: string,
-    incoming: { label: string; source?: string | null }[],
-    type: 'interest' | 'skill'
-) {
-    // Snapshot existing sources keyed by labelLower so we can preserve
-    // provenance across saves that don't specify `source` (e.g. regular
-    // profile edits).
-    const previous = await db.userTag.findMany({
-        where: { userId, type },
-        select: { labelLower: true, source: true }
-    });
-    const previousSourceByLabelLower = new Map<string, string | null>();
-    for (const row of previous) previousSourceByLabelLower.set(row.labelLower, row.source);
-
-    await db.userTag.deleteMany({ where: { userId, type } });
-
-    if (incoming.length === 0) return;
-
-    const seen = new Set<string>();
-    for (const raw of incoming) {
-        const label = sanitizeTagLabel(raw.label);
-        if (!label) continue;
-        const labelLower = label.toLowerCase();
-        if (seen.has(labelLower)) continue;
-        seen.add(labelLower);
-
-        const tagId = await resolveCanonical(db, label);
-
-        // Preserve previous source when the client didn't include one.
-        const source = raw.source !== undefined ? raw.source : (previousSourceByLabelLower.get(labelLower) ?? null);
-
-        await db.userTag.create({
-            data: { userId, type, label, labelLower, tagId, source }
-        });
     }
 }
 
@@ -211,7 +130,7 @@ registerCommand<WSRequest_UpdateProfile>(
 
                 // Sync interests
                 if (data.interests !== undefined) {
-                    await syncTags(
+                    await syncUserTags(
                         tx as ReturnType<typeof getDatabase>,
                         client.userId,
                         data.interests.map((t) => ({ label: t.label, source: t.source })),
@@ -221,7 +140,7 @@ registerCommand<WSRequest_UpdateProfile>(
 
                 // Sync skills
                 if (data.skills !== undefined) {
-                    await syncTags(
+                    await syncUserTags(
                         tx as ReturnType<typeof getDatabase>,
                         client.userId,
                         data.skills.map((t) => ({ label: t.label, source: t.source })),

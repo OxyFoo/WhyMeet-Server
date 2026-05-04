@@ -12,19 +12,19 @@ const CACHE_TTL_S = 3600; // 1 hour
 async function fetchFromDb(): Promise<{ interests: string[]; skills: string[] }> {
     const db = getDatabase();
 
-    // Group UserTag by labelLower (raw user-typed label, case-folded). This
-    // counts the labels actually written by users — including those without
-    // any canonical Tag link — instead of canonical popularity.
+    // Group UserTag by labelNorm (robust normalized form, accent-insensitive).
+    // This catches variants (JS, javascript, Java Script) as one cluster, then
+    // selects the most-frequent display label per cluster.
     const [interestCounts, skillCounts] = await Promise.all([
         db.userTag.groupBy({
-            by: ['labelLower'],
+            by: ['labelNorm'],
             where: { type: 'interest' },
             _count: { id: true },
             orderBy: { _count: { id: 'desc' } },
             take: TOP_LIMIT
         }),
         db.userTag.groupBy({
-            by: ['labelLower'],
+            by: ['labelNorm'],
             where: { type: 'skill' },
             _count: { id: true },
             orderBy: { _count: { id: 'desc' } },
@@ -32,32 +32,53 @@ async function fetchFromDb(): Promise<{ interests: string[]; skills: string[] }>
         })
     ]);
 
-    // Resolve a representative (display-cased) label per labelLower.
-    async function resolveDisplayLabels(labelLowers: string[], type: 'interest' | 'skill') {
-        if (labelLowers.length === 0) return new Map<string, string>();
+    // For each normalized cluster, find the most-frequent display label.
+    async function resolveDisplayLabels(labelNorms: string[], type: 'interest' | 'skill') {
+        if (labelNorms.length === 0) return new Map<string, string>();
         const rows = await db.userTag.findMany({
-            where: { type, labelLower: { in: labelLowers } },
-            select: { label: true, labelLower: true },
-            distinct: ['labelLower']
+            where: { type, labelNorm: { in: labelNorms } },
+            select: { label: true, labelNorm: true }
         });
-        return new Map(rows.map((r) => [r.labelLower, r.label]));
+
+        // Group by labelNorm, count label frequencies
+        const clusterMap = new Map<string, Map<string, number>>();
+        for (const row of rows) {
+            if (!clusterMap.has(row.labelNorm)) {
+                clusterMap.set(row.labelNorm, new Map());
+            }
+            const freq = clusterMap.get(row.labelNorm)!;
+            freq.set(row.label, (freq.get(row.label) ?? 0) + 1);
+        }
+
+        // Pick most-frequent label per cluster
+        const result = new Map<string, string>();
+        for (const [labelNorm, freq] of clusterMap) {
+            let bestLabel = '';
+            let bestCount = 0;
+            for (const [label, count] of freq) {
+                if (count > bestCount) {
+                    bestLabel = label;
+                    bestCount = count;
+                }
+            }
+            if (bestLabel) result.set(labelNorm, bestLabel);
+        }
+        return result;
     }
 
     const [interestLabels, skillLabels] = await Promise.all([
         resolveDisplayLabels(
-            interestCounts.map((r) => r.labelLower),
+            interestCounts.map((r) => r.labelNorm),
             'interest'
         ),
         resolveDisplayLabels(
-            skillCounts.map((r) => r.labelLower),
+            skillCounts.map((r) => r.labelNorm),
             'skill'
         )
     ]);
 
-    const interests = interestCounts
-        .map((r) => interestLabels.get(r.labelLower))
-        .filter((l): l is string => Boolean(l));
-    const skills = skillCounts.map((r) => skillLabels.get(r.labelLower)).filter((l): l is string => Boolean(l));
+    const interests = interestCounts.map((r) => interestLabels.get(r.labelNorm)).filter((l): l is string => Boolean(l));
+    const skills = skillCounts.map((r) => skillLabels.get(r.labelNorm)).filter((l): l is string => Boolean(l));
 
     return { interests, skills };
 }

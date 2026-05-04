@@ -182,12 +182,14 @@ model ProfilePhoto {
 }
 
 model Tag {
-    id        String  @id @default(cuid())
-    label     String  @unique
-    embedding Float[] @default([])
+    id        String   @id @default(cuid())
+    label     String   @unique
+    embedding Float[]  @default([])
     // Canonical domain key (one of InterestCategoryKey from @oxyfoo/whymeet-types).
     // Populated lazily via embedding similarity; null when unknown or embeddings disabled.
     domainKey String?
+    // Timestamp when this canonical tag was created (seed time or promotion job time).
+    createdAt DateTime @default(now())
 
     userTags UserTag[]
     aliases  TagAlias[]
@@ -197,9 +199,11 @@ model Tag {
 }
 
 model TagAlias {
-    id    String @id @default(cuid())
-    alias String @unique
-    tagId String
+    id        String   @id @default(cuid())
+    alias     String   @unique
+    tagId     String
+    // Timestamp when this alias was created (seed time or promotion job time).
+    createdAt DateTime @default(now())
 
     tag Tag @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
@@ -208,13 +212,17 @@ model TagAlias {
 }
 
 model UserTag {
-    id         String  @id @default(cuid())
+    id         String   @id @default(cuid())
     userId     String
     // Raw user-typed (sanitised) label. This is the source of truth for what
     // is displayed on the profile and what scoring matches between users.
     label      String
     // Lowercased label, used for case-insensitive equality / grouping.
     labelLower String
+    // Robust normalized label (accents removed, unicode NFD, spaces/hyphens/punctuation normalized, lowercase).
+    // Used for multi-level clustering in promotion job to catch typos/variants.
+    // Prevents duplicate-variant tags on same user.
+    labelNorm  String
     // Optional link to a canonical Tag. Populated when the label resolves to
     // an existing canonical via exact / alias match at save time, or by the
     // tag-promotion job that retroactively links clusters.
@@ -224,15 +232,20 @@ model UserTag {
     // Values: "free" (typed), "popular" (popular-tags chip),
     // "refine:<step_key>" (chosen from a refine wizard step), or null (legacy).
     source     String?
+    // Timestamp when this tag was added to the user profile.
+    createdAt  DateTime @default(now())
+    // Timestamp when this tag was last updated (provenance or label change).
+    updatedAt  DateTime @updatedAt
 
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
     tag  Tag? @relation(fields: [tagId], references: [id], onDelete: SetNull)
 
-    @@unique([userId, type, labelLower])
+    @@unique([userId, type, labelNorm])
     @@index([tagId])
     @@index([userId, source])
     @@index([labelLower])
-    @@index([type, labelLower])
+    @@index([labelNorm])
+    @@index([type, labelNorm])
     @@map("user_tags")
 }
 

@@ -160,7 +160,7 @@ const SKILL_LABELS = [
     'Community management',
     'DevOps',
     'Machine Learning',
-    'Musique (piano)',
+    'Piano',
     'Guitare',
     'Chant',
     'Couture',

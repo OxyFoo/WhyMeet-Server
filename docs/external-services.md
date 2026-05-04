@@ -9,7 +9,7 @@ Vue d'ensemble de tous les services externes nécessaires au fonctionnement du s
 | Service                                                  | Description / Intérêt                                               | Optionnel ?                                 | Détails                                  |
 | -------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------- | ---------------------------------------- |
 | [Secrets cryptographiques](#service-secrets)             | Signature des tokens JWT + chiffrement AES-128-GCM des tokens email | ❌ Requis                                   | `JWT_SECRET`, `CRYPT_KEY_MAIL`           |
-| [PostgreSQL — Base de données](#service-postgresql)      | BDD principale (Prisma ORM + pgvector pour les embeddings)          | ❌ Requis                                   | Ports `5432` / `5433` (PgBouncer)        |
+| [PostgreSQL — Base de données](#service-postgresql)      | BDD principale (Prisma ORM, embeddings stockés en `Float[]`)        | ❌ Requis                                   | Ports `5432` / `5433` (PgBouncer)        |
 | [PgBouncer — Connection pooling](#service-pgbouncer)     | Pool de connexions PostgreSQL (20 pool size, 200–300 max clients)   | ❌ Requis                                   | Port `5433`                              |
 | [SSL/TLS — HTTPS](#service-ssl-tls)                      | Chiffrement HTTPS pour le serveur HTTP + WebSocket                  | ✅ Fallback HTTP                            | Certificats Let's Encrypt                |
 | [Redis — Cache](#service-redis)                          | Cache 3 niveaux : profils candidats, pipeline, exclude list         | ✅ Requêtes DB directes si absent           | Port `6379`                              |
@@ -30,13 +30,13 @@ Vue d'ensemble de tous les services externes nécessaires au fonctionnement du s
 
 ### PostgreSQL — Base de données
 
-|               |                                                            |
-| ------------- | ---------------------------------------------------------- |
-| **Rôle**      | BDD principale (Prisma ORM + pgvector pour les embeddings) |
-| **Port**      | `5432` (direct) / `5433` (via PgBouncer en dev)            |
-| **Variables** | `DATABASE_URL`                                             |
-| **Docker**    | `postgres:16-alpine` (dev) / `postgres:17-alpine` (prod)   |
-| **Si absent** | Le serveur ne démarre pas (`process.exit(1)`)              |
+|               |                                                              |
+| ------------- | ------------------------------------------------------------ |
+| **Rôle**      | BDD principale (Prisma ORM, embeddings stockés en `Float[]`) |
+| **Port**      | `5432` (direct) / `5433` (via PgBouncer en dev)              |
+| **Variables** | `DATABASE_URL`                                               |
+| **Docker**    | `postgres:16-alpine` (dev) / `postgres:17-alpine` (prod)     |
+| **Si absent** | Le serveur ne démarre pas (`process.exit(1)`)                |
 
 <a id="service-secrets"></a>
 
