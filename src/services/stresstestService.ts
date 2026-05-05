@@ -3,8 +3,8 @@
  *
  * Bots are created via the admin HMAC API (`/admin/stresstest/*`). They are
  * full users marked `bot=true` so they are excluded from real users' discovery
- * (people + activities) and from dashboard counts. Profiles are auto-completed
- * with deterministic fake data so they pass `isProfileComplete()` server-side.
+ * (people + activities) and from dashboard counts. The Console completes their
+ * profile photos through the same /upload/photo flow used by real clients.
  *
  * Lifecycle: created on demand by the Console UI; deleted en masse via
  * `cleanupBots()`. Cascade FKs handle most child records; a few entities
@@ -12,12 +12,11 @@
  * are wiped explicitly to avoid orphans.
  */
 import crypto from 'crypto';
-import sharp from 'sharp';
 import { getDatabase } from '@/services/database';
 import { tokenManager } from '@/services/tokenManager';
 import { logger } from '@/config/logger';
 import { getConnectedClients } from '@/server/Server';
-import { uploadFile, deleteFile } from '@/services/storageService';
+import { deleteFile } from '@/services/storageService';
 import { getUsageLimitConfig } from '@/services/usageLimitsService';
 import { prepareUserTagCreateInputs, type IncomingUserTag, type UserTagType } from '@/services/userTagSync';
 import { ensureTagEmbedding } from '@/services/embedding';
@@ -332,81 +331,6 @@ const BIOS = [
     'Creative soul exploring the city.'
 ];
 
-// 16 distinct hues used to generate bot profile photos. Each bot picks
-// `count` colours from this palette (wrapping) and uploads a unique webp
-// per photo slot — so 50 bots × 3 photos = 150 individual S3 uploads.
-const PHOTO_PALETTE: ReadonlyArray<{ bg: { r: number; g: number; b: number } }> = [
-    { bg: { r: 244, g: 114, b: 182 } }, // pink
-    { bg: { r: 251, g: 146, b: 60 } }, // orange
-    { bg: { r: 250, g: 204, b: 21 } }, // yellow
-    { bg: { r: 132, g: 204, b: 22 } }, // lime
-    { bg: { r: 34, g: 197, b: 94 } }, // green
-    { bg: { r: 14, g: 165, b: 233 } }, // sky
-    { bg: { r: 99, g: 102, b: 241 } }, // indigo
-    { bg: { r: 168, g: 85, b: 247 } }, // purple
-    { bg: { r: 239, g: 68, b: 68 } }, // red
-    { bg: { r: 20, g: 184, b: 166 } }, // teal
-    { bg: { r: 234, g: 179, b: 8 } }, // amber
-    { bg: { r: 6, g: 182, b: 212 } }, // cyan
-    { bg: { r: 217, g: 70, b: 239 } }, // fuchsia
-    { bg: { r: 16, g: 185, b: 129 } }, // emerald
-    { bg: { r: 249, g: 115, b: 22 } }, // orange-600
-    { bg: { r: 139, g: 92, b: 246 } } // violet
-];
-
-async function buildPhotoBuffer(bg: { r: number; g: number; b: number }, letter: string): Promise<Buffer> {
-    const svg = `<svg width="800" height="800" xmlns="http://www.w3.org/2000/svg">
-  <text x="50%" y="50%" font-family="sans-serif" font-size="420"
-        fill="rgba(255,255,255,0.85)" font-weight="700"
-        text-anchor="middle" dominant-baseline="central">${letter}</text>
-</svg>`;
-    return sharp({
-        create: { width: 800, height: 800, channels: 3, background: bg }
-    })
-        .composite([{ input: Buffer.from(svg), gravity: 'center' }])
-        .webp({ quality: 80 })
-        .toBuffer();
-}
-
-/**
- * Generate and upload `count` unique profile photos for a single bot.
- * Each photo gets a distinct colour from the palette and the bot's initial
- * as the centred letter. Keys are scoped to the bot's userId so there is
- * no sharing between bots and cleanup can target `stresstest/<userId>/`.
- */
-async function uploadBotPhotos(userId: string, initial: string, count: number): Promise<string[]> {
-    const keys: string[] = [];
-    // Pick a random starting offset in the palette so bots don't all start
-    // with the same colour sequence.
-    const offset = Math.floor(Math.random() * PHOTO_PALETTE.length);
-    for (let i = 0; i < count; i++) {
-        const { bg } = PHOTO_PALETTE[(offset + i) % PHOTO_PALETTE.length];
-        const key = `stresstest/${userId}/photo-${i + 1}.webp`;
-        try {
-            const buf = await buildPhotoBuffer(bg, initial);
-            const result = await uploadFile(buf, key, 'image/webp');
-            if (result) {
-                keys.push(key);
-            } else {
-                logger.warn(`[Stresstest] uploadFile returned null for ${key} (S3 disabled?)`);
-            }
-        } catch (err) {
-            logger.warn(`[Stresstest] Failed to upload photo ${key}`, err);
-        }
-    }
-    return keys;
-}
-
-/**
- * @deprecated Use uploadBotPhotos() per-bot instead.
- * Kept temporarily so any external callers don't hard-break; remove once
- * confirmed unused.
- */
-export async function ensureStresstestPhotosSeeded(): Promise<string[]> {
-    logger.warn('[Stresstest] ensureStresstestPhotosSeeded() is deprecated — photos are now uploaded per-bot');
-    return [];
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────
 
 function pick<T>(arr: readonly T[]): T {
@@ -484,11 +408,6 @@ export async function spawnBot(opts: SpawnBotOptions): Promise<SpawnedBot> {
     const sessionToken = tokenManager.session.generate();
     const deviceUUID = crypto.randomUUID();
 
-    // Upload unique photos for this bot before creating the DB record so the
-    // photo keys are ready to insert in the same transaction-like create call.
-    const photoCount = opts.completeProfile ? 2 + Math.floor(Math.random() * 3) : 0;
-    const photoKeys = opts.completeProfile ? await uploadBotPhotos(id, name[0].toUpperCase(), photoCount) : [];
-
     // Make sure the canonical tags + embeddings used by the embedding-resolution
     // test scenario exist. Idempotent across bots; first bot of the batch pays
     // the OpenAI cost (one embedding per concept), the rest are no-ops.
@@ -541,9 +460,6 @@ export async function spawnBot(opts: SpawnBotOptions): Promise<SpawnedBot> {
                               intentions: pickN(INTENTIONS, 1 + Math.floor(Math.random() * 3)),
                               spokenLanguages: ['fr']
                           }
-                      },
-                      photos: {
-                          create: photoKeys.map((key, position) => ({ key, position }))
                       },
                       tags: {
                           // Must be ≥ PROFILE_MIN_TAGS (5) per bucket so that
@@ -685,14 +601,15 @@ export async function cleanupBots(): Promise<CleanupResult> {
     // moderation queue. Wipe them explicitly first.
     const feedbackResult = await db.feedback.deleteMany({ where: { userId: { in: botIds } } });
 
-    // Delete S3 photos for every bot. Keys are scoped to stresstest/<userId>/
-    // so we collect them from the ProfilePhoto table before the user cascade wipes them.
+    // Delete S3 photos for every bot before the user cascade wipes their rows.
+    // New stress-test photos go through /upload/photo and live under photos/<userId>/;
+    // older local-test leftovers may still use stresstest/<userId>/.
     const botPhotos = await db.profilePhoto.findMany({
         where: { userId: { in: botIds } },
         select: { key: true }
     });
     const s3Deletions = botPhotos
-        .filter((p: { key: string }) => p.key.startsWith('stresstest/'))
+        .filter((p: { key: string }) => !/^https?:\/\//i.test(p.key))
         .map((p: { key: string }) => deleteFile(p.key));
     await Promise.allSettled(s3Deletions);
 

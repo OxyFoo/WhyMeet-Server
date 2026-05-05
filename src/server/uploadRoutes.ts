@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
-import { rateLimit } from 'express-rate-limit';
+import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import multer from 'multer';
 import sharp from 'sharp';
 import crypto from 'crypto';
@@ -13,11 +13,21 @@ import { env } from '@/config/env';
 
 export const uploadRouter = Router();
 
+function uploadRateLimitKey(req: Request): string {
+    const deviceUUID = req.headers['x-device-uuid'];
+    if (typeof deviceUUID === 'string' && deviceUUID.trim()) {
+        return `device:${deviceUUID.trim()}`;
+    }
+    const ip = req.ip ?? req.socket.remoteAddress ?? 'unknown';
+    return ipKeyGenerator(ip);
+}
+
 const uploadLimiter = rateLimit({
     windowMs: 60 * 1000,
     limit: 10,
     standardHeaders: 'draft-8',
-    legacyHeaders: false
+    legacyHeaders: false,
+    keyGenerator: uploadRateLimitKey
 });
 
 const upload = multer({

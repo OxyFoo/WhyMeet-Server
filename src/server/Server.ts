@@ -31,17 +31,11 @@ const globalLimiter = rateLimit({
     windowMs: 60 * 1000,
     limit: 100,
     standardHeaders: 'draft-8',
-    legacyHeaders: false
+    legacyHeaders: false,
+    skip: (req) => req.path.startsWith('/upload')
 });
 
 const healthLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    limit: 10,
-    standardHeaders: 'draft-8',
-    legacyHeaders: false
-});
-
-const uploadLimiter = rateLimit({
     windowMs: 60 * 1000,
     limit: 10,
     standardHeaders: 'draft-8',
@@ -104,7 +98,7 @@ function createHttpServer(): http.Server | https.Server {
     app.use('/auth', authRouter);
 
     // HTTP upload routes
-    app.use('/upload', uploadLimiter, uploadRouter);
+    app.use('/upload', uploadRouter);
 
     // HTTP places routes (Mapbox static-map proxy)
     app.use('/places', placesRouter);
