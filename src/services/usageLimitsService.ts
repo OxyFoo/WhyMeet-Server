@@ -51,7 +51,11 @@ function normalizeNonNegative(value: number, fallback: number): number {
     return Number.isInteger(value) && value >= 0 ? value : fallback;
 }
 
-function normalizeLimit(value: number, fallback: number): number {
+function normalizePositive(value: number, fallback: number): number {
+    return Number.isInteger(value) && value >= 1 ? value : fallback;
+}
+
+function normalizeNonNegativeOrUnlimited(value: number, fallback: number): number {
     return Number.isInteger(value) && (value >= 0 || value === -1) ? value : fallback;
 }
 
@@ -68,27 +72,27 @@ export async function getUsageLimitConfig(): Promise<UsageLimitConfig> {
         const byKey = new Map(rows.map((r) => [r.key, r.valueInt]));
 
         const values: UsageLimitConfig = {
-            searchDailyFree: normalizeNonNegative(
+            searchDailyFree: normalizeNonNegativeOrUnlimited(
                 byKey.get(APP_CONFIG_KEYS.searchDailyFree) ?? fallback.searchDailyFree,
                 fallback.searchDailyFree
             ),
-            searchDailyPremium: normalizeNonNegative(
+            searchDailyPremium: normalizeNonNegativeOrUnlimited(
                 byKey.get(APP_CONFIG_KEYS.searchDailyPremium) ?? fallback.searchDailyPremium,
                 fallback.searchDailyPremium
             ),
-            swipeDailyFree: normalizeLimit(
+            swipeDailyFree: normalizeNonNegativeOrUnlimited(
                 byKey.get(APP_CONFIG_KEYS.swipeDailyFree) ?? fallback.swipeDailyFree,
                 fallback.swipeDailyFree
             ),
-            swipeDailyPremium: normalizeLimit(
+            swipeDailyPremium: normalizeNonNegativeOrUnlimited(
                 byKey.get(APP_CONFIG_KEYS.swipeDailyPremium) ?? fallback.swipeDailyPremium,
                 fallback.swipeDailyPremium
             ),
-            activityOpenDailyFree: normalizeNonNegative(
+            activityOpenDailyFree: normalizeNonNegativeOrUnlimited(
                 byKey.get(APP_CONFIG_KEYS.activityOpenDailyFree) ?? fallback.activityOpenDailyFree,
                 fallback.activityOpenDailyFree
             ),
-            activityOpenDailyPremium: normalizeNonNegative(
+            activityOpenDailyPremium: normalizeNonNegativeOrUnlimited(
                 byKey.get(APP_CONFIG_KEYS.activityOpenDailyPremium) ?? fallback.activityOpenDailyPremium,
                 fallback.activityOpenDailyPremium
             ),
@@ -96,7 +100,7 @@ export async function getUsageLimitConfig(): Promise<UsageLimitConfig> {
                 byKey.get(APP_CONFIG_KEYS.initialSearchTokens) ?? fallback.initialSearchTokens,
                 fallback.initialSearchTokens
             ),
-            subscriptionBoostDays: normalizeNonNegative(
+            subscriptionBoostDays: normalizePositive(
                 byKey.get(APP_CONFIG_KEYS.subscriptionBoostDays) ?? fallback.subscriptionBoostDays,
                 fallback.subscriptionBoostDays
             )

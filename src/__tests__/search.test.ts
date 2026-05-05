@@ -4,8 +4,8 @@ jest.mock('@/config/logger', () => ({
     logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn(), success: jest.fn() }
 }));
 
-jest.mock('@/services/tokenService', () => ({
-    getBalance: jest.fn().mockResolvedValue({ tokens: 5, lastRefillAt: new Date() })
+jest.mock('@/services/searchQuotaService', () => ({
+    getSearchQuota: jest.fn().mockResolvedValue({ remaining: 5, dailyLimit: 3 })
 }));
 
 jest.mock('@/services/boostService', () => ({

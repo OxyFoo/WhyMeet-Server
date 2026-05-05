@@ -6,7 +6,7 @@ import { getConnectedClients } from '@/server/Server';
 import { pushToUser } from '@/services/pushService';
 import { t, getUserLanguage } from '@/services/notifI18n';
 import { mapUserToProfile, profileInclude } from '@/services/userMapper';
-import { useSwipe } from '@/services/swipeQuotaService';
+import { useSwipeQuota } from '@/services/swipeQuotaService';
 import { addExcluded } from '@/services/excludeCache';
 import { logger } from '@/config/logger';
 
@@ -17,7 +17,7 @@ registerCommand<WSRequest_Star>('star', async (client: Client, payload): Promise
     try {
         // Check and consume swipe quota
         try {
-            await useSwipe(client.userId);
+            await useSwipeQuota(client.userId);
         } catch (err) {
             if (err instanceof Error && err.message === 'quota_exceeded') {
                 return { command: 'star', payload: { error: 'quota_exceeded' } };

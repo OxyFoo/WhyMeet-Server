@@ -39,7 +39,7 @@ import './places/retrieve';
 import './account/delete-account';
 import './subscription/get-subscription';
 import './subscription/validate-receipt';
-import './tokens/get-token-balance';
+import './search/get-search-quota';
 import './tokens/search-with-token';
 import './tokens/preview-search';
 import './boost/purchase-boost';

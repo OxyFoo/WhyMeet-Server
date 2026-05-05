@@ -2,7 +2,7 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_GetCandidateActivities, WSResponse_GetCandidateActivities } from '@oxyfoo/whymeet-types';
 import { getActivities } from '@/services/activityDiscoveryService';
-import { getQuota } from '@/services/swipeQuotaService';
+import { getSwipeQuota } from '@/services/swipeQuotaService';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_GetCandidateActivities>(
@@ -15,15 +15,15 @@ registerCommand<WSRequest_GetCandidateActivities>(
                 query: payload.query
             });
 
-            const quota = await getQuota(client.userId);
+            const quota = await getSwipeQuota(client.userId);
 
             return {
                 command: 'get-candidate-activities',
                 payload: {
                     activities,
                     totalAvailable: totalCount,
-                    swipesRemaining: quota.swipesRemaining,
-                    dailySwipeLimit: quota.dailySwipeLimit
+                    remaining: quota.remaining,
+                    dailyLimit: quota.dailyLimit
                 }
             };
         } catch (error) {

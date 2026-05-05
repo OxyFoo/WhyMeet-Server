@@ -48,9 +48,9 @@ model User {
     ipLogs                 IpLog[]
     subscription           Subscription?
     activeBoost            ActiveBoost?
-    tokenBalance           TokenBalance?
+    searchQuota            SearchQuota?
     swipeQuota             SwipeQuota?
-    activityViewQuota      ActivityViewQuota?
+    activityQuota          ActivityQuota?
     hostedActivities       Activity[]                @relation("ActivityHost")
     activityParticipations ActivityParticipant[]
     activityReports        ActivityReport[]
@@ -508,37 +508,42 @@ model ActiveBoost {
     @@map("active_boosts")
 }
 
-model TokenBalance {
-    id           String   @id @default(cuid())
-    userId       String   @unique
-    tokens       Int      @default(5)
-    lastRefillAt DateTime @default(now())
+// ─── Daily Quotas ─────────────────────────────────────────────────────
+// All three quotas share the same shape: { remaining, resetAt }.
+// `resetAt` is the next reset instant (midnight UTC); when now >= resetAt the
+// quota refills back to its configured daily limit (see usageLimitsService).
+
+model SearchQuota {
+    id        String   @id @default(cuid())
+    userId    String   @unique
+    remaining Int      @default(5)
+    resetAt   DateTime @default(now())
 
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-    @@map("token_balances")
+    @@map("search_quotas")
 }
 
 model SwipeQuota {
-    id              String   @id @default(cuid())
-    userId          String   @unique
-    swipesRemaining Int      @default(20)
-    resetAt         DateTime @default(now())
+    id        String   @id @default(cuid())
+    userId    String   @unique
+    remaining Int      @default(20)
+    resetAt   DateTime @default(now())
 
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
     @@map("swipe_quotas")
 }
 
-model ActivityViewQuota {
-    id                     String   @id @default(cuid())
-    userId                 String   @unique
-    activityViewsRemaining Int      @default(3)
-    resetAt                DateTime @default(now())
+model ActivityQuota {
+    id        String   @id @default(cuid())
+    userId    String   @unique
+    remaining Int      @default(3)
+    resetAt   DateTime @default(now())
 
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-    @@map("activity_view_quotas")
+    @@map("activity_quotas")
 }
 
 // ─── Activities ─────────────────────────────────────────────────────

@@ -444,6 +444,7 @@ async function main() {
                                     type: 'interest',
                                     label,
                                     labelLower: label.toLowerCase(),
+                                    labelNorm: label.toLowerCase(),
                                     tagId: tagMap.get(label)!,
                                     source: 'popular'
                                 })),
@@ -451,6 +452,7 @@ async function main() {
                                     type: 'skill',
                                     label,
                                     labelLower: label.toLowerCase(),
+                                    labelNorm: label.toLowerCase(),
                                     tagId: tagMap.get(label)!,
                                     source: 'popular'
                                 }))

@@ -4,7 +4,7 @@ import type { WSRequest_SearchWithToken, WSResponse_SearchWithToken, MatchCandid
 import { mapUserToCandidate } from '@/services/userMapper';
 import { runDiscoveryPipeline, DISCOVERY_FETCH_LIMIT } from '@/services/discoveryPipeline';
 import { obfuscateString } from '@/services/previewObfuscation';
-import { getBalance, useToken } from '@/services/tokenService';
+import { getSearchQuota, useSearchQuota } from '@/services/searchQuotaService';
 import { getBoostedUserIds } from '@/services/boostService';
 import { interleaveByBoost } from '@/services/interleaveResults';
 import { logger } from '@/config/logger';
@@ -25,9 +25,8 @@ registerCommand<WSRequest_SearchWithToken>(
         const { filters } = payload;
 
         try {
-            // Check token balance first
-            const balance = await getBalance(client.userId);
-            if (balance.tokens <= 0) {
+            const quota = await getSearchQuota(client.userId);
+            if (quota.dailyLimit !== -1 && quota.remaining <= 0) {
                 return { command: 'search-with-token', payload: { error: 'no_tokens' } };
             }
 
@@ -55,14 +54,14 @@ registerCommand<WSRequest_SearchWithToken>(
             const shuffled = addRandomness(interleaved).slice(0, MAX_RESULTS);
 
             // Only consume a token if there are actual results
-            let tokensRemaining = balance.tokens;
+            let remaining = quota.remaining;
             if (shuffled.length > 0) {
-                const newBalance = await useToken(client.userId);
-                tokensRemaining = newBalance.tokens;
+                const nextQuota = await useSearchQuota(client.userId);
+                remaining = nextQuota.remaining;
             }
 
             logger.debug(`[Search] ${shuffled.length}/${totalCount} results (with token) for user: ${client.userId}`);
-            return { command: 'search-with-token', payload: { results: shuffled, tokensRemaining, totalCount } };
+            return { command: 'search-with-token', payload: { results: shuffled, remaining, totalCount } };
         } catch (error) {
             logger.error('[Search] Search with token error', error);
             return { command: 'search-with-token', payload: { error: 'Internal error' } };

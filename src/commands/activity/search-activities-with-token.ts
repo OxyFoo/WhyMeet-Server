@@ -2,28 +2,28 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_SearchActivitiesWithToken, WSResponse_SearchActivitiesWithToken } from '@oxyfoo/whymeet-types';
 import { searchActivities } from '@/services/activityDiscoveryService';
-import { getBalance, useToken } from '@/services/tokenService';
+import { getSearchQuota, useSearchQuota } from '@/services/searchQuotaService';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_SearchActivitiesWithToken>(
     'search-activities-with-token',
     async (client: Client, payload): Promise<WSResponse_SearchActivitiesWithToken> => {
         try {
-            const balance = await getBalance(client.userId);
-            if (balance.tokens <= 0) {
+            const quota = await getSearchQuota(client.userId);
+            if (quota.dailyLimit !== -1 && quota.remaining <= 0) {
                 return { command: 'search-activities-with-token', payload: { error: 'no_tokens' } };
             }
 
             const result = await searchActivities(client.userId, payload.filters);
 
-            const newBalance = await useToken(client.userId);
+            const nextQuota = result.activities.length > 0 ? await useSearchQuota(client.userId) : quota;
 
             return {
                 command: 'search-activities-with-token',
                 payload: {
                     activities: result.activities,
                     totalCount: result.totalCount,
-                    tokensRemaining: newBalance.tokens
+                    remaining: nextQuota.remaining
                 }
             };
         } catch (error) {

@@ -2,7 +2,7 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_GetCandidates, WSResponse_GetCandidates } from '@oxyfoo/whymeet-types';
 import { mapUserToCandidate } from '@/services/userMapper';
-import { getQuota } from '@/services/swipeQuotaService';
+import { getSwipeQuota } from '@/services/swipeQuotaService';
 import { getBoostedUserIds } from '@/services/boostService';
 import { interleaveByBoost } from '@/services/interleaveResults';
 import { runDiscoveryPipeline, DISCOVERY_FETCH_LIMIT } from '@/services/discoveryPipeline';
@@ -35,7 +35,7 @@ registerCommand<WSRequest_GetCandidates>(
             const candidates = interleaveByBoost(scoredCandidates, boostedIds);
 
             // Get swipe quota info
-            const quota = await getQuota(client.userId);
+            const quota = await getSwipeQuota(client.userId);
 
             logger.debug(
                 `[Discovery] ${candidates.length} candidates (${qualified.length} total) for user: ${client.userId}`
@@ -45,8 +45,8 @@ registerCommand<WSRequest_GetCandidates>(
                 payload: {
                     candidates,
                     totalAvailable: qualified.length,
-                    swipesRemaining: quota.swipesRemaining,
-                    dailySwipeLimit: quota.dailySwipeLimit
+                    remaining: quota.remaining,
+                    dailyLimit: quota.dailyLimit
                 }
             };
         } catch (error) {

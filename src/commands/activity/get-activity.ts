@@ -2,7 +2,7 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_GetActivity, WSResponse_GetActivity } from '@oxyfoo/whymeet-types';
 import { getActivity } from '@/services/activityService';
-import { useActivityView } from '@/services/activityViewQuotaService';
+import { useActivityQuota } from '@/services/activityQuotaService';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_GetActivity>(
@@ -15,7 +15,7 @@ registerCommand<WSRequest_GetActivity>(
             }
 
             try {
-                await useActivityView(client.userId);
+                await useActivityQuota(client.userId);
             } catch (err) {
                 if (err instanceof Error && err.message === 'activity_quota_exceeded') {
                     return { command: 'get-activity', payload: { error: 'activity_quota_exceeded' } };

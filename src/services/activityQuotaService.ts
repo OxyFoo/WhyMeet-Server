@@ -1,11 +1,8 @@
 import { getDatabase } from '@/services/database';
-import type { SwipeQuotaInfo } from '@oxyfoo/whymeet-types';
+import type { ActivityQuotaInfo } from '@oxyfoo/whymeet-types';
 import { isPremium } from '@/services/subscriptionService';
 import { getUsageLimitConfig } from '@/services/usageLimitsService';
 
-/**
- * Get the next midnight UTC for quota reset.
- */
 function nextMidnight(): Date {
     const d = new Date();
     d.setUTCDate(d.getUTCDate() + 1);
@@ -13,36 +10,37 @@ function nextMidnight(): Date {
     return d;
 }
 
-/**
- * Get the current swipe quota for a user (auto-reset if past midnight UTC).
- */
-export async function getSwipeQuota(userId: string): Promise<SwipeQuotaInfo> {
-    const db = getDatabase();
+async function getDailyLimit(userId: string): Promise<number> {
     const [premium, config] = await Promise.all([isPremium(userId), getUsageLimitConfig()]);
-    const dailyLimit = premium ? config.swipeDailyPremium : config.swipeDailyFree;
+    return premium ? config.activityOpenDailyPremium : config.activityOpenDailyFree;
+}
+
+export async function getActivityQuota(userId: string): Promise<ActivityQuotaInfo> {
+    const db = getDatabase();
+    const dailyLimit = await getDailyLimit(userId);
 
     if (dailyLimit === -1) {
         return { remaining: -1, dailyLimit: -1 };
     }
 
-    let record = await db.swipeQuota.findUnique({ where: { userId } });
+    let record = await db.activityQuota.findUnique({ where: { userId } });
 
     if (!record) {
-        record = await db.swipeQuota.create({
+        record = await db.activityQuota.create({
             data: { userId, remaining: dailyLimit, resetAt: nextMidnight() }
         });
     }
 
     if (record.resetAt <= new Date()) {
-        record = await db.swipeQuota.update({
+        record = await db.activityQuota.update({
             where: { userId },
             data: { remaining: dailyLimit, resetAt: nextMidnight() }
         });
     }
 
-    // Apply runtime config changes even before the next reset.
+    // Apply runtime config changes that lower the daily cap.
     if (record.remaining > dailyLimit) {
-        record = await db.swipeQuota.update({
+        record = await db.activityQuota.update({
             where: { userId },
             data: { remaining: dailyLimit }
         });
@@ -51,30 +49,19 @@ export async function getSwipeQuota(userId: string): Promise<SwipeQuotaInfo> {
     return { remaining: Math.max(0, record.remaining), dailyLimit };
 }
 
-/**
- * Check if the user can still swipe.
- */
-export async function canSwipe(userId: string): Promise<boolean> {
-    const quota = await getSwipeQuota(userId);
-    return quota.dailyLimit === -1 || quota.remaining > 0;
-}
-
-/**
- * Use one swipe. Returns updated quota. Throws if quota exceeded.
- */
-export async function useSwipeQuota(userId: string): Promise<SwipeQuotaInfo> {
-    const quota = await getSwipeQuota(userId);
+export async function useActivityQuota(userId: string): Promise<ActivityQuotaInfo> {
+    const quota = await getActivityQuota(userId);
 
     if (quota.dailyLimit === -1) {
         return quota;
     }
 
     if (quota.remaining <= 0) {
-        throw new Error('quota_exceeded');
+        throw new Error('activity_quota_exceeded');
     }
 
     const db = getDatabase();
-    const record = await db.swipeQuota.update({
+    const record = await db.activityQuota.update({
         where: { userId },
         data: { remaining: { decrement: 1 } }
     });

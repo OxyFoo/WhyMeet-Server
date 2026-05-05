@@ -2,7 +2,7 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_Skip, WSResponse_Skip } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
-import { useSwipe } from '@/services/swipeQuotaService';
+import { useSwipeQuota } from '@/services/swipeQuotaService';
 import { addExcluded } from '@/services/excludeCache';
 import { logger } from '@/config/logger';
 
@@ -13,7 +13,7 @@ registerCommand<WSRequest_Skip>('skip', async (client: Client, payload): Promise
     try {
         // Check and consume swipe quota
         try {
-            await useSwipe(client.userId);
+            await useSwipeQuota(client.userId);
         } catch (err) {
             if (err instanceof Error && err.message === 'quota_exceeded') {
                 return { command: 'skip', payload: { success: false } };

@@ -5,8 +5,8 @@ jest.mock('@/config/logger', () => ({
 }));
 
 jest.mock('@/services/swipeQuotaService', () => ({
-    getQuota: jest.fn().mockResolvedValue({ swipesRemaining: 20, dailySwipeLimit: 20 }),
-    useSwipe: jest.fn().mockResolvedValue(undefined),
+    getSwipeQuota: jest.fn().mockResolvedValue({ remaining: 20, dailyLimit: 20 }),
+    useSwipeQuota: jest.fn().mockResolvedValue(undefined),
     canSwipe: jest.fn().mockResolvedValue(true)
 }));
 

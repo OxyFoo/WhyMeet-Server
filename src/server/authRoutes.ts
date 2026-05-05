@@ -336,19 +336,26 @@ authRouter.post('/enter', enterLimiter, async (req, res) => {
             }
         });
 
-        // Initialize token balance and swipe quota for new user
+        // Initialize quota records for the new user.
         const limits = await getUsageLimitConfig();
         const nextMidnight = new Date();
         nextMidnight.setUTCDate(nextMidnight.getUTCDate() + 1);
         nextMidnight.setUTCHours(0, 0, 0, 0);
         await Promise.all([
-            db.tokenBalance.create({
-                data: { userId: newUser.id, tokens: limits.initialSearchTokens, lastRefillAt: new Date() }
+            db.searchQuota.create({
+                data: { userId: newUser.id, remaining: limits.initialSearchTokens, resetAt: nextMidnight }
             }),
             db.swipeQuota.create({
                 data: {
                     userId: newUser.id,
-                    swipesRemaining: limits.swipeDailyFree === -1 ? 0 : limits.swipeDailyFree,
+                    remaining: limits.swipeDailyFree,
+                    resetAt: nextMidnight
+                }
+            }),
+            db.activityQuota.create({
+                data: {
+                    userId: newUser.id,
+                    remaining: limits.activityOpenDailyFree,
                     resetAt: nextMidnight
                 }
             })

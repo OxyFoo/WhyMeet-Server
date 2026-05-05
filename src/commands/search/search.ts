@@ -20,7 +20,7 @@ import { computeMatchScore } from '@/services/scoring';
 import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
 import { buildTagScoringData } from '@/services/discoveryPipeline';
 import { isFeatureEnabled } from '@/services/featureFlagService';
-import { getBalance } from '@/services/tokenService';
+import { getSearchQuota } from '@/services/searchQuotaService';
 import { getBoostedUserIds } from '@/services/boostService';
 import { interleaveByBoost } from '@/services/interleaveResults';
 import { logger } from '@/config/logger';
@@ -221,11 +221,10 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
         // Add slight randomness and limit to MAX_RESULTS
         const shuffled = addRandomness(interleaved).slice(0, MAX_RESULTS);
 
-        // Include token balance info
-        const balance = await getBalance(client.userId);
+        const quota = await getSearchQuota(client.userId);
 
         logger.debug(`[Search] ${shuffled.length}/${totalCount} results for user: ${client.userId}`);
-        return { command: 'search', payload: { results: shuffled, tokensRemaining: balance.tokens, totalCount } };
+        return { command: 'search', payload: { results: shuffled, remaining: quota.remaining, totalCount } };
     } catch (error) {
         logger.error('[Search] Search error', error);
         return { command: 'search', payload: { error: 'Internal error' } };
