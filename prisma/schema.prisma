@@ -47,6 +47,7 @@ model User {
     receivedReports        Report[]                  @relation("Reported")
     ipLogs                 IpLog[]
     subscription           Subscription?
+    premiumOverride        PremiumOverride?
     activeBoost            ActiveBoost?
     searchQuota            SearchQuota?
     swipeQuota             SwipeQuota?
@@ -494,6 +495,23 @@ model Subscription {
     user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
     @@map("subscriptions")
+}
+
+model PremiumOverride {
+    id               String   @id @default(cuid())
+    userId           String   @unique
+    forcedPremium    Boolean
+    reason           String   @db.VarChar(500)
+    expiresAt        DateTime
+    updatedByAdminId String?
+    createdAt        DateTime @default(now())
+    updatedAt        DateTime @updatedAt
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@index([expiresAt])
+    @@index([forcedPremium, expiresAt])
+    @@map("premium_overrides")
 }
 
 model ActiveBoost {

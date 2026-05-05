@@ -8,9 +8,19 @@ import { logger } from '@/config/logger';
  */
 export async function isPremium(userId: string): Promise<boolean> {
     const db = getDatabase();
+    const now = new Date();
+
+    const override = await db.premiumOverride.findUnique({
+        where: { userId },
+        select: { forcedPremium: true, expiresAt: true }
+    });
+    if (override && override.expiresAt > now) {
+        return override.forcedPremium;
+    }
+
     const sub = await db.subscription.findUnique({ where: { userId } });
     if (!sub) return false;
-    return sub.status === 'active' && sub.expiresAt > new Date();
+    return sub.status === 'active' && sub.expiresAt > now;
 }
 
 /**
