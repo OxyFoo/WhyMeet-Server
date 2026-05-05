@@ -495,20 +495,17 @@ export async function runTagPromotionPass(): Promise<{
  * Respects TAG_PROMOTION_ENABLED and TAG_PROMOTION_WINDOW_HOUR_UTC env vars.
  * Schedules itself recursively to maintain once-daily cadence.
  */
-export function startTagPromotionScheduler(): void {
+/** Returns the UTC timestamp of the next scheduled run, or null if disabled. */
+export function startTagPromotionScheduler(): Date | null {
     if (!env.TAG_PROMOTION_ENABLED) {
-        logger.info('[TagPromotion] Scheduler disabled via TAG_PROMOTION_ENABLED=false');
-        return;
+        return null;
     }
     if (intervalId) {
         logger.warn('[TagPromotion] Scheduler already running');
-        return;
+        return null;
     }
-    logger.info(
-        `[TagPromotion] Scheduler starting (window: ${env.TAG_PROMOTION_WINDOW_HOUR_UTC}:00 UTC, ` +
-            `threshold: ${PROMOTE_THRESHOLD} users)`
-    );
     scheduleNextRun();
+    return new Date(Date.now() + getMillisecondsToNextWindow());
 }
 
 export function stopTagPromotionScheduler(): void {

@@ -49,15 +49,24 @@ async function main(): Promise<void> {
 
     // Start WebSocket server
     await startServer(env.LISTEN_PORT_WS);
-    printService('WebSocket', 'ok', `Listening on :${env.LISTEN_PORT_WS}`);
+    printService('WebSocket', 'ok', `Listening on: ${env.LISTEN_PORT_WS}`);
 
     // Start activity notification scheduler
     startActivityNotifScheduler();
-    printService('Scheduler', 'ok', 'Started (900s interval)');
+    printService('ActivityNotif', 'ok', 'Started (900s interval)');
 
     // Start tag promotion scheduler (canonicalises raw user labels in batch)
-    startTagPromotionScheduler();
-    printService('TagPromotion', 'ok', 'Started (24h interval)');
+    const tagPromotionNext = startTagPromotionScheduler();
+    if (tagPromotionNext) {
+        const nextAt = tagPromotionNext.toLocaleTimeString('fr-FR', {
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'UTC'
+        });
+        printService('TagPromotion', 'ok', `Started (24h interval, next at ${nextAt} UTC)`);
+    } else {
+        printService('TagPromotion', 'warn', 'Disabled (TAG_PROMOTION_ENABLED=false)');
+    }
 
     // Final ready message
     const commands = getRegisteredCommands();
