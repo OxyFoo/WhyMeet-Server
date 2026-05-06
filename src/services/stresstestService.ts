@@ -377,13 +377,75 @@ function randomBirthDate(): Date {
 
 export interface SpawnedBot {
     userId: string;
+    username: string;
+    email: string;
     deviceUUID: string;
     sessionToken: string;
     wsToken: string;
+    reused: boolean;
 }
 
 export interface SpawnBotOptions {
     completeProfile: boolean;
+}
+
+export interface PrepareBotsOptions extends SpawnBotOptions {
+    count: number;
+}
+
+export interface PreparedBotsResult {
+    bots: SpawnedBot[];
+    reused: number;
+    created: number;
+}
+
+async function issueBotCredentials(user: { id: string; name: string; email: string }): Promise<SpawnedBot> {
+    const db = getDatabase();
+    const sessionToken = tokenManager.session.generate();
+    const sessionTokenHash = tokenManager.hashToken(sessionToken);
+    const now = new Date();
+
+    const existingDevice = await db.device.findFirst({
+        where: { userId: user.id, name: 'stresstest-bot', os: 'stresstest' },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, uuid: true }
+    });
+
+    const device = existingDevice
+        ? await db.device.update({
+              where: { id: existingDevice.id },
+              data: {
+                  sessionTokenHash,
+                  status: 'active',
+                  mailTokenHash: null,
+                  lastSeenAt: now,
+                  integrityVerifiedAt: now
+              },
+              select: { id: true, uuid: true }
+          })
+        : await db.device.create({
+              data: {
+                  uuid: crypto.randomUUID(),
+                  sessionTokenHash,
+                  status: 'active',
+                  name: 'stresstest-bot',
+                  os: 'stresstest',
+                  userId: user.id,
+                  integrityVerifiedAt: now
+              },
+              select: { id: true, uuid: true }
+          });
+
+    const wsToken = tokenManager.ws.generate(user.id, device.id);
+    return {
+        userId: user.id,
+        username: user.name,
+        email: user.email,
+        deviceUUID: device.uuid,
+        sessionToken,
+        wsToken,
+        reused: true
+    };
 }
 
 /**
@@ -514,7 +576,45 @@ export async function spawnBot(opts: SpawnBotOptions): Promise<SpawnedBot> {
 
     const wsToken = tokenManager.ws.generate(user.id, device.id);
 
-    return { userId: user.id, deviceUUID, sessionToken, wsToken };
+    return {
+        userId: user.id,
+        username: user.name,
+        email: user.email,
+        deviceUUID,
+        sessionToken,
+        wsToken,
+        reused: false
+    };
+}
+
+/**
+ * Return a ready-to-connect fleet of N bots, reusing existing synthetic
+ * accounts first and creating only the missing identities.
+ */
+export async function prepareBots(opts: PrepareBotsOptions): Promise<PreparedBotsResult> {
+    const db = getDatabase();
+    const count = Math.max(1, Math.floor(opts.count));
+
+    const reusableBots = await db.user.findMany({
+        where: { bot: true, deleted: false, banned: false, suspended: false },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        take: count,
+        select: { id: true, name: true, email: true }
+    });
+
+    const reusedBots = await Promise.all(reusableBots.map((bot) => issueBotCredentials(bot)));
+    const missing = Math.max(0, count - reusedBots.length);
+    const createdBots: SpawnedBot[] = [];
+
+    for (let i = 0; i < missing; i++) {
+        createdBots.push(await spawnBot(opts));
+    }
+
+    return {
+        bots: [...reusedBots, ...createdBots],
+        reused: reusedBots.length,
+        created: createdBots.length
+    };
 }
 
 export interface CleanupResult {
