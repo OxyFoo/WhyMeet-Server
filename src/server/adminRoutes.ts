@@ -19,7 +19,7 @@ import { invalidateAllPipelineSetup } from '@/services/pipelineSetupCache';
 import { getConnectedClients } from '@/server/Server';
 import { getDatabase } from '@/services/database';
 import { broadcastPush } from '@/services/pushService';
-import { spawnBot, prepareBots, cleanupBots, countBots } from '@/services/stresstestService';
+import { spawnBot, prepareBots, cleanupBots, countBots, releaseBots } from '@/services/stresstestService';
 import { runTagPromotionPass } from '@/services/tagPromotion';
 
 const FEATURE_FLAG_KEYS = ['mapbox', 'stresstest.bot_user_mixing'] as const;
@@ -525,6 +525,9 @@ export function createAdminRouter(): Router {
         completeProfile: z.boolean().default(true),
         excludeUserIds: z.array(z.string().min(1)).max(500).default([])
     });
+    const releaseBotsSchema = z.object({
+        userIds: z.array(z.string().min(1)).max(500)
+    });
     router.post('/stresstest/spawn-bot', async (req, res) => {
         const parsed = spawnBotSchema.safeParse(getJson(req));
         if (!parsed.success) {
@@ -563,6 +566,15 @@ export function createAdminRouter(): Router {
             logger.error('[AdminAPI] cleanup-bots failed', err);
             res.status(500).json({ error: 'cleanup_failed' });
         }
+    });
+
+    router.post('/stresstest/release-bots', (req, res) => {
+        const parsed = releaseBotsSchema.safeParse(getJson(req));
+        if (!parsed.success) {
+            res.status(400).json({ error: 'invalid_payload' });
+            return;
+        }
+        res.json(releaseBots(parsed.data.userIds));
     });
 
     router.get('/stresstest/status', async (_req, res) => {

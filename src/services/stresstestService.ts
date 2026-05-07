@@ -21,6 +21,65 @@ import { getUsageLimitConfig } from '@/services/usageLimitsService';
 import { prepareUserTagCreateInputs, type IncomingUserTag, type UserTagType } from '@/services/userTagSync';
 import { ensureTagEmbedding } from '@/services/embedding';
 
+const BOT_PREP_RESERVATION_TTL_MS = 120_000;
+const reservedStressBotUserIds = new Map<string, number>();
+let stressBotSelectionQueue = Promise.resolve();
+
+async function withStressBotSelectionLock<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = stressBotSelectionQueue;
+    let release!: () => void;
+    stressBotSelectionQueue = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    await previous;
+    try {
+        return await operation();
+    } finally {
+        release();
+    }
+}
+
+function pruneStressBotReservations(now = Date.now()): void {
+    for (const [userId, expiresAt] of reservedStressBotUserIds.entries()) {
+        if (expiresAt <= now) reservedStressBotUserIds.delete(userId);
+    }
+}
+
+function reserveStressBots(userIds: readonly string[], now = Date.now()): void {
+    pruneStressBotReservations(now);
+    const expiresAt = now + BOT_PREP_RESERVATION_TTL_MS;
+    for (const userId of userIds) reservedStressBotUserIds.set(userId, expiresAt);
+}
+
+function getReservedStressBotUserIds(now = Date.now()): string[] {
+    pruneStressBotReservations(now);
+    return [...reservedStressBotUserIds.keys()];
+}
+
+export interface ReleaseBotsResult {
+    releasedReservations: number;
+    closedConnections: number;
+}
+
+export function releaseBots(userIds: readonly string[]): ReleaseBotsResult {
+    const ids = new Set(userIds.filter(Boolean));
+    if (ids.size === 0) return { releasedReservations: 0, closedConnections: 0 };
+
+    let releasedReservations = 0;
+    for (const userId of ids) {
+        if (reservedStressBotUserIds.delete(userId)) releasedReservations++;
+    }
+
+    let closedConnections = 0;
+    for (const client of getConnectedClients().values()) {
+        if (!ids.has(client.userId)) continue;
+        client.close(1001, 'Stresstest worker closed');
+        closedConnections++;
+    }
+
+    return { releasedReservations, closedConnections };
+}
+
 // ─── Fake data pools (kept inline — no external faker dependency) ────
 
 const FIRST_NAMES = [
@@ -609,19 +668,27 @@ export async function spawnBot(opts: SpawnBotOptions): Promise<SpawnedBot> {
 export async function prepareBots(opts: PrepareBotsOptions): Promise<PreparedBotsResult> {
     const db = getDatabase();
     const count = Math.max(1, Math.floor(opts.count));
-    const excludeUserIds = [...new Set(opts.excludeUserIds ?? [])].filter(Boolean);
+    const reusableBots = await withStressBotSelectionLock(async () => {
+        const connectedUserIds = [...getConnectedClients().values()].map((client) => client.userId);
+        const reservedUserIds = getReservedStressBotUserIds();
+        const excludeUserIds = [
+            ...new Set([...(opts.excludeUserIds ?? []), ...connectedUserIds, ...reservedUserIds])
+        ].filter(Boolean);
 
-    const reusableBots = await db.user.findMany({
-        where: {
-            bot: true,
-            deleted: false,
-            banned: false,
-            suspended: false,
-            ...(excludeUserIds.length > 0 ? { id: { notIn: excludeUserIds } } : {})
-        },
-        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-        take: count,
-        select: { id: true, name: true, email: true }
+        const bots = await db.user.findMany({
+            where: {
+                bot: true,
+                deleted: false,
+                banned: false,
+                suspended: false,
+                ...(excludeUserIds.length > 0 ? { id: { notIn: excludeUserIds } } : {})
+            },
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+            take: count,
+            select: { id: true, name: true, email: true }
+        });
+        reserveStressBots(bots.map((bot) => bot.id));
+        return bots;
     });
 
     if (opts.completeProfile) {
@@ -643,8 +710,12 @@ export async function prepareBots(opts: PrepareBotsOptions): Promise<PreparedBot
     const createdBots: SpawnedBot[] = [];
 
     for (let i = 0; i < missing; i++) {
-        createdBots.push(await spawnBot(opts));
+        const createdBot = await spawnBot(opts);
+        reserveStressBots([createdBot.userId]);
+        createdBots.push(createdBot);
     }
+
+    reserveStressBots([...reusedBots, ...createdBots].map((bot) => bot.userId));
 
     return {
         bots: [...reusedBots, ...createdBots],
@@ -665,6 +736,7 @@ export interface CleanupResult {
  */
 export async function cleanupBots(): Promise<CleanupResult> {
     const db = getDatabase();
+    reservedStressBotUserIds.clear();
 
     const bots = await db.user.findMany({ where: { bot: true }, select: { id: true } });
     const botIds = bots.map((b) => b.id);
