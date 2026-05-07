@@ -1,8 +1,7 @@
 import { getDatabase } from '@/services/database';
 import type { SearchQuotaInfo } from '@oxyfoo/whymeet-types';
-import { isPremium } from '@/services/subscriptionService';
 import { logger } from '@/config/logger';
-import { getUsageLimitConfig } from '@/services/usageLimitsService';
+import { getSearchQuotaLimits } from '@/services/usageLimitsService';
 
 /**
  * Next midnight UTC — used as the reset instant for the daily quota window.
@@ -24,8 +23,7 @@ function nextMidnight(): Date {
  */
 export async function getSearchQuota(userId: string): Promise<SearchQuotaInfo> {
     const db = getDatabase();
-    const [premium, config] = await Promise.all([isPremium(userId), getUsageLimitConfig()]);
-    const dailyLimit = premium ? config.searchDailyPremium : config.searchDailyFree;
+    const { dailyLimit, initialRemaining } = await getSearchQuotaLimits(userId);
 
     if (dailyLimit === -1) {
         return { remaining: -1, dailyLimit: -1 };
@@ -34,7 +32,6 @@ export async function getSearchQuota(userId: string): Promise<SearchQuotaInfo> {
     let record = await db.searchQuota.findUnique({ where: { userId } });
 
     if (!record) {
-        const initialRemaining = premium ? config.searchDailyPremium : config.initialSearchTokens;
         record = await db.searchQuota.create({
             data: { userId, remaining: initialRemaining, resetAt: nextMidnight() }
         });
@@ -47,7 +44,7 @@ export async function getSearchQuota(userId: string): Promise<SearchQuotaInfo> {
             where: { userId },
             data: { remaining: newRemaining, resetAt: nextMidnight() }
         });
-        logger.debug(`[Search] Refilled user=${userId} remaining=${newRemaining} (premium=${premium})`);
+        logger.debug(`[Search] Refilled user=${userId} remaining=${newRemaining} dailyLimit=${dailyLimit}`);
     }
 
     return { remaining: record.remaining, dailyLimit };

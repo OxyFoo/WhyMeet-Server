@@ -1,7 +1,6 @@
 import { getDatabase } from '@/services/database';
 import type { ActivityQuotaInfo } from '@oxyfoo/whymeet-types';
-import { isPremium } from '@/services/subscriptionService';
-import { getUsageLimitConfig } from '@/services/usageLimitsService';
+import { getActivityOpenDailyLimit } from '@/services/usageLimitsService';
 
 function nextMidnight(): Date {
     const d = new Date();
@@ -11,8 +10,7 @@ function nextMidnight(): Date {
 }
 
 async function getDailyLimit(userId: string): Promise<number> {
-    const [premium, config] = await Promise.all([isPremium(userId), getUsageLimitConfig()]);
-    return premium ? config.activityOpenDailyPremium : config.activityOpenDailyFree;
+    return getActivityOpenDailyLimit(userId);
 }
 
 export async function getActivityQuota(userId: string): Promise<ActivityQuotaInfo> {

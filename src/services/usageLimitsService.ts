@@ -1,7 +1,8 @@
 import { getDatabase } from '@/services/database';
 import { logger } from '@/config/logger';
+import { isPremium } from '@/services/subscriptionService';
 
-type UsageLimitConfig = {
+export type UsageLimitConfig = {
     searchDailyFree: number;
     searchDailyPremium: number;
     swipeDailyFree: number;
@@ -24,13 +25,21 @@ const APP_CONFIG_KEYS = {
 } as const;
 
 const CACHE_TTL_MS = 10_000;
+const QUOTA_EXEMPTION_CACHE_TTL_MS = 10_000;
 
 type CachedConfig = {
     expiresAt: number;
     values: UsageLimitConfig;
 };
 
+type CachedQuotaExemption = {
+    expiresAt: number;
+    value: boolean;
+};
+
 let cache: CachedConfig | null = null;
+const quotaExemptionCache = new Map<string, CachedQuotaExemption>();
+const quotaExemptionLookups = new Map<string, Promise<boolean>>();
 
 const DEFAULT_USAGE_LIMITS: UsageLimitConfig = {
     searchDailyFree: 3,
@@ -45,6 +54,47 @@ const DEFAULT_USAGE_LIMITS: UsageLimitConfig = {
 
 function defaults(): UsageLimitConfig {
     return DEFAULT_USAGE_LIMITS;
+}
+
+function unlimitedQuotas(config: UsageLimitConfig): UsageLimitConfig {
+    return {
+        ...config,
+        searchDailyFree: -1,
+        searchDailyPremium: -1,
+        swipeDailyFree: -1,
+        swipeDailyPremium: -1,
+        activityOpenDailyFree: -1,
+        activityOpenDailyPremium: -1,
+        initialSearchTokens: -1
+    };
+}
+
+async function hasQuotaExemption(userId: string): Promise<boolean> {
+    const now = Date.now();
+    const cached = quotaExemptionCache.get(userId);
+    if (cached && cached.expiresAt > now) return cached.value;
+
+    const pending = quotaExemptionLookups.get(userId);
+    if (pending) return pending;
+
+    const lookup = getDatabase()
+        .user.findUnique({ where: { id: userId }, select: { bot: true } })
+        .then((user) => {
+            const value = user?.bot === true;
+            quotaExemptionCache.set(userId, { value, expiresAt: Date.now() + QUOTA_EXEMPTION_CACHE_TTL_MS });
+            return value;
+        })
+        .finally(() => {
+            quotaExemptionLookups.delete(userId);
+        });
+    quotaExemptionLookups.set(userId, lookup);
+    return lookup;
+}
+
+async function getEffectiveLimitContext(userId: string): Promise<{ config: UsageLimitConfig; premium: boolean }> {
+    const [config, exempt] = await Promise.all([getUsageLimitConfig(), hasQuotaExemption(userId)]);
+    if (exempt) return { config: unlimitedQuotas(config), premium: false };
+    return { config, premium: await isPremium(userId) };
 }
 
 function normalizeNonNegative(value: number, fallback: number): number {
@@ -116,4 +166,24 @@ export async function getUsageLimitConfig(): Promise<UsageLimitConfig> {
 
 export function clearUsageLimitConfigCache(): void {
     cache = null;
+    quotaExemptionCache.clear();
+    quotaExemptionLookups.clear();
+}
+
+export async function getSearchQuotaLimits(userId: string): Promise<{ dailyLimit: number; initialRemaining: number }> {
+    const { config, premium } = await getEffectiveLimitContext(userId);
+    return {
+        dailyLimit: premium ? config.searchDailyPremium : config.searchDailyFree,
+        initialRemaining: premium ? config.searchDailyPremium : config.initialSearchTokens
+    };
+}
+
+export async function getSwipeDailyLimit(userId: string): Promise<number> {
+    const { config, premium } = await getEffectiveLimitContext(userId);
+    return premium ? config.swipeDailyPremium : config.swipeDailyFree;
+}
+
+export async function getActivityOpenDailyLimit(userId: string): Promise<number> {
+    const { config, premium } = await getEffectiveLimitContext(userId);
+    return premium ? config.activityOpenDailyPremium : config.activityOpenDailyFree;
 }

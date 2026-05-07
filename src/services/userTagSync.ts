@@ -27,6 +27,12 @@ export type PreparedUserTagCreate = {
 type Database = ReturnType<typeof getDatabase>;
 type TagResolutionDb = Pick<Database, 'tag' | 'tagAlias'>;
 type UserTagSyncDb = Pick<Database, 'tag' | 'tagAlias' | 'userTag'>;
+type UserTagReplaceDb = Pick<Database, 'userTag'>;
+type CanonicalTag = { id: string; label: string };
+type TagResolutionContext = {
+    canonicalTags: CanonicalTag[] | null;
+    resolvedByLabel: Map<string, string | null>;
+};
 
 async function persistAlias(db: TagResolutionDb, tagId: string, alias: string, context: string): Promise<void> {
     const existing = await db.tagAlias.findFirst({
@@ -56,33 +62,67 @@ async function persistAlias(db: TagResolutionDb, tagId: string, alias: string, c
  *      "tir u l'arc" → "Tir à l'arc"). Successful matches are cached as a new
  *      `TagAlias` row so future occurrences hit step 3 with no embedding cost.
  */
-export async function resolveCanonicalTagId(db: TagResolutionDb, label: string): Promise<string | null> {
+async function getCanonicalTags(db: TagResolutionDb, context?: TagResolutionContext): Promise<CanonicalTag[]> {
+    if (!context) return db.tag.findMany({ select: { id: true, label: true } });
+    context.canonicalTags ??= await db.tag.findMany({ select: { id: true, label: true } });
+    return context.canonicalTags;
+}
+
+async function resolveCanonicalTagIdWithContext(
+    db: TagResolutionDb,
+    label: string,
+    options: { context?: TagResolutionContext; skipEmbedding?: boolean } = {}
+): Promise<string | null> {
+    const cacheKey = `${options.skipEmbedding === true ? 'no-embedding' : 'embedding'}:${label.toLowerCase()}`;
+    if (options.context?.resolvedByLabel.has(cacheKey)) return options.context.resolvedByLabel.get(cacheKey) ?? null;
+
     const exact = await db.tag.findUnique({ where: { label }, select: { id: true } });
-    if (exact) return exact.id;
+    if (exact) {
+        options.context?.resolvedByLabel.set(cacheKey, exact.id);
+        return exact.id;
+    }
 
     const exactInsensitive = await db.tag.findFirst({
         where: { label: { equals: label, mode: 'insensitive' } },
         select: { id: true }
     });
-    if (exactInsensitive) return exactInsensitive.id;
+    if (exactInsensitive) {
+        options.context?.resolvedByLabel.set(cacheKey, exactInsensitive.id);
+        return exactInsensitive.id;
+    }
 
     const alias = await db.tagAlias.findFirst({
         where: { alias: { equals: label, mode: 'insensitive' } },
         select: { tagId: true }
     });
-    if (alias) return alias.tagId;
+    if (alias) {
+        options.context?.resolvedByLabel.set(cacheKey, alias.tagId);
+        return alias.tagId;
+    }
 
     const labelNorm = normalizeTagLabel(label);
-    const canonicalTags = await db.tag.findMany({ select: { id: true, label: true } });
+    const canonicalTags = await getCanonicalTags(db, options.context);
     const normalizedMatch = canonicalTags.find((tag) => normalizeTagLabel(tag.label) === labelNorm);
     if (normalizedMatch) {
         if (label.toLowerCase() !== normalizedMatch.label.toLowerCase()) {
             await persistAlias(db, normalizedMatch.id, label, 'normalized-match');
         }
+        options.context?.resolvedByLabel.set(cacheKey, normalizedMatch.id);
         return normalizedMatch.id;
     }
 
-    return resolveByEmbedding(db, label);
+    if (options.skipEmbedding) {
+        options.context?.resolvedByLabel.set(cacheKey, null);
+        return null;
+    }
+
+    const resolved = await resolveByEmbedding(db, label);
+    options.context?.resolvedByLabel.set(cacheKey, resolved);
+    return resolved;
+}
+
+export async function resolveCanonicalTagId(db: TagResolutionDb, label: string): Promise<string | null> {
+    return resolveCanonicalTagIdWithContext(db, label);
 }
 
 async function resolveByEmbedding(db: TagResolutionDb, label: string): Promise<string | null> {
@@ -107,6 +147,7 @@ export async function prepareUserTagCreateInputs(
 ): Promise<PreparedUserTagCreate[]> {
     const seen = new Set<string>();
     const rows: PreparedUserTagCreate[] = [];
+    const resolutionContext: TagResolutionContext = { canonicalTags: null, resolvedByLabel: new Map() };
 
     for (const raw of incoming) {
         const label = sanitizeTagLabel(raw.label);
@@ -117,7 +158,10 @@ export async function prepareUserTagCreateInputs(
         if (!labelNorm || seen.has(labelNorm)) continue;
         seen.add(labelNorm);
 
-        const tagId = await resolveCanonicalTagId(db, label);
+        const tagId = await resolveCanonicalTagIdWithContext(db, label, {
+            context: resolutionContext,
+            skipEmbedding: raw.source === 'popular'
+        });
         const source = raw.source !== undefined ? raw.source : (previousSourceByLabelNorm.get(labelNorm) ?? null);
 
         rows.push({ label, labelLower, labelNorm, type, tagId, source });
@@ -126,12 +170,12 @@ export async function prepareUserTagCreateInputs(
     return rows;
 }
 
-export async function syncUserTags(
+export async function prepareUserTagSync(
     db: UserTagSyncDb,
     userId: string,
     incoming: IncomingUserTag[],
     type: UserTagType
-): Promise<void> {
+): Promise<PreparedUserTagCreate[]> {
     const previous = await db.userTag.findMany({
         where: { userId, type },
         select: { labelNorm: true, source: true }
@@ -139,10 +183,27 @@ export async function syncUserTags(
     const previousSourceByLabelNorm = new Map<string, string | null>();
     for (const row of previous) previousSourceByLabelNorm.set(row.labelNorm, row.source);
 
-    await db.userTag.deleteMany({ where: { userId, type } });
+    return prepareUserTagCreateInputs(db, incoming, type, previousSourceByLabelNorm);
+}
 
-    const rows = await prepareUserTagCreateInputs(db, incoming, type, previousSourceByLabelNorm);
-    for (const row of rows) {
-        await db.userTag.create({ data: { userId, ...row } });
-    }
+export async function replaceUserTags(
+    db: UserTagReplaceDb,
+    userId: string,
+    rows: PreparedUserTagCreate[],
+    type: UserTagType
+): Promise<void> {
+    await db.userTag.deleteMany({ where: { userId, type } });
+    if (rows.length === 0) return;
+
+    await db.userTag.createMany({ data: rows.map((row) => ({ userId, ...row })) });
+}
+
+export async function syncUserTags(
+    db: UserTagSyncDb,
+    userId: string,
+    incoming: IncomingUserTag[],
+    type: UserTagType
+): Promise<void> {
+    const rows = await prepareUserTagSync(db, userId, incoming, type);
+    await replaceUserTags(db, userId, rows, type);
 }

@@ -151,4 +151,18 @@ describe('userTagSync', () => {
         expect(rows[0].tagId).toBeNull();
         expect(db.tagAlias.create).not.toHaveBeenCalled();
     });
+
+    it('does not call the embedding API for unresolved popular chips', async () => {
+        const db = makeDb();
+
+        const rows = await prepareUserTagCreateInputs(
+            db as never,
+            [{ label: 'fresh popular chip', source: 'popular' }],
+            'interest'
+        );
+
+        expect(rows[0].tagId).toBeNull();
+        expect(mockedGenerateEmbedding).not.toHaveBeenCalled();
+        expect(mockedFindSimilarTags).not.toHaveBeenCalled();
+    });
 });

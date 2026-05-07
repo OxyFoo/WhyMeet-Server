@@ -522,7 +522,8 @@ export function createAdminRouter(): Router {
     });
     const prepareBotsSchema = z.object({
         count: z.number().int().min(1).max(500),
-        completeProfile: z.boolean().default(true)
+        completeProfile: z.boolean().default(true),
+        excludeUserIds: z.array(z.string().min(1)).max(500).default([])
     });
     router.post('/stresstest/spawn-bot', async (req, res) => {
         const parsed = spawnBotSchema.safeParse(getJson(req));

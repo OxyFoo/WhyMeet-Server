@@ -1,7 +1,6 @@
 import { getDatabase } from '@/services/database';
 import type { SwipeQuotaInfo } from '@oxyfoo/whymeet-types';
-import { isPremium } from '@/services/subscriptionService';
-import { getUsageLimitConfig } from '@/services/usageLimitsService';
+import { getSwipeDailyLimit } from '@/services/usageLimitsService';
 
 /**
  * Get the next midnight UTC for quota reset.
@@ -18,8 +17,7 @@ function nextMidnight(): Date {
  */
 export async function getSwipeQuota(userId: string): Promise<SwipeQuotaInfo> {
     const db = getDatabase();
-    const [premium, config] = await Promise.all([isPremium(userId), getUsageLimitConfig()]);
-    const dailyLimit = premium ? config.swipeDailyPremium : config.swipeDailyFree;
+    const dailyLimit = await getSwipeDailyLimit(userId);
 
     if (dailyLimit === -1) {
         return { remaining: -1, dailyLimit: -1 };

@@ -19,6 +19,7 @@ import { tokenManager } from '@/services/tokenManager';
 import { getDatabase } from '@/services/database';
 import { isMaintenanceMode } from '@/services/maintenanceService';
 import { renderTemplate } from '@/services/templateService';
+import type { WSServerResponse } from '@oxyfoo/whymeet-types';
 
 const clients = new Map<string, Client>();
 
@@ -46,6 +47,8 @@ const healthLimiter = rateLimit({
 const WS_RATE_WINDOW_MS = 60_000;
 const WS_RATE_LIMIT = 60;
 const WS_RATE_DISCONNECT_THRESHOLD = 180;
+const WS_INVALID_MESSAGE_DISCONNECT_THRESHOLD = 5;
+const WS_MAX_PAYLOAD_BYTES = 256 * 1024; // 256 KB
 
 function createHttpServer(): http.Server | https.Server {
     const app = express();
@@ -143,6 +146,8 @@ function onConnection(ws: WebSocket, req: http.IncomingMessage): void {
 
     logger.info(`[Server] Client connected: ${id} (${ip}) — Total: ${clients.size}`);
 
+    let invalidMessageCount = 0;
+
     ws.on('message', async (raw: Buffer) => {
         // ── WS rate limiting ──
         const now = Date.now();
@@ -150,6 +155,7 @@ function onConnection(ws: WebSocket, req: http.IncomingMessage): void {
             client.messageCount = 0;
             client.messageWindowStart = now;
             client.rateLimitWarnings = 0;
+            invalidMessageCount = 0;
         }
         client.messageCount++;
 
@@ -161,17 +167,28 @@ function onConnection(ws: WebSocket, req: http.IncomingMessage): void {
             return;
         }
 
-        if (client.messageCount > WS_RATE_LIMIT) {
-            client.rateLimitWarnings++;
-            if (client.rateLimitWarnings <= 1) {
-                client.send({ event: 'rate-limited', payload: { message: 'Too many requests, slow down' } });
+        const envelope = client.parseMessage(raw.toString());
+        if (!envelope) {
+            invalidMessageCount++;
+            if (invalidMessageCount >= WS_INVALID_MESSAGE_DISCONNECT_THRESHOLD) {
+                logger.warn(`[Server] Client ${id} sent ${invalidMessageCount} invalid WS messages, disconnecting`);
+                client.close(1008, 'Invalid message');
+            } else {
+                logger.warn(`[Server] Invalid message from ${id}`);
             }
             return;
         }
+        invalidMessageCount = 0;
 
-        const envelope = client.parseMessage(raw.toString());
-        if (!envelope) {
-            logger.warn(`[Server] Invalid message from ${id}`);
+        if (client.messageCount > WS_RATE_LIMIT) {
+            client.rateLimitWarnings++;
+            client.send(
+                {
+                    command: envelope.data.command,
+                    payload: { error: 'rate_limited', message: 'Too many requests, slow down' }
+                } as WSServerResponse,
+                envelope.id
+            );
             return;
         }
 
@@ -197,6 +214,7 @@ export function startServer(port: number): Promise<void> {
         httpServer = createHttpServer();
         wss = new WebSocketServer({
             server: httpServer,
+            maxPayload: WS_MAX_PAYLOAD_BYTES,
             verifyClient: async (info, callback) => {
                 try {
                     // Reject all WS connections during maintenance

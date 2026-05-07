@@ -12,7 +12,7 @@ import { invalidatePipelineSetup } from '@/services/pipelineSetupCache';
 import { invalidateDiscoveryCounts } from '@/services/discoveryCountsCache';
 import { logAudit } from '@/services/auditLogService';
 import { isProfileComplete } from '@/services/profileCompletion';
-import { syncUserTags } from '@/services/userTagSync';
+import { prepareUserTagSync, replaceUserTags } from '@/services/userTagSync';
 
 class ProfileWouldBecomeIncompleteError extends Error {
     constructor() {
@@ -66,6 +66,25 @@ registerCommand<WSRequest_UpdateProfile>(
                 include: profileInclude
             });
             const wasComplete = beforeUser ? isProfileComplete(beforeUser) : false;
+
+            const preparedInterestRows =
+                data.interests !== undefined
+                    ? await prepareUserTagSync(
+                          db,
+                          client.userId,
+                          data.interests.map((tag) => ({ label: tag.label, source: tag.source })),
+                          'interest'
+                      )
+                    : null;
+            const preparedSkillRows =
+                data.skills !== undefined
+                    ? await prepareUserTagSync(
+                          db,
+                          client.userId,
+                          data.skills.map((tag) => ({ label: tag.label, source: tag.source })),
+                          'skill'
+                      )
+                    : null;
 
             await db.$transaction(async (tx) => {
                 // Update user base fields
@@ -129,21 +148,21 @@ registerCommand<WSRequest_UpdateProfile>(
                 }
 
                 // Sync interests
-                if (data.interests !== undefined) {
-                    await syncUserTags(
+                if (preparedInterestRows) {
+                    await replaceUserTags(
                         tx as ReturnType<typeof getDatabase>,
                         client.userId,
-                        data.interests.map((t) => ({ label: t.label, source: t.source })),
+                        preparedInterestRows,
                         'interest'
                     );
                 }
 
                 // Sync skills
-                if (data.skills !== undefined) {
-                    await syncUserTags(
+                if (preparedSkillRows) {
+                    await replaceUserTags(
                         tx as ReturnType<typeof getDatabase>,
                         client.userId,
-                        data.skills.map((t) => ({ label: t.label, source: t.source })),
+                        preparedSkillRows,
                         'skill'
                     );
                 }

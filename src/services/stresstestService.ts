@@ -383,6 +383,7 @@ export interface SpawnedBot {
     sessionToken: string;
     wsToken: string;
     reused: boolean;
+    needsProfilePhotoUpload: boolean;
 }
 
 export interface SpawnBotOptions {
@@ -391,6 +392,7 @@ export interface SpawnBotOptions {
 
 export interface PrepareBotsOptions extends SpawnBotOptions {
     count: number;
+    excludeUserIds?: string[];
 }
 
 export interface PreparedBotsResult {
@@ -399,7 +401,18 @@ export interface PreparedBotsResult {
     created: number;
 }
 
-async function issueBotCredentials(user: { id: string; name: string; email: string }): Promise<SpawnedBot> {
+async function getReusableBotPhotoState(userId: string): Promise<{ needsProfilePhotoUpload: boolean }> {
+    const db = getDatabase();
+    const profile = await db.profile.findUnique({ where: { userId }, select: { id: true } });
+    if (!profile) await db.profile.create({ data: { userId, spokenLanguages: ['fr'] } });
+    const photoCount = await db.profilePhoto.count({ where: { userId } });
+    return { needsProfilePhotoUpload: photoCount === 0 };
+}
+
+async function issueBotCredentials(
+    user: { id: string; name: string; email: string },
+    profileState: { needsProfilePhotoUpload?: boolean } = {}
+): Promise<SpawnedBot> {
     const db = getDatabase();
     const sessionToken = tokenManager.session.generate();
     const sessionTokenHash = tokenManager.hashToken(sessionToken);
@@ -444,7 +457,8 @@ async function issueBotCredentials(user: { id: string; name: string; email: stri
         deviceUUID: device.uuid,
         sessionToken,
         wsToken,
-        reused: true
+        reused: true,
+        needsProfilePhotoUpload: Boolean(profileState.needsProfilePhotoUpload)
     };
 }
 
@@ -583,7 +597,8 @@ export async function spawnBot(opts: SpawnBotOptions): Promise<SpawnedBot> {
         deviceUUID,
         sessionToken,
         wsToken,
-        reused: false
+        reused: false,
+        needsProfilePhotoUpload: opts.completeProfile
     };
 }
 
@@ -594,15 +609,36 @@ export async function spawnBot(opts: SpawnBotOptions): Promise<SpawnedBot> {
 export async function prepareBots(opts: PrepareBotsOptions): Promise<PreparedBotsResult> {
     const db = getDatabase();
     const count = Math.max(1, Math.floor(opts.count));
+    const excludeUserIds = [...new Set(opts.excludeUserIds ?? [])].filter(Boolean);
 
     const reusableBots = await db.user.findMany({
-        where: { bot: true, deleted: false, banned: false, suspended: false },
+        where: {
+            bot: true,
+            deleted: false,
+            banned: false,
+            suspended: false,
+            ...(excludeUserIds.length > 0 ? { id: { notIn: excludeUserIds } } : {})
+        },
         orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
         take: count,
         select: { id: true, name: true, email: true }
     });
 
-    const reusedBots = await Promise.all(reusableBots.map((bot) => issueBotCredentials(bot)));
+    if (opts.completeProfile) {
+        try {
+            await ensureEmbeddingTestCanonicals();
+        } catch (error) {
+            logger.warn('[Stresstest] Embedding test canonicals seeding failed; continuing', error);
+        }
+    }
+
+    const reusedBots: SpawnedBot[] = [];
+    for (const bot of reusableBots) {
+        const profileState = opts.completeProfile
+            ? await getReusableBotPhotoState(bot.id)
+            : { needsProfilePhotoUpload: false };
+        reusedBots.push(await issueBotCredentials(bot, profileState));
+    }
     const missing = Math.max(0, count - reusedBots.length);
     const createdBots: SpawnedBot[] = [];
 
