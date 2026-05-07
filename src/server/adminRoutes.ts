@@ -19,7 +19,14 @@ import { invalidateAllPipelineSetup } from '@/services/pipelineSetupCache';
 import { getConnectedClients } from '@/server/Server';
 import { getDatabase } from '@/services/database';
 import { broadcastPush } from '@/services/pushService';
-import { spawnBot, prepareBots, cleanupBots, countBots, releaseBots } from '@/services/stresstestService';
+import {
+    spawnBot,
+    prepareBots,
+    cleanupBots,
+    countBots,
+    releaseBots,
+    refreshBotWSTokens
+} from '@/services/stresstestService';
 import { runTagPromotionPass } from '@/services/tagPromotion';
 
 const FEATURE_FLAG_KEYS = ['mapbox', 'stresstest.bot_user_mixing'] as const;
@@ -528,6 +535,9 @@ export function createAdminRouter(): Router {
     const releaseBotsSchema = z.object({
         userIds: z.array(z.string().min(1)).max(500)
     });
+    const refreshBotTokensSchema = z.object({
+        userIds: z.array(z.string().min(1)).max(500)
+    });
     router.post('/stresstest/spawn-bot', async (req, res) => {
         const parsed = spawnBotSchema.safeParse(getJson(req));
         if (!parsed.success) {
@@ -575,6 +585,21 @@ export function createAdminRouter(): Router {
             return;
         }
         res.json(releaseBots(parsed.data.userIds));
+    });
+
+    router.post('/stresstest/refresh-ws-tokens', async (req, res) => {
+        const parsed = refreshBotTokensSchema.safeParse(getJson(req));
+        if (!parsed.success) {
+            res.status(400).json({ error: 'invalid_payload' });
+            return;
+        }
+        try {
+            const tokens = await refreshBotWSTokens(parsed.data.userIds);
+            res.json({ tokens });
+        } catch (err) {
+            logger.error('[AdminAPI] refresh-stress-ws-tokens failed', err);
+            res.status(500).json({ error: 'refresh_failed' });
+        }
     });
 
     router.get('/stresstest/status', async (_req, res) => {

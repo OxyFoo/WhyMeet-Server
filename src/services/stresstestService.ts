@@ -3,8 +3,9 @@
  *
  * Bots are created via the admin HMAC API (`/admin/stresstest/*`). They are
  * full users marked `bot=true` so they are excluded from real users' discovery
- * (people + activities) and from dashboard counts. The Console completes their
- * profile photos through the same /upload/photo flow used by real clients.
+ * (people + activities) and from dashboard counts. The Console uploads their
+ * profile photos through the same /upload/photo flow used by real clients, then
+ * the bot WebSocket completes profile fields through update-profile.
  *
  * Lifecycle: created on demand by the Console UI; deleted en masse via
  * `cleanupBots()`. Cascade FKs handle most child records; a few entities
@@ -18,11 +19,15 @@ import { logger } from '@/config/logger';
 import { getConnectedClients } from '@/server/Server';
 import { deleteFile } from '@/services/storageService';
 import { getUsageLimitConfig } from '@/services/usageLimitsService';
-import { prepareUserTagCreateInputs, type IncomingUserTag, type UserTagType } from '@/services/userTagSync';
+import { type UserTagType } from '@/services/userTagSync';
 import { ensureTagEmbedding } from '@/services/embedding';
+import {
+    clearStressBotReservations,
+    getReservedStressBotUserIds,
+    releaseStressBotReservations,
+    reserveStressBots
+} from '@/services/stressBotReservations';
 
-const BOT_PREP_RESERVATION_TTL_MS = 120_000;
-const reservedStressBotUserIds = new Map<string, number>();
 let stressBotSelectionQueue = Promise.resolve();
 
 async function withStressBotSelectionLock<T>(operation: () => Promise<T>): Promise<T> {
@@ -39,23 +44,6 @@ async function withStressBotSelectionLock<T>(operation: () => Promise<T>): Promi
     }
 }
 
-function pruneStressBotReservations(now = Date.now()): void {
-    for (const [userId, expiresAt] of reservedStressBotUserIds.entries()) {
-        if (expiresAt <= now) reservedStressBotUserIds.delete(userId);
-    }
-}
-
-function reserveStressBots(userIds: readonly string[], now = Date.now()): void {
-    pruneStressBotReservations(now);
-    const expiresAt = now + BOT_PREP_RESERVATION_TTL_MS;
-    for (const userId of userIds) reservedStressBotUserIds.set(userId, expiresAt);
-}
-
-function getReservedStressBotUserIds(now = Date.now()): string[] {
-    pruneStressBotReservations(now);
-    return [...reservedStressBotUserIds.keys()];
-}
-
 export interface ReleaseBotsResult {
     releasedReservations: number;
     closedConnections: number;
@@ -65,10 +53,7 @@ export function releaseBots(userIds: readonly string[]): ReleaseBotsResult {
     const ids = new Set(userIds.filter(Boolean));
     if (ids.size === 0) return { releasedReservations: 0, closedConnections: 0 };
 
-    let releasedReservations = 0;
-    for (const userId of ids) {
-        if (reservedStressBotUserIds.delete(userId)) releasedReservations++;
-    }
+    const releasedReservations = releaseStressBotReservations([...ids]);
 
     let closedConnections = 0;
     for (const client of getConnectedClients().values()) {
@@ -116,78 +101,6 @@ const FIRST_NAMES = [
     'Tom',
     'Lina'
 ];
-
-const CITIES: Array<{ city: string; lat: number; lng: number }> = [
-    { city: 'Paris', lat: 48.8566, lng: 2.3522 },
-    { city: 'Lyon', lat: 45.764, lng: 4.8357 },
-    { city: 'Marseille', lat: 43.2965, lng: 5.3698 },
-    { city: 'Toulouse', lat: 43.6047, lng: 1.4442 },
-    { city: 'Bordeaux', lat: 44.8378, lng: -0.5792 },
-    { city: 'Nantes', lat: 47.2184, lng: -1.5536 },
-    { city: 'Lille', lat: 50.6292, lng: 3.0573 },
-    { city: 'Nice', lat: 43.7102, lng: 7.262 }
-];
-
-const GENDERS = ['male', 'female', 'non_binary', 'other', 'prefer_not_to_say'];
-
-const INTENTIONS = [
-    'dating',
-    'serious_relationship',
-    'friendship',
-    'networking',
-    'activity_partner',
-    'group_activity',
-    'casual_chat'
-];
-
-type TagConcept = {
-    label: string;
-    variants: readonly string[];
-    variantChance?: number;
-};
-
-const INTEREST_CONCEPTS: readonly TagConcept[] = [
-    { label: 'hiking', variants: ['hike', 'randonnée', 'trekking', 'trail walks'] },
-    { label: 'cooking', variants: ['cuisine', 'baking', 'food', 'home cooking'] },
-    { label: 'reading', variants: ['books', 'lecture', 'novels'] },
-    { label: 'gaming', variants: ['video games', 'board games', 'jeux vidéo', 'gaming nights'], variantChance: 0.45 },
-    { label: 'photography', variants: ['photo', 'photographie', 'street photography'], variantChance: 0.45 },
-    { label: 'music', variants: ['musique', 'concerts', 'live music'] },
-    { label: 'cinema', variants: ['cinéma', 'movies', 'films'], variantChance: 0.45 },
-    { label: 'travel', variants: ['traveling', 'voyage', 'backpacking', 'city trips'] },
-    { label: 'yoga', variants: ['meditation', 'wellness'] },
-    { label: 'running', variants: ['jogging', 'trail running', 'run club'] },
-    { label: 'cycling', variants: ['bike', 'vélo', 'road cycling'] },
-    { label: 'painting', variants: ['art', 'dessin', 'drawing'] },
-    { label: 'dancing', variants: ['dance', 'danse', 'salsa'] },
-    { label: 'climbing', variants: ['escalade', 'bouldering', 'rock climbing'] },
-    { label: 'surfing', variants: ['surf', 'bodyboard'] },
-    { label: 'skiing', variants: ['ski', 'snowboard'] },
-    { label: 'tennis', variants: ['padel', 'racket sports'] },
-    { label: 'football', variants: ['soccer', 'foot', 'five-a-side'] }
-];
-
-const SKILL_CONCEPTS: readonly TagConcept[] = [
-    { label: 'leadership', variants: ['team leading', 'management', 'mentoring'], variantChance: 0.4 },
-    { label: 'creativity', variants: ['creative thinking', 'ideation', 'design thinking'], variantChance: 0.4 },
-    { label: 'organization', variants: ['organisation', 'planning', 'project planning'], variantChance: 0.45 },
-    { label: 'communication', variants: ['public speaking', 'communication skills', 'active listening'] },
-    {
-        label: 'problem solving',
-        variants: ['problem-solving', 'problem_solving', 'debugging', 'troubleshooting'],
-        variantChance: 0.45
-    },
-    { label: 'teamwork', variants: ['team work', 'collaboration', 'team spirit'], variantChance: 0.4 },
-    { label: 'adaptability', variants: ['flexibility', 'adaptation'] },
-    {
-        label: 'time management',
-        variants: ['time-management', 'time_management', 'prioritization', 'planning ahead'],
-        variantChance: 0.45
-    }
-];
-
-const TRENDING_INTEREST_LABELS = ['gaming', 'photography', 'cinema'];
-const TRENDING_SKILL_LABELS = ['organization', 'problem solving', 'time management'];
 
 // ─── Embedding-resolution test scenario ────────────────────────────────
 //
@@ -312,124 +225,10 @@ function ensureEmbeddingTestCanonicals(): Promise<void> {
     return embeddingTestSeedPromise;
 }
 
-// Probability that a given bot picks a variant from the embedding test pool
-// instead of (or in addition to) its regular tags. With 50 bots and 0.35,
-// ~17 bots end up exercising the embedding fallback per type.
-const EMBEDDING_TEST_BOT_PROBABILITY = 0.35;
-const TAG_TYPO_PROBABILITY = 0.06;
-const TAG_TYPO_REPLACEMENT_CHARS = 'abcdefghijklmnopqrstuvwxyz';
-
-function pickEmbeddingTestVariant(type: UserTagType): IncomingUserTag | null {
-    if (Math.random() >= EMBEDDING_TEST_BOT_PROBABILITY) return null;
-    const concepts = EMBEDDING_TEST_CONCEPTS.filter((concept) => concept.type === type);
-    if (concepts.length === 0) return null;
-    const concept = pick(concepts);
-    return { label: pick(concept.variants), source: 'free' };
-}
-
-/**
- * Maybe replace one of the bot's tags with an embedding-test variant so that
- * across a batch we get ~15 bots typing different noisy variants of the same
- * canonical concept. Replacement (rather than append) keeps the bot's total
- * tag count stable so it still passes profile completeness checks.
- */
-function mergeWithEmbeddingTestVariant(tags: IncomingUserTag[], type: UserTagType): IncomingUserTag[] {
-    const variant = pickEmbeddingTestVariant(type);
-    if (!variant || tags.length === 0) return tags;
-    const replaceIndex = Math.floor(Math.random() * tags.length);
-    const next = [...tags];
-    next[replaceIndex] = variant;
-    return next;
-}
-
-function replaceRandomTagCharacters(label: string): string {
-    const chars = [...label];
-    const candidateIndexes = chars
-        .map((char, index) => ({ char, index }))
-        .filter(({ char }) => /[\p{L}\p{N}]/u.test(char))
-        .map(({ index }) => index);
-
-    if (candidateIndexes.length === 0) return label;
-
-    const replacementCount = 1 + Math.floor(Math.random() * Math.min(3, candidateIndexes.length));
-    const indexes = pickN(candidateIndexes, replacementCount);
-
-    for (const index of indexes) {
-        const current = chars[index];
-        let replacement = pick([...TAG_TYPO_REPLACEMENT_CHARS]);
-        while (replacement.toLowerCase() === current.toLowerCase()) {
-            replacement = pick([...TAG_TYPO_REPLACEMENT_CHARS]);
-        }
-        if (current.toUpperCase() === current && current.toLowerCase() !== current) {
-            replacement = replacement.toUpperCase();
-        }
-        chars[index] = replacement;
-    }
-
-    return chars.join('');
-}
-
-function applyRandomTagTypos(tags: IncomingUserTag[]): IncomingUserTag[] {
-    return tags.map((tag) => {
-        if (Math.random() >= TAG_TYPO_PROBABILITY) return tag;
-        return { ...tag, label: replaceRandomTagCharacters(tag.label), source: 'free' };
-    });
-}
-
-// Must match SocialVibe enum from @oxyfoo/whymeet-types — invalid values
-// would not satisfy isProfileComplete() and silently break bots' ability to
-// host activities or appear in discovery.
-const VIBES = ['reserved', 'calm', 'balanced', 'outgoing', 'very_social'];
-
-const BIOS = [
-    'Looking for new connections.',
-    'Always up for an adventure.',
-    'Coffee enthusiast and book lover.',
-    'Music, movies, and good conversations.',
-    'Outdoor person, weekend explorer.',
-    'Creative soul exploring the city.'
-];
-
 // ─── Helpers ──────────────────────────────────────────────────────────
 
 function pick<T>(arr: readonly T[]): T {
     return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function pickN<T>(arr: readonly T[], n: number): T[] {
-    const copy = [...arr];
-    for (let i = copy.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [copy[i], copy[j]] = [copy[j], copy[i]];
-    }
-    return copy.slice(0, Math.min(n, copy.length));
-}
-
-function pickBotTags(
-    concepts: readonly TagConcept[],
-    count: number,
-    trendingLabels: readonly string[] = []
-): IncomingUserTag[] {
-    const trending = trendingLabels
-        .map((label) => concepts.find((concept) => concept.label === label))
-        .filter((concept): concept is TagConcept => Boolean(concept));
-    const rest = concepts.filter((concept) => !trendingLabels.includes(concept.label));
-    const picked = [...trending.slice(0, count), ...pickN(rest, Math.max(0, count - trending.length))];
-
-    return picked.map((concept) => {
-        if (Math.random() >= (concept.variantChance ?? 0.35)) return { label: concept.label, source: 'popular' };
-        return { label: pick(concept.variants), source: 'free' };
-    });
-}
-
-function randomBirthDate(): Date {
-    // Age 18 → 65
-    const ageYears = 18 + Math.floor(Math.random() * 48);
-    const now = new Date();
-    const year = now.getUTCFullYear() - ageYears;
-    const month = Math.floor(Math.random() * 12);
-    const day = 1 + Math.floor(Math.random() * 28);
-    return new Date(Date.UTC(year, month, day));
 }
 
 // ─── Public API ───────────────────────────────────────────────────────
@@ -458,6 +257,11 @@ export interface PreparedBotsResult {
     bots: SpawnedBot[];
     reused: number;
     created: number;
+}
+
+export interface RefreshedBotWSToken {
+    userId: string;
+    wsToken: string;
 }
 
 async function getReusableBotPhotoState(userId: string): Promise<{ needsProfilePhotoUpload: boolean }> {
@@ -521,6 +325,43 @@ async function issueBotCredentials(
     };
 }
 
+export async function refreshBotWSTokens(userIds: readonly string[]): Promise<RefreshedBotWSToken[]> {
+    const db = getDatabase();
+    const requestedIds = [...new Set(userIds.filter(Boolean))];
+    if (requestedIds.length === 0) return [];
+
+    const bots = await db.user.findMany({
+        where: {
+            id: { in: requestedIds },
+            bot: true,
+            deleted: false,
+            banned: false,
+            suspended: false
+        },
+        select: {
+            id: true,
+            devices: {
+                where: { name: 'stresstest-bot', os: 'stresstest', status: 'active' },
+                orderBy: { createdAt: 'asc' },
+                take: 1,
+                select: { id: true }
+            }
+        }
+    });
+
+    const tokenByUserId = new Map<string, string>();
+    for (const bot of bots) {
+        const device = bot.devices[0];
+        if (!device) continue;
+        tokenByUserId.set(bot.id, tokenManager.ws.generate(bot.id, device.id));
+    }
+
+    return requestedIds.flatMap((userId) => {
+        const wsToken = tokenByUserId.get(userId);
+        return wsToken ? [{ userId, wsToken }] : [];
+    });
+}
+
 /**
  * Create one synthetic user + active device, return ready-to-use credentials.
  * Caller (admin Console) opens a WebSocket using `wsToken` against the same
@@ -533,79 +374,17 @@ export async function spawnBot(opts: SpawnBotOptions): Promise<SpawnedBot> {
     const id = crypto.randomBytes(4).toString('hex');
     const email = `bot+${id}@stresstest.invalid`;
     const name = `${firstName}${id.slice(0, 3)}`;
-    const gender = pick(GENDERS);
-    const birthDate = randomBirthDate();
-    const loc = pick(CITIES);
-    // Jitter ~5 km around city
-    const lat = loc.lat + (Math.random() - 0.5) * 0.1;
-    const lng = loc.lng + (Math.random() - 0.5) * 0.1;
 
     const sessionToken = tokenManager.session.generate();
     const deviceUUID = crypto.randomUUID();
-
-    // Make sure the canonical tags + embeddings used by the embedding-resolution
-    // test scenario exist. Idempotent across bots; first bot of the batch pays
-    // the OpenAI cost (one embedding per concept), the rest are no-ops.
-    if (opts.completeProfile) {
-        try {
-            await ensureEmbeddingTestCanonicals();
-        } catch (error) {
-            logger.warn('[Stresstest] Embedding test canonicals seeding failed; continuing', error);
-        }
-    }
-
-    const interestTags = opts.completeProfile
-        ? applyRandomTagTypos(
-              mergeWithEmbeddingTestVariant(pickBotTags(INTEREST_CONCEPTS, 6, TRENDING_INTEREST_LABELS), 'interest')
-          )
-        : [];
-    const skillTags = opts.completeProfile
-        ? applyRandomTagTypos(
-              mergeWithEmbeddingTestVariant(pickBotTags(SKILL_CONCEPTS, 5, TRENDING_SKILL_LABELS), 'skill')
-          )
-        : [];
-    const tagRows = opts.completeProfile
-        ? [
-              ...(await prepareUserTagCreateInputs(db, interestTags, 'interest')),
-              ...(await prepareUserTagCreateInputs(db, skillTags, 'skill'))
-          ]
-        : [];
 
     const user = await db.user.create({
         data: {
             email,
             name,
-            gender,
-            city: loc.city,
-            birthDate,
             verified: true,
             bot: true,
-            preferredPeriod: pick(['morning', 'afternoon', 'evening', 'night', 'any']),
-            ...(opts.completeProfile
-                ? {
-                      profile: {
-                          create: {
-                              bio: pick(BIOS),
-                              socialVibe: pick(VIBES),
-                              country: 'France',
-                              region: '',
-                              city: loc.city,
-                              latitude: lat,
-                              longitude: lng,
-                              intentions: pickN(INTENTIONS, 1 + Math.floor(Math.random() * 3)),
-                              spokenLanguages: ['fr']
-                          }
-                      },
-                      tags: {
-                          // Must be ≥ PROFILE_MIN_TAGS (5) per bucket so that
-                          // isProfileComplete() returns true and bots can host
-                          // activities + pass profile-completion gates.
-                          create: tagRows
-                      }
-                  }
-                : {
-                      profile: { create: { spokenLanguages: ['fr'] } }
-                  })
+            profile: { create: { spokenLanguages: ['fr'] } }
         }
     });
 
@@ -736,7 +515,7 @@ export interface CleanupResult {
  */
 export async function cleanupBots(): Promise<CleanupResult> {
     const db = getDatabase();
-    reservedStressBotUserIds.clear();
+    clearStressBotReservations();
 
     const bots = await db.user.findMany({ where: { bot: true }, select: { id: true } });
     const botIds = bots.map((b) => b.id);
