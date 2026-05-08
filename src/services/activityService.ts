@@ -20,6 +20,7 @@ import { ActivityWouldBecomeIncompleteError, isActivityComplete } from '@/servic
 import { sendTrackedMail } from '@/services/emailService';
 import { renderReportAck } from '@/services/moderationEmails';
 import { getUserLanguage } from '@/services/notifI18n';
+import { invalidateActivityCatalogCache, invalidateActivityDiscoveryCache } from '@/services/activityDiscoveryService';
 
 const ACTIVITY_ARCHIVE_THRESHOLD = 4;
 
@@ -218,6 +219,8 @@ export async function createActivity(
         { targetActivityId: activity.id }
     );
 
+    await invalidateActivityCatalogCache();
+
     // Get viewer location for distance
     const hostProfile = await db.profile.findUnique({
         where: { userId: hostId },
@@ -315,6 +318,8 @@ export async function updateActivity(
         logAudit(hostId, 'activity.update', { changes }, { targetActivityId: activity.id });
     }
 
+    await invalidateActivityCatalogCache();
+
     const hostProfile = await db.profile.findUnique({
         where: { userId: hostId },
         select: { latitude: true, longitude: true }
@@ -342,6 +347,7 @@ export async function cancelActivity(activityId: string, hostId: string): Promis
 
     logAudit(hostId, 'activity.cancel', {}, { targetActivityId: activityId });
     logger.info(`[Activity] Activity ${activityId} cancelled by host ${hostId}`);
+    await invalidateActivityCatalogCache();
     return true;
 }
 
@@ -524,11 +530,13 @@ export async function reportActivity(
 
     // Auto-archive if threshold reached
     const reportCount = await db.activityReport.count({ where: { activityId, isLegitimate: true } });
+    let archivedByReport = false;
     if (reportCount >= ACTIVITY_ARCHIVE_THRESHOLD && !activity.isArchived) {
         await db.activity.update({
             where: { id: activityId },
             data: { isArchived: true }
         });
+        archivedByReport = true;
         logger.warn(`[Activity] Activity ${activityId} auto-archived (${reportCount} reports)`);
     }
 
@@ -553,6 +561,11 @@ export async function reportActivity(
             logger.error('[Activity] Failed to send report.received_ack', e);
         }
     })();
+
+    await invalidateActivityDiscoveryCache(reporterId);
+    if (archivedByReport) {
+        await invalidateActivityCatalogCache();
+    }
 
     return {};
 }

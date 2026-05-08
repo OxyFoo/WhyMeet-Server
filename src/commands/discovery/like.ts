@@ -2,7 +2,7 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_Like, WSResponse_Like } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
-import { getConnectedClients } from '@/server/Server';
+import { getClientsForUser } from '@/server/Server';
 import { pushToUser } from '@/services/pushService';
 import { t, getUserLanguage } from '@/services/notifI18n';
 import { mapUserToProfile, profileInclude } from '@/services/userMapper';
@@ -73,7 +73,6 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
             });
 
             // Notify the other user if connected
-            const connectedClients = getConnectedClients();
             const currentUser = await db.user.findUnique({
                 where: { id: client.userId },
                 include: profileInclude
@@ -91,34 +90,31 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
                     }
                 });
 
-                let matchedUserOnline = false;
-                for (const c of connectedClients.values()) {
-                    if (c.userId === candidateId) {
-                        matchedUserOnline = true;
-                        c.send({
-                            event: 'new-match',
-                            payload: {
-                                conversationId: conversation.id,
-                                participant: mapUserToProfile(currentUser)
+                const matchedUserClients = getClientsForUser(candidateId);
+                for (const c of matchedUserClients) {
+                    c.send({
+                        event: 'new-match',
+                        payload: {
+                            conversationId: conversation.id,
+                            participant: mapUserToProfile(currentUser)
+                        }
+                    });
+                    c.send({
+                        event: 'notification',
+                        payload: {
+                            notification: {
+                                id: notification.id,
+                                type: 'match' as const,
+                                title: notification.title,
+                                body: notification.body,
+                                read: false,
+                                createdAt: notification.createdAt.toISOString()
                             }
-                        });
-                        c.send({
-                            event: 'notification',
-                            payload: {
-                                notification: {
-                                    id: notification.id,
-                                    type: 'match' as const,
-                                    title: notification.title,
-                                    body: notification.body,
-                                    read: false,
-                                    createdAt: notification.createdAt.toISOString()
-                                }
-                            }
-                        });
-                    }
+                        }
+                    });
                 }
 
-                if (!matchedUserOnline) {
+                if (matchedUserClients.length === 0) {
                     pushToUser(
                         candidateId,
                         {
@@ -155,28 +151,24 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
         });
 
         // Push notification to connected client
-        const onlineClients = getConnectedClients();
-        let likedUserOnline = false;
-        for (const c of onlineClients.values()) {
-            if (c.userId === candidateId) {
-                likedUserOnline = true;
-                c.send({
-                    event: 'notification',
-                    payload: {
-                        notification: {
-                            id: likeNotif.id,
-                            type: 'like' as const,
-                            title: likeNotif.title,
-                            body: likeNotif.body,
-                            read: false,
-                            createdAt: likeNotif.createdAt.toISOString()
-                        }
+        const likedUserClients = getClientsForUser(candidateId);
+        for (const c of likedUserClients) {
+            c.send({
+                event: 'notification',
+                payload: {
+                    notification: {
+                        id: likeNotif.id,
+                        type: 'like' as const,
+                        title: likeNotif.title,
+                        body: likeNotif.body,
+                        read: false,
+                        createdAt: likeNotif.createdAt.toISOString()
                     }
-                });
-            }
+                }
+            });
         }
 
-        if (!likedUserOnline) {
+        if (likedUserClients.length === 0) {
             pushToUser(
                 candidateId,
                 {

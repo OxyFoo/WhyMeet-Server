@@ -51,7 +51,10 @@ jest.mock('@/services/database', () => ({
 
 const mockConnectedClients = new Map();
 jest.mock('@/server/Server', () => ({
-    getConnectedClients: () => mockConnectedClients
+    getConnectedClients: () => mockConnectedClients,
+    getClientsForUser: (userId: string) =>
+        [...mockConnectedClients.values()].filter((client) => client.userId === userId),
+    isUserConnected: (userId: string) => [...mockConnectedClients.values()].some((client) => client.userId === userId)
 }));
 
 // Import commands to trigger registerCommand

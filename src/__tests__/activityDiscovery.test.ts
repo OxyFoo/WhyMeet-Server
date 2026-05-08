@@ -1,6 +1,15 @@
 jest.mock('@/services/database', () => ({ getDatabase: jest.fn() }));
 
-import { passesAgeFilter } from '@/services/activityDiscoveryService';
+import { INTEREST_CATEGORY_KEYS, type InterestCategoryKey } from '@oxyfoo/whymeet-types';
+import { getDatabase } from '@/services/database';
+import {
+    getActivities,
+    getActivityCounts,
+    getPopularActivityTags,
+    passesAgeFilter
+} from '@/services/activityDiscoveryService';
+
+const mockedGetDatabase = getDatabase as jest.MockedFunction<typeof getDatabase>;
 
 /** Build a Date such that computeAge() returns exactly `age` today. */
 function birthDateForAge(age: number): Date {
@@ -40,5 +49,138 @@ describe('passesAgeFilter', () => {
 
     it('excludes viewer aged 25 from range [30, 80]', () => {
         expect(passesAgeFilter(birthDateForAge(25), [30, 80])).toBe(false);
+    });
+});
+
+type MockActivityOverrides = {
+    id?: string;
+    category?: string;
+    latitude?: number;
+    longitude?: number;
+    targetAgeRange?: number[];
+};
+
+function sqlText(query: unknown): string {
+    const maybeSql = query as { sql?: string; text?: string; strings?: string[] };
+    return maybeSql.sql ?? maybeSql.text ?? maybeSql.strings?.join('') ?? '';
+}
+
+function makeActivity(overrides: MockActivityOverrides = {}) {
+    return {
+        id: overrides.id ?? 'activity-1',
+        title: 'Morning run',
+        category: overrides.category ?? INTEREST_CATEGORY_KEYS[0],
+        dateTime: new Date('2026-05-08T10:00:00.000Z'),
+        locationName: 'Paris',
+        latitude: overrides.latitude ?? 48.8566,
+        longitude: overrides.longitude ?? 2.3522,
+        maxParticipants: 8,
+        host: { name: 'Alice' },
+        participants: [{ userId: 'host-1' }],
+        photos: [{ id: 'photo-1', key: 'activity.webp', position: 0 }],
+        targetGenders: ['male', 'female'],
+        targetAgeRange: overrides.targetAgeRange ?? [18, 80]
+    };
+}
+
+function makeActivityDiscoveryDb() {
+    return {
+        user: {
+            findUnique: jest.fn().mockResolvedValue({
+                gender: 'male',
+                birthDate: birthDateForAge(34),
+                bot: false,
+                profile: { latitude: 48.8566, longitude: 2.3522 }
+            })
+        },
+        settings: {
+            findUnique: jest.fn().mockResolvedValue({
+                activityGenders: ['male', 'female'],
+                activityMaxDistance: 25,
+                activityRemoteMode: false,
+                activityVerified: false,
+                activityLanguages: ['fr']
+            })
+        },
+        featureFlag: {
+            findUnique: jest.fn().mockResolvedValue(null)
+        },
+        activity: {
+            findMany: jest.fn()
+        },
+        $queryRaw: jest.fn()
+    };
+}
+
+describe('activity discovery queries', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+    });
+
+    it('loads the first exact SQL page and preserves SQL ordering', async () => {
+        const category = INTEREST_CATEGORY_KEYS[0] as InterestCategoryKey;
+        const db = makeActivityDiscoveryDb();
+        db.$queryRaw.mockResolvedValue([
+            { id: 'activity-2', totalCount: 3n },
+            { id: 'activity-1', totalCount: 3n }
+        ]);
+        db.activity.findMany.mockResolvedValue([
+            makeActivity({ id: 'activity-1', category }),
+            makeActivity({ id: 'activity-2', category })
+        ]);
+        mockedGetDatabase.mockReturnValue(db as never);
+
+        const result = await getActivities('viewer-activities', {
+            category,
+            maxDistance: 25,
+            tags: ['Yoga']
+        });
+
+        expect(result.totalCount).toBe(3);
+        expect(result.activities.map((activity) => activity.id)).toEqual(['activity-2', 'activity-1']);
+        expect(db.activity.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({ where: { id: { in: ['activity-2', 'activity-1'] } } })
+        );
+
+        const query = sqlText(db.$queryRaw.mock.calls[0][0]);
+        expect(query).toContain('COUNT(*) OVER()');
+        expect(query).toContain('6371 * acos');
+        expect(query).toContain('targetAgeRange');
+        expect(query).toContain('user_tags filter_tags');
+    });
+
+    it('computes category counts in SQL without loading every activity into Node', async () => {
+        const category = INTEREST_CATEGORY_KEYS[1] as InterestCategoryKey;
+        const db = makeActivityDiscoveryDb();
+        db.$queryRaw.mockResolvedValue([{ category, count: 2n }]);
+        mockedGetDatabase.mockReturnValue(db as never);
+
+        const counts = await getActivityCounts('viewer-counts');
+
+        expect(counts[category]).toBe(2);
+        expect(counts[INTEREST_CATEGORY_KEYS[0]]).toBe(0);
+        expect(db.activity.findMany).not.toHaveBeenCalled();
+
+        const query = sqlText(db.$queryRaw.mock.calls[0][0]);
+        expect(query).toContain('GROUP BY a.category');
+        expect(query).toContain('6371 * acos');
+        expect(query).toContain('targetAgeRange');
+    });
+
+    it('computes popular tags with the same activity eligibility filters', async () => {
+        const category = INTEREST_CATEGORY_KEYS[0] as InterestCategoryKey;
+        const db = makeActivityDiscoveryDb();
+        db.$queryRaw.mockResolvedValue([{ label: 'Yoga' }, { label: 'Escalade' }]);
+        mockedGetDatabase.mockReturnValue(db as never);
+
+        const tags = await getPopularActivityTags('viewer-tags', category);
+
+        expect(tags).toEqual(['Yoga', 'Escalade']);
+
+        const query = sqlText(db.$queryRaw.mock.calls[0][0]);
+        expect(query).toContain('JOIN user_tags tags');
+        expect(query).toContain('ORDER BY count DESC');
+        expect(query).toContain('6371 * acos');
+        expect(query).toContain('targetAgeRange');
     });
 });

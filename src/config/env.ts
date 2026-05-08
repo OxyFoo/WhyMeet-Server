@@ -52,6 +52,7 @@ const envSchema = z.object({
     REDIS_URL: z.string().default(''),
     REDIS_TTL_CANDIDATE_S: z.coerce.number().int().positive().default(300),
     REDIS_TTL_SETUP_S: z.coerce.number().int().positive().default(60),
+    REDIS_TTL_DISCOVERY_COUNTS_S: z.coerce.number().int().positive().default(60),
 
     // Firebase Cloud Messaging
     FIREBASE_SERVICE_ACCOUNT: z.string().default(''),

@@ -10,6 +10,7 @@ import { validateProfileData } from '@/config/validation';
 import { invalidateCandidate } from '@/services/candidateCache';
 import { invalidatePipelineSetup } from '@/services/pipelineSetupCache';
 import { invalidateDiscoveryCounts } from '@/services/discoveryCountsCache';
+import { invalidateActivityCatalogCache, invalidateActivityDiscoveryCache } from '@/services/activityDiscoveryService';
 import { logAudit } from '@/services/auditLogService';
 import { isProfileComplete } from '@/services/profileCompletion';
 import { prepareUserTagSync, replaceUserTags } from '@/services/userTagSync';
@@ -193,10 +194,16 @@ registerCommand<WSRequest_UpdateProfile>(
                 );
             }
 
-            // Invalidate caches so discovery reflects updated profile immediately
-            invalidateCandidate(client.userId).catch(() => {});
-            invalidatePipelineSetup(client.userId).catch(() => {});
-            invalidateDiscoveryCounts(client.userId).catch(() => {});
+            const affectsHostedActivityDiscovery =
+                data.gender !== undefined || data.interests !== undefined || data.spokenLanguages !== undefined;
+
+            await Promise.allSettled([
+                invalidateCandidate(client.userId),
+                invalidatePipelineSetup(client.userId),
+                invalidateDiscoveryCounts(client.userId),
+                invalidateActivityDiscoveryCache(client.userId),
+                ...(affectsHostedActivityDiscovery ? [invalidateActivityCatalogCache()] : [])
+            ]);
 
             // Re-fetch and return updated profile
             const updated = await db.user.findUnique({

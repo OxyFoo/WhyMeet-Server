@@ -8,7 +8,13 @@ import type {
 } from '@oxyfoo/whymeet-types';
 import type { Prisma } from '@prisma/client';
 import { getDatabase } from '@/services/database';
-import { candidateInclude, getDistanceKm, computeAge, ageToBirthDateRange } from '@/services/userMapper';
+import {
+    candidateInclude,
+    getDistanceKm,
+    computeAge,
+    ageToBirthDateRange,
+    geoBoundingBox
+} from '@/services/userMapper';
 import { computeMatchScore, MIN_SCORE_THRESHOLD } from '@/services/scoring';
 import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
 import { getExcludeIds } from '@/services/excludeCache';
@@ -42,6 +48,54 @@ export interface QualifiedCandidate {
     intentions: IntentionKey[];
     score: number;
     distKm: number | null;
+}
+
+type SubIntentionCounterInput = {
+    key: string;
+    tags: readonly string[];
+};
+
+export function countQualifiedByIntention(
+    qualified: readonly QualifiedCandidate[],
+    intentions: readonly IntentionKey[]
+): Record<string, number> {
+    const counts = Object.fromEntries(intentions.map((key) => [key, 0])) as Record<string, number>;
+    const accepted = new Set<IntentionKey>(intentions);
+
+    for (const candidate of qualified) {
+        for (const intention of new Set(candidate.intentions)) {
+            if (accepted.has(intention)) counts[intention]++;
+        }
+    }
+
+    return counts;
+}
+
+export function countQualifiedBySubIntention(
+    qualified: readonly QualifiedCandidate[],
+    subs: readonly SubIntentionCounterInput[]
+): Record<string, number> {
+    const counts = Object.fromEntries(subs.map((sub) => [sub.key, 0])) as Record<string, number>;
+    const subTags = subs.map((sub) => ({ key: sub.key, tags: new Set(sub.tags.map((tag) => tag.toLowerCase())) }));
+
+    for (const candidate of qualified) {
+        const candidateTags = new Set(
+            (candidate.user.tags ?? [])
+                .map((tag) => tag.labelLower ?? tag.label?.toLowerCase() ?? tag.tag?.label?.toLowerCase())
+                .filter((tag): tag is string => Boolean(tag))
+        );
+
+        for (const sub of subTags) {
+            for (const tag of sub.tags) {
+                if (candidateTags.has(tag)) {
+                    counts[sub.key]++;
+                    break;
+                }
+            }
+        }
+    }
+
+    return counts;
 }
 
 export interface PipelineContext {
@@ -255,6 +309,7 @@ function buildPipelineWhere(
     prefIntentions?: IntentionKey[],
     prefRemote?: boolean
 ): Record<string, unknown> {
+    const prefMaxDistance = filters?.maxDistance ?? setup.storedMaxDistance;
     const where: Record<string, unknown> = {
         id: { notIn: setup.excludeIds },
         banned: false,
@@ -301,6 +356,14 @@ function buildPipelineWhere(
     } else if (setup.prefLanguages.length > 0) {
         // User-level language preference (people.languages) always applies
         profileWhere.spokenLanguages = { hasSome: setup.prefLanguages };
+    }
+
+    if (!prefRemote) {
+        const bbox = geoBoundingBox(setup.myLatLng.latitude, setup.myLatLng.longitude, prefMaxDistance);
+        if (bbox) {
+            profileWhere.latitude = bbox.latitude;
+            profileWhere.longitude = bbox.longitude;
+        }
     }
 
     if (Object.keys(profileWhere).length > 0) {

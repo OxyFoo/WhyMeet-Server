@@ -12,6 +12,7 @@ import { getDatabase } from '@/services/database';
 import { GENDERS } from '@oxyfoo/whymeet-types';
 import { invalidatePipelineSetup } from '@/services/pipelineSetupCache';
 import { invalidateDiscoveryCounts } from '@/services/discoveryCountsCache';
+import { invalidateActivityDiscoveryCache } from '@/services/activityDiscoveryService';
 import { logger } from '@/config/logger';
 
 const VALID_GENDERS = new Set<string>(GENDERS);
@@ -179,8 +180,11 @@ registerCommand<WSRequest_UpdatePreferences>(
             };
 
             logger.info(`[Settings] Updated preferences for user: ${client.userId}`);
-            invalidatePipelineSetup(client.userId).catch(() => {});
-            invalidateDiscoveryCounts(client.userId).catch(() => {});
+            await Promise.allSettled([
+                invalidatePipelineSetup(client.userId),
+                invalidateDiscoveryCounts(client.userId),
+                invalidateActivityDiscoveryCache(client.userId)
+            ]);
             return {
                 command: 'update-preferences',
                 payload: {

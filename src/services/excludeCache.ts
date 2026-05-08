@@ -1,6 +1,5 @@
 import { getRedis, isRedisAvailable } from '@/services/redisService';
 import { getDatabase } from '@/services/database';
-import { invalidateDiscoveryCounts } from '@/services/discoveryCountsCache';
 import { logger } from '@/config/logger';
 
 const KEY_PREFIX = 'excluded:';
@@ -68,7 +67,8 @@ export async function getExcludeIds(userId: string): Promise<string[]> {
 /**
  * Adds a single targetId to the requester's exclusion set.
  * No-op if the set hasn't been seeded yet (will be populated on next getExcludeIds call).
- * Also invalidates the aggregated discovery counts cache so the UI reflects the new state.
+ * Discovery lists stay exact because the Redis Set is updated immediately. UI counters are
+ * cache-backed and expire naturally to avoid stampeding expensive recounts on every swipe.
  */
 export async function addExcluded(userId: string, targetId: string): Promise<void> {
     if (!isRedisAvailable()) return;
@@ -79,7 +79,6 @@ export async function addExcluded(userId: string, targetId: string): Promise<voi
         if (seeded) {
             await redis.sadd(key(userId), targetId);
         }
-        invalidateDiscoveryCounts(userId).catch(() => {});
     } catch (error) {
         logger.warn('[ExcludeCache] Failed to add excluded id', error);
     }

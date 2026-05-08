@@ -9,15 +9,31 @@ import type {
 } from '@oxyfoo/whymeet-types';
 import { getHostLevel } from '@oxyfoo/whymeet-types';
 
+type DateLike = Date | string | null | undefined;
+
+function toDate(value: DateLike): Date | null {
+    if (!value) return null;
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function toIsoString(value: DateLike): string | null {
+    return toDate(value)?.toISOString() ?? null;
+}
+
 /**
  * Compute age from a birth date. Returns 0 if null.
  */
-export function computeAge(birthDate: Date | null | undefined): number {
-    if (!birthDate) return 0;
+export function computeAge(birthDate: DateLike): number {
+    const date = toDate(birthDate);
+    if (!date) return 0;
+
     const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    let age = today.getFullYear() - date.getFullYear();
+    const monthDiff = today.getMonth() - date.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < date.getDate())) {
         age--;
     }
     return Math.max(0, age);
@@ -93,8 +109,8 @@ function formatDistance(
 export function mapUserToProfile(user: {
     id: string;
     name: string;
-    birthDate: Date | null;
-    birthDateLastChangedAt?: Date | null;
+    birthDate: DateLike;
+    birthDateLastChangedAt?: DateLike;
     gender: string;
     city: string;
     verified: boolean;
@@ -130,9 +146,9 @@ export function mapUserToProfile(user: {
     badges?: {
         badgeKey: string;
         earned: boolean;
-        earnedAt: Date | null;
+        earnedAt: DateLike;
         progress: number;
-        rewardClaimedAt: Date | null;
+        rewardClaimedAt: DateLike;
         definition: {
             emoji: string;
             displayOrder: number;
@@ -146,7 +162,7 @@ export function mapUserToProfile(user: {
         id: user.id,
         name: user.name,
         age: computeAge(user.birthDate),
-        birthDate: user.birthDate?.toISOString() ?? null,
+        birthDate: toIsoString(user.birthDate),
         gender: (user.gender || 'male') as Gender,
         photos: (user.photos ?? []).map((p) => ({
             id: p.id,
@@ -163,7 +179,7 @@ export function mapUserToProfile(user: {
         isBoosted: false,
         badges: mapBadges(user.badges),
         bio: user.profile?.bio ?? '',
-        birthDateLastChangedAt: user.birthDateLastChangedAt?.toISOString() ?? null,
+        birthDateLastChangedAt: toIsoString(user.birthDateLastChangedAt),
         socialVibe: (user.profile?.socialVibe ?? 'balanced') as Profile['socialVibe'],
         interests: (user.tags ?? [])
             .filter((t) => t.type === 'interest')
@@ -194,9 +210,9 @@ function mapBadges(
     badges?: {
         badgeKey: string;
         earned: boolean;
-        earnedAt: Date | null;
+        earnedAt: DateLike;
         progress: number;
-        rewardClaimedAt: Date | null;
+        rewardClaimedAt: DateLike;
         definition: {
             emoji: string;
             displayOrder: number;
@@ -215,12 +231,12 @@ function mapBadges(
             key: b.badgeKey as BadgeKey,
             emoji: b.definition.emoji,
             earned: b.earned,
-            earnedAt: b.earnedAt?.toISOString() ?? null,
+            earnedAt: toIsoString(b.earnedAt),
             progress: b.progress,
             threshold: b.definition.threshold,
             rewardType: b.definition.rewardType,
             rewardDescription: b.definition.rewardDescription,
-            rewardClaimedAt: b.rewardClaimedAt?.toISOString() ?? null
+            rewardClaimedAt: toIsoString(b.rewardClaimedAt)
         }));
 }
 
@@ -264,7 +280,7 @@ export function mapUserToCandidate(
             id: user.id,
             name: user.name,
             age: computeAge(user.birthDate),
-            birthDate: user.birthDate?.toISOString() ?? null,
+            birthDate: toIsoString(user.birthDate),
             gender: (user.gender || 'male') as Gender,
             photos: (user.photos ?? []).map((p) => ({
                 id: p.id,

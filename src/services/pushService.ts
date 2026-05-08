@@ -2,7 +2,7 @@ import admin from 'firebase-admin';
 import { env } from '@/config/env';
 import { logger } from '@/config/logger';
 import { getDatabase } from '@/services/database';
-import { getConnectedClients } from '@/server/Server';
+import { isUserConnected } from '@/server/Server';
 
 let initialized = false;
 
@@ -24,14 +24,6 @@ function ensureInitialized(): boolean {
     }
 }
 
-function isUserOnline(userId: string): boolean {
-    const clients = getConnectedClients();
-    for (const c of clients.values()) {
-        if (c.userId === userId) return true;
-    }
-    return false;
-}
-
 export type NotifType = 'match' | 'like' | 'message';
 
 interface PushPayload {
@@ -51,7 +43,7 @@ const NOTIF_TYPE_TO_SETTING: Record<NotifType, string> = {
  * Skips if user is currently connected via WS or has disabled the notification type.
  */
 export async function pushToUser(userId: string, payload: PushPayload, notifType?: NotifType): Promise<void> {
-    if (isUserOnline(userId)) return;
+    if (isUserConnected(userId)) return;
     if (!ensureInitialized()) return;
 
     const db = getDatabase();

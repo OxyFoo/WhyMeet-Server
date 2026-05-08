@@ -1,6 +1,6 @@
 import type { MessageType, Message } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
-import { getConnectedClients } from '@/server/Server';
+import { getClientsForUser } from '@/server/Server';
 import { logger } from '@/config/logger';
 
 /**
@@ -54,10 +54,8 @@ export async function emitGroupSystemMessage(
             select: { userId: true }
         });
 
-        const connectedClients = getConnectedClients();
-        const targets = new Set(otherParticipants.map((p) => p.userId));
-        for (const c of connectedClients.values()) {
-            if (targets.has(c.userId)) {
+        for (const participant of otherParticipants) {
+            for (const c of getClientsForUser(participant.userId)) {
                 c.send({
                     event: 'new-message',
                     payload: { conversationId, message: messagePayload }

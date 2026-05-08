@@ -2,7 +2,7 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_Star, WSResponse_Star } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
-import { getConnectedClients } from '@/server/Server';
+import { getClientsForUser } from '@/server/Server';
 import { pushToUser } from '@/services/pushService';
 import { t, getUserLanguage } from '@/services/notifI18n';
 import { mapUserToProfile, profileInclude } from '@/services/userMapper';
@@ -70,28 +70,24 @@ registerCommand<WSRequest_Star>('star', async (client: Client, payload): Promise
                 }
             });
 
-            const connectedClients = getConnectedClients();
             const currentUser = await db.user.findUnique({
                 where: { id: client.userId },
                 include: profileInclude
             });
 
             if (currentUser) {
-                let candidateOnline = false;
-                for (const c of connectedClients.values()) {
-                    if (c.userId === candidateId) {
-                        candidateOnline = true;
-                        c.send({
-                            event: 'new-match',
-                            payload: {
-                                conversationId: conversation.id,
-                                participant: mapUserToProfile(currentUser)
-                            }
-                        });
-                    }
+                const candidateClients = getClientsForUser(candidateId);
+                for (const c of candidateClients) {
+                    c.send({
+                        event: 'new-match',
+                        payload: {
+                            conversationId: conversation.id,
+                            participant: mapUserToProfile(currentUser)
+                        }
+                    });
                 }
 
-                if (!candidateOnline) {
+                if (candidateClients.length === 0) {
                     const lang = await getUserLanguage(candidateId);
                     pushToUser(
                         candidateId,
@@ -128,28 +124,24 @@ registerCommand<WSRequest_Star>('star', async (client: Client, payload): Promise
             }
         });
 
-        const onlineClients = getConnectedClients();
-        let starredUserOnline = false;
-        for (const c of onlineClients.values()) {
-            if (c.userId === candidateId) {
-                starredUserOnline = true;
-                c.send({
-                    event: 'notification',
-                    payload: {
-                        notification: {
-                            id: starNotif.id,
-                            type: 'like' as const,
-                            title: starNotif.title,
-                            body: starNotif.body,
-                            read: false,
-                            createdAt: starNotif.createdAt.toISOString()
-                        }
+        const starredUserClients = getClientsForUser(candidateId);
+        for (const c of starredUserClients) {
+            c.send({
+                event: 'notification',
+                payload: {
+                    notification: {
+                        id: starNotif.id,
+                        type: 'like' as const,
+                        title: starNotif.title,
+                        body: starNotif.body,
+                        read: false,
+                        createdAt: starNotif.createdAt.toISOString()
                     }
-                });
-            }
+                }
+            });
         }
 
-        if (!starredUserOnline) {
+        if (starredUserClients.length === 0) {
             pushToUser(
                 candidateId,
                 {

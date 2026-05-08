@@ -36,7 +36,7 @@ services:
   whymeet-redis-prod:
     image: redis:7-alpine
     container_name: whymeet-redis-prod
-    command: redis-server --save '' --appendonly no --maxmemory 512mb --maxmemory-policy allkeys-lru
+    command: redis-server --save '' --appendonly no --maxmemory 1gb --maxmemory-policy allkeys-lru
     networks:
       oxyfoo-network:
         ipv4_address: 172.16.0.12

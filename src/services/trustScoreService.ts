@@ -238,10 +238,14 @@ export async function checkActivityCompletion(activityId: string): Promise<void>
         await recalculateTrustScore(activity.hostId);
 
         // Award badges for host and participants
-        await checkAndAwardBadges(activity.hostId);
+        await checkAndAwardBadges(activity.hostId).catch((e) =>
+            logger.error('[Badges] post-completion host check failed', e)
+        );
         for (const p of activity.participants) {
             if (p.userId !== activity.hostId) {
-                await checkAndAwardBadges(p.userId);
+                await checkAndAwardBadges(p.userId).catch((e) =>
+                    logger.error('[Badges] post-completion participant check failed', e)
+                );
             }
         }
 

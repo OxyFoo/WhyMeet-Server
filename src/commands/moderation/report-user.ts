@@ -9,7 +9,7 @@ import type {
 import { getDatabase } from '@/services/database';
 import { addExcluded } from '@/services/excludeCache';
 import { logger } from '@/config/logger';
-import { getConnectedClients } from '@/server/Server';
+import { getClientsForUser } from '@/server/Server';
 import { sendTrackedMail } from '@/services/emailService';
 import { renderReportAck } from '@/services/moderationEmails';
 import { getUserLanguage } from '@/services/notifI18n';
@@ -110,12 +110,9 @@ registerCommand<WSRequest_ReportUser>(
                     logger.warn(`[Moderation] User ${reportedId} auto-suspended (${reportCount} reports)`);
 
                     // Disconnect the suspended user if currently connected
-                    const clients = getConnectedClients();
-                    for (const [, c] of clients) {
-                        if (c.userId === reportedId) {
-                            c.send({ event: 'suspended', payload: {} });
-                            c.close(4002, 'Account suspended');
-                        }
+                    for (const c of getClientsForUser(reportedId)) {
+                        c.send({ event: 'suspended', payload: {} });
+                        c.close(4002, 'Account suspended');
                     }
                 }
             }

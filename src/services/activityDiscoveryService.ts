@@ -1,9 +1,23 @@
 import type { ActivitySummary, ActivitySearchFilters, InterestCategoryKey, Gender } from '@oxyfoo/whymeet-types';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { getDatabase } from '@/services/database';
 import { getDistanceKm, geoBoundingBox, computeAge } from '@/services/userMapper';
 import { isFeatureEnabled } from '@/services/featureFlagService';
+import { getRedis, isRedisAvailable } from '@/services/redisService';
 import { INTEREST_CATEGORY_KEYS } from '@oxyfoo/whymeet-types';
+import { logger } from '@/config/logger';
+
+const ACTIVITY_CACHE_PREFIX = 'activity:discovery:v2:';
+const ACTIVITY_CACHE_REVISION_KEY = `${ACTIVITY_CACHE_PREFIX}revision`;
+const VIEWER_CONTEXT_TTL_MS = 30_000;
+const ACTIVITY_COUNTS_TTL_S = 60;
+const POPULAR_ACTIVITY_TAGS_TTL_S = 600;
+const ACTIVITY_PAGE_SIZE = 50;
+const POPULAR_ACTIVITY_TAG_LIMIT = 20;
+
+const viewerContextCache = new Map<string, { expiresAt: number; value: ViewerContext }>();
+const activityCacheInFlight = new Map<string, Promise<unknown>>();
+let localActivityCacheRevision = 0;
 
 interface ViewerContext {
     latitude: number | null;
@@ -21,7 +35,122 @@ interface ViewerContext {
     activityLanguages: string[];
 }
 
+const activitySummaryInclude = {
+    host: { select: { name: true } },
+    participants: { select: { userId: true } },
+    photos: { orderBy: { position: 'asc' as const }, take: 1 }
+} as const;
+
+type ActivitySummaryRow = Prisma.ActivityGetPayload<{ include: typeof activitySummaryInclude }>;
+
+type ActivityIdRow = { id: string; totalCount: number | bigint };
+type ActivityCountRow = { category: string; count: number | bigint };
+type ActivityTagRow = { label: string };
+
+function activityCountsKey(userId: string, revision: string): string {
+    return `${ACTIVITY_CACHE_PREFIX}${revision}:counts:${userId}`;
+}
+
+function activityPopularTagsKey(userId: string, category: InterestCategoryKey, revision: string): string {
+    return `${ACTIVITY_CACHE_PREFIX}${revision}:popular-tags:${userId}:${category}`;
+}
+
+function clearViewerInFlight(userId: string): void {
+    for (const key of activityCacheInFlight.keys()) {
+        if (key.endsWith(`:counts:${userId}`) || key.includes(`:popular-tags:${userId}:`)) {
+            activityCacheInFlight.delete(key);
+        }
+    }
+}
+
+async function getCachedJson<T>(key: string): Promise<T | null> {
+    if (!isRedisAvailable()) return null;
+
+    try {
+        const raw = await getRedis().get(key);
+        if (!raw) return null;
+        return JSON.parse(raw) as T;
+    } catch (error) {
+        logger.warn('[ActivityDiscovery] Redis error on get', error);
+        return null;
+    }
+}
+
+async function getActivityCacheRevision(): Promise<string> {
+    if (!isRedisAvailable()) return String(localActivityCacheRevision);
+
+    try {
+        return (await getRedis().get(ACTIVITY_CACHE_REVISION_KEY)) ?? '0';
+    } catch (error) {
+        logger.warn('[ActivityDiscovery] Redis error on revision get', error);
+        return String(localActivityCacheRevision);
+    }
+}
+
+async function getOrComputeCached<T>(key: string, ttlSeconds: number, compute: () => Promise<T>): Promise<T> {
+    const cached = await getCachedJson<T>(key);
+    if (cached) return cached;
+
+    const pending = activityCacheInFlight.get(key) as Promise<T> | undefined;
+    if (pending) return pending;
+
+    const promise = (async () => {
+        const rechecked = await getCachedJson<T>(key);
+        if (rechecked) return rechecked;
+
+        const value = await compute();
+        if (isRedisAvailable()) {
+            try {
+                await getRedis().set(key, JSON.stringify(value), 'EX', ttlSeconds);
+            } catch (error) {
+                logger.warn('[ActivityDiscovery] Redis error on set', error);
+                // Cache failures must never block activity discovery.
+            }
+        }
+        return value;
+    })().finally(() => {
+        activityCacheInFlight.delete(key);
+    });
+
+    activityCacheInFlight.set(key, promise);
+    return promise;
+}
+
+export async function invalidateActivityDiscoveryCache(userId: string): Promise<void> {
+    viewerContextCache.delete(userId);
+    clearViewerInFlight(userId);
+    if (!isRedisAvailable()) return;
+
+    try {
+        const revision = await getActivityCacheRevision();
+        const keys = [
+            activityCountsKey(userId, revision),
+            ...INTEREST_CATEGORY_KEYS.map((category) => activityPopularTagsKey(userId, category, revision))
+        ];
+        await getRedis().del(...keys);
+    } catch (error) {
+        logger.warn('[ActivityDiscovery] Redis error on viewer invalidation', error);
+        // Best-effort cache invalidation.
+    }
+}
+
+export async function invalidateActivityCatalogCache(): Promise<void> {
+    activityCacheInFlight.clear();
+    localActivityCacheRevision++;
+
+    if (!isRedisAvailable()) return;
+
+    try {
+        await getRedis().incr(ACTIVITY_CACHE_REVISION_KEY);
+    } catch (error) {
+        logger.warn('[ActivityDiscovery] Redis error on catalog invalidation', error);
+    }
+}
+
 async function loadViewerContext(userId: string): Promise<ViewerContext> {
+    const cached = viewerContextCache.get(userId);
+    if (cached && Date.now() < cached.expiresAt) return cached.value;
+
     const db = getDatabase();
     const [user, settings, mixBots] = await Promise.all([
         db.user.findUnique({
@@ -37,7 +166,7 @@ async function loadViewerContext(userId: string): Promise<ViewerContext> {
         isFeatureEnabled('stresstest.bot_user_mixing')
     ]);
 
-    return {
+    const context: ViewerContext = {
         latitude: user?.profile?.latitude ?? null,
         longitude: user?.profile?.longitude ?? null,
         gender: user?.gender ?? null,
@@ -50,6 +179,9 @@ async function loadViewerContext(userId: string): Promise<ViewerContext> {
         activityVerified: settings?.activityVerified ?? false,
         activityLanguages: settings?.activityLanguages ?? []
     };
+
+    viewerContextCache.set(userId, { expiresAt: Date.now() + VIEWER_CONTEXT_TTL_MS, value: context });
+    return context;
 }
 
 /** Returns true if the viewer's age is within the activity's targetAgeRange.
@@ -65,23 +197,147 @@ export function passesAgeFilter(birthDate: Date | null, targetAgeRange: number[]
     return true;
 }
 
-function buildHostWhere(viewer: ViewerContext): Prisma.UserWhereInput {
-    const hostWhere: Prisma.UserWhereInput = {
-        banned: false,
-        suspended: false,
-        deleted: false,
-        ...(viewer.mixBots ? {} : { bot: viewer.isBot })
-    };
+function resolveEffectiveMaxDistance(viewer: ViewerContext, filters?: ActivitySearchFilters): number | undefined {
+    return filters?.maxDistance ?? (viewer.activityRemoteMode ? undefined : viewer.activityMaxDistance);
+}
+
+function normalizedTags(tags: readonly string[] | undefined): string[] {
+    return [...new Set((tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean))];
+}
+
+function buildActivityDiscoveryWhere(
+    userId: string,
+    viewer: ViewerContext,
+    filters?: ActivitySearchFilters
+): Prisma.Sql {
+    const clauses: Prisma.Sql[] = [
+        Prisma.sql`a."isCancelled" = false`,
+        Prisma.sql`a."isArchived" = false`,
+        Prisma.sql`host.banned = false`,
+        Prisma.sql`host.suspended = false`,
+        Prisma.sql`host.deleted = false`,
+        Prisma.sql`NOT EXISTS (
+            SELECT 1
+            FROM activity_reports ar
+            WHERE ar."activityId" = a.id AND ar."reporterId" = ${userId}
+        )`
+    ];
+
+    if (!viewer.mixBots) {
+        clauses.push(Prisma.sql`host.bot = ${viewer.isBot}`);
+    }
+
     if (viewer.activityGenders.length > 0) {
-        hostWhere.gender = { in: viewer.activityGenders };
+        clauses.push(Prisma.sql`host.gender IN (${Prisma.join(viewer.activityGenders)})`);
     }
+
     if (viewer.activityVerified) {
-        hostWhere.verified = true;
+        clauses.push(Prisma.sql`host.verified = true`);
     }
+
     if (viewer.activityLanguages.length > 0) {
-        hostWhere.profile = { spokenLanguages: { hasSome: viewer.activityLanguages } };
+        clauses.push(Prisma.sql`hp."spokenLanguages" && ARRAY[${Prisma.join(viewer.activityLanguages)}]::text[]`);
     }
-    return hostWhere;
+
+    if (viewer.gender) {
+        clauses.push(Prisma.sql`${viewer.gender} = ANY(a."targetGenders")`);
+    }
+
+    if (filters?.category) {
+        clauses.push(Prisma.sql`a.category = ${filters.category}`);
+    }
+
+    if (filters?.dateFrom) {
+        clauses.push(Prisma.sql`a."dateTime" >= ${new Date(filters.dateFrom)}`);
+    }
+
+    if (filters?.dateTo) {
+        clauses.push(Prisma.sql`a."dateTime" <= ${new Date(filters.dateTo)}`);
+    }
+
+    const query = filters?.query?.trim();
+    if (query) {
+        const pattern = `%${query}%`;
+        clauses.push(Prisma.sql`(a.title ILIKE ${pattern} OR a.description ILIKE ${pattern})`);
+    }
+
+    const tags = normalizedTags(filters?.tags);
+    if (tags.length > 0) {
+        clauses.push(Prisma.sql`EXISTS (
+            SELECT 1
+            FROM user_tags filter_tags
+            WHERE filter_tags."userId" = host.id
+              AND filter_tags.type = 'interest'
+              AND filter_tags."labelLower" IN (${Prisma.join(tags)})
+        )`);
+    }
+
+    const effectiveMaxDistance = resolveEffectiveMaxDistance(viewer, filters);
+    if (effectiveMaxDistance != null && viewer.latitude != null && viewer.longitude != null) {
+        const bbox = geoBoundingBox(viewer.latitude, viewer.longitude, effectiveMaxDistance);
+        if (bbox) {
+            clauses.push(Prisma.sql`a.latitude BETWEEN ${bbox.latitude.gte} AND ${bbox.latitude.lte}`);
+            clauses.push(Prisma.sql`a.longitude BETWEEN ${bbox.longitude.gte} AND ${bbox.longitude.lte}`);
+        }
+        clauses.push(Prisma.sql`(
+            6371 * acos(
+                LEAST(1, GREATEST(-1,
+                    cos(radians(${viewer.latitude})) * cos(radians(a.latitude)) *
+                    cos(radians(a.longitude) - radians(${viewer.longitude})) +
+                    sin(radians(${viewer.latitude})) * sin(radians(a.latitude))
+                ))
+            )
+        ) <= ${effectiveMaxDistance}`);
+    }
+
+    if (viewer.birthDate) {
+        const viewerAge = computeAge(viewer.birthDate);
+        clauses.push(Prisma.sql`(
+            COALESCE(array_length(a."targetAgeRange", 1), 0) < 2
+            OR (
+                (a."targetAgeRange")[1] <= ${viewerAge}
+                AND ((a."targetAgeRange")[2] >= ${viewerAge} OR (a."targetAgeRange")[2] >= 80)
+            )
+        )`);
+    }
+
+    return Prisma.sql`WHERE ${Prisma.join(clauses, ' AND ')}`;
+}
+
+function activityDiscoveryFrom(): Prisma.Sql {
+    return Prisma.sql`
+        FROM activities a
+        JOIN users host ON host.id = a."hostId"
+        LEFT JOIN profiles hp ON hp."userId" = host.id
+    `;
+}
+
+function mapActivitySummary(
+    activity: ActivitySummaryRow,
+    viewerLat?: number | null,
+    viewerLng?: number | null
+): ActivitySummary {
+    const distKm = getDistanceKm(viewerLat, viewerLng, activity.latitude, activity.longitude);
+    const distStr = distKm != null ? (distKm < 1 ? '< 1 km' : `${Math.round(distKm)} km`) : undefined;
+
+    return {
+        id: activity.id,
+        title: activity.title,
+        category: activity.category as InterestCategoryKey,
+        dateTime: activity.dateTime?.toISOString() ?? null,
+        locationName: activity.locationName,
+        participantCount: activity.participants.length,
+        maxParticipants: activity.maxParticipants,
+        photoKey: activity.photos[0]?.key ?? null,
+        hostName: activity.host.name,
+        targetGenders: activity.targetGenders as Gender[],
+        targetAgeRange: (activity.targetAgeRange?.length === 2 ? activity.targetAgeRange : [18, 80]) as [
+            number,
+            number
+        ],
+        distance: distStr,
+        distanceKm: distKm ?? undefined
+    };
 }
 
 // ─── Get Activities ──────────────────────────────────────────────────
@@ -92,169 +348,58 @@ export async function getActivities(
 ): Promise<{ activities: ActivitySummary[]; totalCount: number }> {
     const db = getDatabase();
     const viewer = await loadViewerContext(userId);
+    const where = buildActivityDiscoveryWhere(userId, viewer, filters);
 
-    // Get reported activity IDs by this user (to exclude)
-    const reportedIds = (
-        await db.activityReport.findMany({
-            where: { reporterId: userId },
-            select: { activityId: true }
-        })
-    ).map((r) => r.activityId);
+    const rows = await db.$queryRaw<ActivityIdRow[]>(Prisma.sql`
+        SELECT a.id, COUNT(*) OVER()::integer AS "totalCount"
+        ${activityDiscoveryFrom()}
+        ${where}
+        ORDER BY a."dateTime" ASC NULLS LAST, a."createdAt" DESC, a.id ASC
+        LIMIT ${ACTIVITY_PAGE_SIZE}
+    `);
 
-    // Resolve effective distance filter: explicit filters override viewer prefs
-    const effectiveMaxDistance =
-        filters?.maxDistance ?? (viewer.activityRemoteMode ? undefined : viewer.activityMaxDistance);
-
-    const where: Prisma.ActivityWhereInput = {
-        isCancelled: false,
-        isArchived: false,
-        id: reportedIds.length > 0 ? { notIn: reportedIds } : undefined,
-        host: buildHostWhere(viewer),
-        // My gender must be accepted by the activity's target audience
-        ...(viewer.gender ? { targetGenders: { has: viewer.gender } } : {})
-    };
-
-    if (filters?.category) {
-        where.category = filters.category;
-    }
-
-    if (filters?.dateFrom || filters?.dateTo) {
-        where.dateTime = {};
-        if (filters.dateFrom) where.dateTime.gte = new Date(filters.dateFrom);
-        if (filters.dateTo) where.dateTime.lte = new Date(filters.dateTo);
-    }
-
-    if (filters?.query) {
-        where.OR = [
-            { title: { contains: filters.query, mode: 'insensitive' } },
-            { description: { contains: filters.query, mode: 'insensitive' } }
-        ];
-    }
-
-    // Tag filter: match against host's interest tags by lowercased raw label
-    if (filters?.tags && filters.tags.length > 0) {
-        const lowers = filters.tags.map((t) => t.toLowerCase());
-        const hostAnd: Prisma.UserWhereInput = {
-            tags: {
-                some: {
-                    type: 'interest',
-                    labelLower: { in: lowers }
-                }
-            }
-        };
-        where.host = { ...(where.host as Prisma.UserWhereInput), ...hostAnd };
-    }
-
-    // Geo bounding box filter
-    if (effectiveMaxDistance && viewer.latitude != null && viewer.longitude != null) {
-        const bbox = geoBoundingBox(viewer.latitude, viewer.longitude, effectiveMaxDistance);
-        if (bbox) {
-            where.latitude = bbox.latitude;
-            where.longitude = bbox.longitude;
-        }
-    }
+    const ids = rows.map((row) => row.id);
+    if (ids.length === 0) return { activities: [], totalCount: 0 };
 
     const activities = await db.activity.findMany({
-        where,
-        include: {
-            host: { select: { name: true } },
-            participants: { select: { userId: true } },
-            photos: { orderBy: { position: 'asc' }, take: 1 }
-        },
-        orderBy: [{ dateTime: 'asc' }, { createdAt: 'desc' }],
-        take: 50
+        where: { id: { in: ids } },
+        include: activitySummaryInclude
     });
 
-    // Post-filter by exact distance and age range
-    let filtered = activities;
-    if (effectiveMaxDistance && viewer.latitude != null && viewer.longitude != null) {
-        filtered = activities.filter((a) => {
-            if (a.latitude == null || a.longitude == null) return true; // no location = include
-            const dist = getDistanceKm(viewer.latitude, viewer.longitude, a.latitude, a.longitude);
-            return dist != null && dist <= effectiveMaxDistance;
-        });
-    }
-    filtered = filtered.filter((a) => passesAgeFilter(viewer.birthDate, a.targetAgeRange));
+    const byId = new Map(activities.map((activity) => [activity.id, activity]));
+    const summaries = ids
+        .map((id) => byId.get(id))
+        .filter((activity): activity is ActivitySummaryRow => Boolean(activity))
+        .map((activity) => mapActivitySummary(activity, viewer.latitude, viewer.longitude));
 
-    const summaries: ActivitySummary[] = filtered.map((a) => {
-        const distKm = getDistanceKm(viewer.latitude, viewer.longitude, a.latitude, a.longitude);
-        const distStr = distKm != null ? (distKm < 1 ? '< 1 km' : `${Math.round(distKm)} km`) : undefined;
-
-        return {
-            id: a.id,
-            title: a.title,
-            category: a.category as InterestCategoryKey,
-            dateTime: a.dateTime?.toISOString() ?? null,
-            locationName: a.locationName,
-            participantCount: a.participants.length,
-            maxParticipants: a.maxParticipants,
-            photoKey: a.photos[0]?.key ?? null,
-            hostName: a.host.name,
-            targetGenders: a.targetGenders as Gender[],
-            targetAgeRange: (a.targetAgeRange?.length === 2 ? a.targetAgeRange : [18, 80]) as [number, number],
-            distance: distStr,
-            distanceKm: distKm ?? undefined
-        };
-    });
-
-    return { activities: summaries, totalCount: summaries.length };
+    return { activities: summaries, totalCount: Number(rows[0]?.totalCount ?? summaries.length) };
 }
 
 // ─── Get Activity Counts ────────────────────────────────────────────
 
 export async function getActivityCounts(userId: string): Promise<Record<string, number>> {
+    const revision = await getActivityCacheRevision();
+    return getOrComputeCached(activityCountsKey(userId, revision), ACTIVITY_COUNTS_TTL_S, async () =>
+        computeActivityCounts(userId)
+    );
+}
+
+async function computeActivityCounts(userId: string): Promise<Record<string, number>> {
     const db = getDatabase();
     const viewer = await loadViewerContext(userId);
 
-    // Get reported activity IDs by this user
-    const reportedIds = (
-        await db.activityReport.findMany({
-            where: { reporterId: userId },
-            select: { activityId: true }
-        })
-    ).map((r) => r.activityId);
-
-    // Resolve effective distance the same way as getActivities() so counts
-    // and the actual list stay consistent (no more "2 nearby → 0 results").
-    const effectiveMaxDistance = viewer.activityRemoteMode ? undefined : viewer.activityMaxDistance;
-
-    const where: Prisma.ActivityWhereInput = {
-        isCancelled: false,
-        isArchived: false,
-        id: reportedIds.length > 0 ? { notIn: reportedIds } : undefined,
-        host: buildHostWhere(viewer),
-        ...(viewer.gender ? { targetGenders: { has: viewer.gender } } : {})
-    };
-
-    // Geo bounding box pre-filter (cheap SQL range scan)
-    if (effectiveMaxDistance && viewer.latitude != null && viewer.longitude != null) {
-        const bbox = geoBoundingBox(viewer.latitude, viewer.longitude, effectiveMaxDistance);
-        if (bbox) {
-            where.latitude = bbox.latitude;
-            where.longitude = bbox.longitude;
-        }
-    }
-
-    // Single query, then reduce — replaces the old N+1 count loop.
-    const rows = await db.activity.findMany({
-        where,
-        select: { category: true, latitude: true, longitude: true, targetAgeRange: true }
-    });
-
-    // Initialize all categories to 0
     const counts: Record<string, number> = {};
     for (const key of INTEREST_CATEGORY_KEYS) counts[key] = 0;
 
+    const rows = await db.$queryRaw<ActivityCountRow[]>(Prisma.sql`
+        SELECT a.category, COUNT(*)::integer AS count
+        ${activityDiscoveryFrom()}
+        ${buildActivityDiscoveryWhere(userId, viewer)}
+        GROUP BY a.category
+    `);
+
     for (const row of rows) {
-        // Exact distance post-filter (mirrors getActivities)
-        if (effectiveMaxDistance && viewer.latitude != null && viewer.longitude != null) {
-            if (row.latitude != null && row.longitude != null) {
-                const dist = getDistanceKm(viewer.latitude, viewer.longitude, row.latitude, row.longitude);
-                if (dist == null || dist > effectiveMaxDistance) continue;
-            }
-        }
-        if (!passesAgeFilter(viewer.birthDate, row.targetAgeRange)) continue;
-        if (row.category in counts) counts[row.category]++;
+        if (row.category in counts) counts[row.category] = Number(row.count);
     }
 
     return counts;
@@ -273,52 +418,29 @@ export async function searchActivities(
 // ─── Get Popular Activity Tags ──────────────────────────────────────
 
 export async function getPopularActivityTags(userId: string, category: InterestCategoryKey): Promise<string[]> {
+    const revision = await getActivityCacheRevision();
+    return getOrComputeCached(
+        activityPopularTagsKey(userId, category, revision),
+        POPULAR_ACTIVITY_TAGS_TTL_S,
+        async () => computePopularActivityTags(userId, category)
+    );
+}
+
+async function computePopularActivityTags(userId: string, category: InterestCategoryKey): Promise<string[]> {
     const db = getDatabase();
     const viewer = await loadViewerContext(userId);
 
-    const reportedIds = (
-        await db.activityReport.findMany({
-            where: { reporterId: userId },
-            select: { activityId: true }
-        })
-    ).map((r) => r.activityId);
+    const rows = await db.$queryRaw<ActivityTagRow[]>(Prisma.sql`
+        SELECT tags.label, COUNT(*)::integer AS count
+        ${activityDiscoveryFrom()}
+        JOIN user_tags tags ON tags."userId" = host.id AND tags.type = 'interest'
+        ${buildActivityDiscoveryWhere(userId, viewer, { category })}
+        GROUP BY tags.label
+        ORDER BY count DESC, lower(tags.label) ASC
+        LIMIT ${POPULAR_ACTIVITY_TAG_LIMIT}
+    `);
 
-    // Aggregate tags from hosts of matching activities
-    const activities = await db.activity.findMany({
-        where: {
-            category,
-            isCancelled: false,
-            isArchived: false,
-            host: buildHostWhere(viewer),
-            ...(viewer.gender ? { targetGenders: { has: viewer.gender } } : {}),
-            ...(reportedIds.length > 0 ? { id: { notIn: reportedIds } } : {})
-        },
-        select: {
-            targetAgeRange: true,
-            host: {
-                select: {
-                    tags: {
-                        where: { type: 'interest' },
-                        select: { label: true }
-                    }
-                }
-            }
-        },
-        take: 200
-    });
-
-    const counts = new Map<string, number>();
-    for (const a of activities) {
-        if (!passesAgeFilter(viewer.birthDate, a.targetAgeRange)) continue;
-        for (const t of a.host.tags) {
-            counts.set(t.label, (counts.get(t.label) ?? 0) + 1);
-        }
-    }
-
-    return Array.from(counts.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 20)
-        .map(([label]) => label);
+    return rows.map((row) => row.label);
 }
 
 // ─── Get My Activities ──────────────────────────────────────────────
@@ -339,33 +461,12 @@ export async function getMyActivities(userId: string, role: 'host' | 'participan
 
     const activities = await db.activity.findMany({
         where,
-        include: {
-            host: { select: { name: true } },
-            participants: { select: { userId: true } },
-            photos: { orderBy: { position: 'asc' }, take: 1 }
-        },
+        include: activitySummaryInclude,
         orderBy: [{ dateTime: 'asc' }, { createdAt: 'desc' }],
-        take: 50
+        take: ACTIVITY_PAGE_SIZE
     });
 
-    return activities.map((a) => {
-        const distKm = getDistanceKm(viewerProfile?.latitude, viewerProfile?.longitude, a.latitude, a.longitude);
-        const distStr = distKm != null ? (distKm < 1 ? '< 1 km' : `${Math.round(distKm)} km`) : undefined;
-
-        return {
-            id: a.id,
-            title: a.title,
-            category: a.category as InterestCategoryKey,
-            dateTime: a.dateTime?.toISOString() ?? null,
-            locationName: a.locationName,
-            participantCount: a.participants.length,
-            maxParticipants: a.maxParticipants,
-            photoKey: a.photos[0]?.key ?? null,
-            hostName: a.host.name,
-            targetGenders: a.targetGenders as Gender[],
-            targetAgeRange: (a.targetAgeRange?.length === 2 ? a.targetAgeRange : [18, 80]) as [number, number],
-            distance: distStr,
-            distanceKm: distKm ?? undefined
-        };
-    });
+    return activities.map((activity) =>
+        mapActivitySummary(activity, viewerProfile?.latitude, viewerProfile?.longitude)
+    );
 }

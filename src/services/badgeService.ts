@@ -1,14 +1,18 @@
 import type { BadgeDefinition, BadgeKey, UserBadge } from '@oxyfoo/whymeet-types';
+import type { Prisma } from '@prisma/client';
 import { getDatabase } from '@/services/database';
 import { logger } from '@/config/logger';
 
 const ONE_YEAR_MS = 365.25 * 24 * 60 * 60 * 1000;
+const USER_BADGE_CHECK_TTL_MS = 60 * 1000;
 
 // ─── In-memory cache for badge definitions ──────────────────────────
 
 let _defsCache: BadgeDefinition[] | null = null;
 let _defsCacheExpiry = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const userBadgeCheckExpiry = new Map<string, number>();
+const userBadgeCheckInFlight = new Map<string, Promise<void>>();
 
 export async function getBadgeDefinitions(): Promise<BadgeDefinition[]> {
     if (_defsCache && Date.now() < _defsCacheExpiry) return _defsCache;
@@ -47,19 +51,19 @@ interface BadgeContext {
 async function buildContext(userId: string): Promise<BadgeContext> {
     const db = getDatabase();
 
-    const user = await db.user.findUniqueOrThrow({
-        where: { id: userId },
-        select: { verified: true, createdAt: true }
-    });
-
-    const profile = await db.profile.findUnique({
-        where: { userId },
-        select: { completedHostedCount: true }
-    });
-
-    const participationCount = await db.activityParticipant.count({
-        where: { userId, activity: { hostId: { not: userId } } }
-    });
+    const [user, profile, participationCount] = await Promise.all([
+        db.user.findUniqueOrThrow({
+            where: { id: userId },
+            select: { verified: true, createdAt: true }
+        }),
+        db.profile.findUnique({
+            where: { userId },
+            select: { completedHostedCount: true }
+        }),
+        db.activityParticipant.count({
+            where: { userId, activity: { hostId: { not: userId } } }
+        })
+    ]);
 
     return {
         userId,
@@ -116,48 +120,74 @@ function evaluateBadge(key: BadgeKey, ctx: BadgeContext): { progress: number; ea
  * Check all badge conditions for a user and upsert their progress in DB.
  */
 export async function checkAndAwardBadges(userId: string): Promise<void> {
-    const db = getDatabase();
-
     try {
-        const ctx = await buildContext(userId);
-        const defs = await getBadgeDefinitions();
-
-        for (const def of defs) {
-            const { progress, earned } = evaluateBadge(def.key, ctx);
-
-            const existing = await db.userBadge.findUnique({
-                where: { userId_badgeKey: { userId, badgeKey: def.key } }
-            });
-
-            if (existing) {
-                // Don't downgrade earned badges
-                if (existing.earned && !earned) continue;
-
-                if (existing.progress !== progress || existing.earned !== earned) {
-                    await db.userBadge.update({
-                        where: { userId_badgeKey: { userId, badgeKey: def.key } },
-                        data: {
-                            progress,
-                            earned,
-                            earnedAt: earned && !existing.earned ? new Date() : existing.earnedAt
-                        }
-                    });
-                }
-            } else {
-                await db.userBadge.create({
-                    data: {
-                        userId,
-                        badgeKey: def.key,
-                        progress,
-                        earned,
-                        earnedAt: earned ? new Date() : null
-                    }
-                });
-            }
-        }
+        await persistBadgeProgress(userId);
+        userBadgeCheckExpiry.set(userId, Date.now() + USER_BADGE_CHECK_TTL_MS);
     } catch (error) {
         logger.error(`[BadgeService] Error checking badges for user ${userId}`, error);
+        throw error;
     }
+}
+
+async function persistBadgeProgress(userId: string): Promise<void> {
+    const db = getDatabase();
+    const ctx = await buildContext(userId);
+    const defs = await getBadgeDefinitions();
+    const existingRows = await db.userBadge.findMany({ where: { userId } });
+    const existingByKey = new Map(existingRows.map((badge) => [badge.badgeKey, badge]));
+    const writes: Prisma.PrismaPromise<unknown>[] = [];
+
+    for (const def of defs) {
+        const { progress, earned } = evaluateBadge(def.key, ctx);
+        const existing = existingByKey.get(def.key);
+        if (existing?.earned && !earned) continue;
+
+        const earnedAt = earned ? (existing?.earnedAt ?? new Date()) : null;
+        if (
+            existing &&
+            existing.progress === progress &&
+            existing.earned === earned &&
+            existing.earnedAt === earnedAt
+        ) {
+            continue;
+        }
+
+        writes.push(
+            db.userBadge.upsert({
+                where: { userId_badgeKey: { userId, badgeKey: def.key } },
+                create: {
+                    userId,
+                    badgeKey: def.key,
+                    progress,
+                    earned,
+                    earnedAt
+                },
+                update: {
+                    progress,
+                    earned,
+                    earnedAt
+                }
+            })
+        );
+    }
+
+    if (writes.length > 0) {
+        await db.$transaction(writes);
+    }
+}
+
+export async function checkAndAwardBadgesIfStale(userId: string): Promise<void> {
+    const expiry = userBadgeCheckExpiry.get(userId) ?? 0;
+    if (Date.now() < expiry) return;
+
+    const pending = userBadgeCheckInFlight.get(userId);
+    if (pending) return pending;
+
+    const promise = checkAndAwardBadges(userId).finally(() => {
+        userBadgeCheckInFlight.delete(userId);
+    });
+    userBadgeCheckInFlight.set(userId, promise);
+    return promise;
 }
 
 /**
@@ -167,6 +197,7 @@ export async function checkAndAwardBadges(userId: string): Promise<void> {
 export async function getUserBadges(userId: string): Promise<UserBadge[]> {
     const db = getDatabase();
     const defs = await getBadgeDefinitions();
+    const defsByKey = new Map(defs.map((def) => [def.key, def]));
 
     const dbBadges = await db.userBadge.findMany({
         where: { userId }
@@ -190,8 +221,8 @@ export async function getUserBadges(userId: string): Promise<UserBadge[]> {
             };
         })
         .sort((a, b) => {
-            const defA = defs.find((d) => d.key === a.key)!;
-            const defB = defs.find((d) => d.key === b.key)!;
+            const defA = defsByKey.get(a.key)!;
+            const defB = defsByKey.get(b.key)!;
             // Earned first, then by displayOrder
             if (a.earned !== b.earned) return a.earned ? -1 : 1;
             return defA.displayOrder - defB.displayOrder;
@@ -204,6 +235,7 @@ export async function getUserBadges(userId: string): Promise<UserBadge[]> {
 export async function getTopBadges(userId: string, limit: number = 3): Promise<UserBadge[]> {
     const db = getDatabase();
     const defs = await getBadgeDefinitions();
+    const defsByKey = new Map(defs.map((def) => [def.key, def]));
 
     const dbBadges = await db.userBadge.findMany({
         where: { userId, earned: true }
@@ -212,7 +244,7 @@ export async function getTopBadges(userId: string, limit: number = 3): Promise<U
     // Sort by displayOrder ascending (most important first)
     const sorted = dbBadges
         .map((b) => {
-            const def = defs.find((d) => d.key === b.badgeKey);
+            const def = defsByKey.get(b.badgeKey as BadgeKey);
             return { badge: b, def, order: def?.displayOrder ?? 999 };
         })
         .sort((a, b) => a.order - b.order)

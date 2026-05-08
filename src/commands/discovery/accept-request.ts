@@ -2,7 +2,7 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_AcceptRequest, WSResponse_AcceptRequest } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
-import { getConnectedClients } from '@/server/Server';
+import { getClientsForUser } from '@/server/Server';
 import { pushToUser } from '@/services/pushService';
 import { t, getUserLanguage } from '@/services/notifI18n';
 import { mapUserToProfile, profileInclude } from '@/services/userMapper';
@@ -63,7 +63,6 @@ registerCommand<WSRequest_AcceptRequest>(
             });
 
             // Notify the sender if connected
-            const connectedClients = getConnectedClients();
             const currentUser = await db.user.findUnique({
                 where: { id: client.userId },
                 include: profileInclude
@@ -81,34 +80,31 @@ registerCommand<WSRequest_AcceptRequest>(
                     }
                 });
 
-                let senderOnline = false;
-                for (const c of connectedClients.values()) {
-                    if (c.userId === senderId) {
-                        senderOnline = true;
-                        c.send({
-                            event: 'new-match',
-                            payload: {
-                                conversationId: conversation.id,
-                                participant: mapUserToProfile(currentUser)
+                const senderClients = getClientsForUser(senderId);
+                for (const c of senderClients) {
+                    c.send({
+                        event: 'new-match',
+                        payload: {
+                            conversationId: conversation.id,
+                            participant: mapUserToProfile(currentUser)
+                        }
+                    });
+                    c.send({
+                        event: 'notification',
+                        payload: {
+                            notification: {
+                                id: notification.id,
+                                type: 'match' as const,
+                                title: notification.title,
+                                body: notification.body,
+                                read: false,
+                                createdAt: notification.createdAt.toISOString()
                             }
-                        });
-                        c.send({
-                            event: 'notification',
-                            payload: {
-                                notification: {
-                                    id: notification.id,
-                                    type: 'match' as const,
-                                    title: notification.title,
-                                    body: notification.body,
-                                    read: false,
-                                    createdAt: notification.createdAt.toISOString()
-                                }
-                            }
-                        });
-                    }
+                        }
+                    });
                 }
 
-                if (!senderOnline) {
+                if (senderClients.length === 0) {
                     pushToUser(
                         senderId,
                         {

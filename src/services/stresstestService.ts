@@ -16,7 +16,7 @@ import crypto from 'crypto';
 import { getDatabase } from '@/services/database';
 import { tokenManager } from '@/services/tokenManager';
 import { logger } from '@/config/logger';
-import { getConnectedClients } from '@/server/Server';
+import { getClientsForUser, getConnectedClients } from '@/server/Server';
 import { deleteFile } from '@/services/storageService';
 import { getUsageLimitConfig } from '@/services/usageLimitsService';
 import { type UserTagType } from '@/services/userTagSync';
@@ -56,10 +56,11 @@ export function releaseBots(userIds: readonly string[]): ReleaseBotsResult {
     const releasedReservations = releaseStressBotReservations([...ids]);
 
     let closedConnections = 0;
-    for (const client of getConnectedClients().values()) {
-        if (!ids.has(client.userId)) continue;
-        client.close(1001, 'Stresstest worker closed');
-        closedConnections++;
+    for (const userId of ids) {
+        for (const client of getClientsForUser(userId)) {
+            client.close(1001, 'Stresstest worker closed');
+            closedConnections++;
+        }
     }
 
     return { releasedReservations, closedConnections };

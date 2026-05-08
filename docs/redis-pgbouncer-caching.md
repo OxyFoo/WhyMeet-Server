@@ -26,11 +26,12 @@ Le pipeline de découverte (`buildPipelineContext` + `runPipelineQuery`) était 
 
 ## Variables d'environnement ajoutées
 
-| Variable                | Défaut           | Description                                  |
-| ----------------------- | ---------------- | -------------------------------------------- |
-| `REDIS_URL`             | `""` (désactivé) | URL de connexion Redis. Vide = mode dégradé  |
-| `REDIS_TTL_CANDIDATE_S` | `300`            | TTL des profils candidats en cache (5 min)   |
-| `REDIS_TTL_SETUP_S`     | `60`             | TTL du PipelineSetup par utilisateur (1 min) |
+| Variable                       | Défaut           | Description                                         |
+| ------------------------------ | ---------------- | --------------------------------------------------- |
+| `REDIS_URL`                    | `""` (désactivé) | URL de connexion Redis. Vide = mode dégradé         |
+| `REDIS_TTL_CANDIDATE_S`        | `300`            | TTL des profils candidats en cache (5 min)          |
+| `REDIS_TTL_SETUP_S`            | `60`             | TTL du PipelineSetup par utilisateur (1 min)        |
+| `REDIS_TTL_DISCOVERY_COUNTS_S` | `60`             | TTL des compteurs discovery par utilisateur (1 min) |
 
 ---
 
@@ -178,3 +179,49 @@ POSTGRESQL_DATABASE=<database>
 ```
 
 `REDIS_URL` est injecté automatiquement via le `docker-compose.prod.yml` (`redis://whymeet-redis-prod:6379`).
+
+---
+
+## Optimisations charge élevée ajoutées
+
+### Compteurs discovery cache-first
+
+Les compteurs `get-candidate-counts` et `get-subintention-counts` utilisent maintenant des clés Redis versionnées :
+
+| Donnée                    | Clé                                            | TTL                            | Cohérence                                                                |
+| ------------------------- | ---------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------ |
+| Counts par intention      | `discovery:counts:v2:candidate:{userId}`       | `REDIS_TTL_DISCOVERY_COUNTS_S` | Forte après changement profil/préférences, éventuelle courte après swipe |
+| Counts par sous-intention | `discovery:counts:v2:sub:{userId}:{intention}` | `REDIS_TTL_DISCOVERY_COUNTS_S` | Forte après changement profil/préférences, éventuelle courte après swipe |
+
+Les swipes (`like`, `skip`, `star`, accept/decline, block/report) continuent de mettre à jour immédiatement le Redis Set `excluded:{userId}`. La liste réelle des candidats reste donc exacte: un profil swipé ou bloqué ne réapparaît pas dans `get-candidates`. Les compteurs UI peuvent en revanche rester légèrement périmés jusqu'au TTL court, ce qui évite de relancer des pipelines lourds à chaque action sous charge.
+
+Les calculs identiques simultanés sont coalescés in-memory par process: si plusieurs requêtes demandent le même compteur au même moment, une seule calcule et les autres attendent le résultat.
+
+### Discovery géographique
+
+Quand le mode remote est désactivé et que le viewer a une position, `runPipelineQuery` ajoute un préfiltre SQL bounding box sur `profiles.latitude` / `profiles.longitude`, puis conserve le filtre distance exact en JS. Cette étape réduit fortement le nombre de profils scorés quand la base grossit.
+
+### Activity discovery
+
+Les endpoints activité ont des caches dédiés :
+
+| Donnée                   | Clé                                                                 | TTL   |
+| ------------------------ | ------------------------------------------------------------------- | ----- |
+| Counts par catégorie     | `activity:discovery:v2:{revision}:counts:{userId}`                  | 60 s  |
+| Tags populaires activité | `activity:discovery:v2:{revision}:popular-tags:{userId}:{category}` | 600 s |
+
+Le contexte viewer activité est aussi mémoïsé brièvement en mémoire par process. Il est invalidé sur `update-profile` et `update-preferences`, puis retombe sur la DB si Redis est indisponible. Les mutations du catalogue activité incrémentent une révision globale pour éviter de scanner toutes les clés utilisateur.
+
+### Indexes PostgreSQL
+
+La migration `20260507120000_perf_indexes` ajoute des indexes partiels/GIN/concurrents pour les chemins discovery, activity, exclusion cache, notifications et messages. Après application en staging/prod, vérifier les plans avec `EXPLAIN (ANALYZE, BUFFERS)` et surveiller `pg_stat_user_indexes` pour confirmer leur utilisation.
+
+### Limite de scaling process
+
+Les WebSockets et les événements live restent in-memory dans le process Node. Ne pas lancer plusieurs instances serveur derrière un load balancer sans ajouter d'abord :
+
+1. sticky sessions WebSocket ;
+2. Redis pub/sub ou équivalent pour relayer les événements entre process ;
+3. dimensionnement PgBouncer/Postgres pour la somme des process.
+
+Sur une machine 4 coeurs / 16 Go, augmenter `whymeet-redis-prod` au-delà de `512mb` peut devenir utile si le cache candidats est fortement utilisé par 100k comptes. Viser 1-2 Go Redis avant d'allonger les TTL, en gardant `allkeys-lru`.

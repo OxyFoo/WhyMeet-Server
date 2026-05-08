@@ -254,4 +254,37 @@ describe('mapUserToCandidate', () => {
         expect(candidate.bio).toBe('');
         expect(candidate.intentions).toEqual([]);
     });
+
+    it('maps earned badges with dates deserialized from cache', () => {
+        const earnedAt = '2026-05-07T19:49:00.000Z';
+        const rewardClaimedAt = '2026-05-07T19:50:00.000Z';
+        const user = makePrismaUser({
+            badges: [
+                {
+                    badgeKey: 'verified_profile',
+                    earned: true,
+                    earnedAt,
+                    progress: 1,
+                    rewardClaimedAt,
+                    definition: {
+                        emoji: '✓',
+                        displayOrder: 1,
+                        threshold: 1,
+                        rewardType: null,
+                        rewardDescription: null
+                    }
+                }
+            ]
+        });
+
+        const candidate = mapUserToCandidate(user);
+
+        expect(candidate.user.badges).toEqual([
+            expect.objectContaining({
+                key: 'verified_profile',
+                earnedAt,
+                rewardClaimedAt
+            })
+        ]);
+    });
 });

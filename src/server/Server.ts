@@ -20,8 +20,15 @@ import { getDatabase } from '@/services/database';
 import { isMaintenanceMode } from '@/services/maintenanceService';
 import { renderTemplate } from '@/services/templateService';
 import type { WSServerResponse } from '@oxyfoo/whymeet-types';
-
-const clients = new Map<string, Client>();
+import {
+    clearConnectedClients,
+    getClientsForUser,
+    getConnectedClients as getConnectedClientsRegistry,
+    isUserConnected,
+    registerConnectedClient,
+    sendToUser,
+    unregisterConnectedClient
+} from '@/server/connectedClients';
 
 let httpServer: http.Server | https.Server;
 let wss: WebSocketServer;
@@ -70,7 +77,7 @@ function createHttpServer(): http.Server | https.Server {
         res.json({
             status: maintenance ? 'maintenance' : 'ok',
             uptime: process.uptime(),
-            clients: clients.size
+            clients: getConnectedClientsRegistry().size
         });
     });
 
@@ -135,7 +142,7 @@ function onConnection(ws: WebSocket, req: http.IncomingMessage): void {
     const deviceId = (req as unknown as { wsDeviceId: string }).wsDeviceId;
 
     const client = new Client(id, ws, ip, userId, deviceId);
-    clients.set(id, client);
+    registerConnectedClient(client);
 
     // Log IP asynchronously (non-blocking)
     const db = getDatabase();
@@ -144,7 +151,7 @@ function onConnection(ws: WebSocket, req: http.IncomingMessage): void {
         .update({ where: { id: deviceId }, data: { lastIp: ip, lastSeenAt: new Date() } })
         .catch((err) => logger.warn('[Server] Failed to update device IP', err));
 
-    logger.info(`[Server] Client connected: ${id} (${ip}) — Total: ${clients.size}`);
+    logger.info(`[Server] Client connected: ${id} (${ip}) — Total: ${getConnectedClientsRegistry().size}`);
 
     let invalidMessageCount = 0;
 
@@ -199,13 +206,13 @@ function onConnection(ws: WebSocket, req: http.IncomingMessage): void {
     });
 
     ws.on('close', () => {
-        clients.delete(id);
-        logger.info(`[Server] Client disconnected: ${id} — Total: ${clients.size}`);
+        unregisterConnectedClient(client);
+        logger.info(`[Server] Client disconnected: ${id} — Total: ${getConnectedClientsRegistry().size}`);
     });
 
     ws.on('error', (error) => {
         logger.error(`[Server] Client error: ${id}`, error);
-        clients.delete(id);
+        unregisterConnectedClient(client);
     });
 }
 
@@ -295,10 +302,10 @@ export function startServer(port: number): Promise<void> {
 }
 
 export async function stopServer(): Promise<void> {
-    for (const client of clients.values()) {
+    for (const client of getConnectedClientsRegistry().values()) {
         client.close(1001, 'Server shutting down');
     }
-    clients.clear();
+    clearConnectedClients();
 
     if (wss) {
         wss.close();
@@ -317,5 +324,7 @@ export async function stopServer(): Promise<void> {
 }
 
 export function getConnectedClients(): Map<string, Client> {
-    return clients;
+    return getConnectedClientsRegistry();
 }
+
+export { getClientsForUser, isUserConnected, sendToUser };

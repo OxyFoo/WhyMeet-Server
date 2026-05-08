@@ -2,7 +2,13 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_GetSubIntentionCounts, WSResponse_GetSubIntentionCounts } from '@oxyfoo/whymeet-types';
 import { SUB_INTENTIONS } from '@oxyfoo/whymeet-types';
-import { buildPipelineContext, runPipelineQuery } from '@/services/discoveryPipeline';
+import {
+    buildPipelineContext,
+    countQualifiedBySubIntention,
+    runPipelineQuery,
+    DISCOVERY_FETCH_LIMIT
+} from '@/services/discoveryPipeline';
+import { getOrComputeSubIntentionCounts } from '@/services/discoveryCountsCache';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_GetSubIntentionCounts>(
@@ -16,13 +22,18 @@ registerCommand<WSRequest_GetSubIntentionCounts>(
                 return { command: 'get-subintention-counts', payload: { counts: {} } };
             }
 
-            const setup = await buildPipelineContext(client);
+            const counts = await getOrComputeSubIntentionCounts(client.userId, intention, async () => {
+                const setup = await buildPipelineContext(client);
+                const scopeTags = [...new Set(subs.flatMap((sub) => sub.tags))];
+                if (scopeTags.length === 0) return Object.fromEntries(subs.map((sub) => [sub.key, 0]));
 
-            const counts: Record<string, number> = {};
-            for (const sub of subs) {
-                const { qualified } = await runPipelineQuery(setup, { intentions: [intention], tags: sub.tags }, 300);
-                counts[sub.key] = qualified.length;
-            }
+                const { qualified } = await runPipelineQuery(
+                    setup,
+                    { intentions: [intention], tags: scopeTags },
+                    DISCOVERY_FETCH_LIMIT
+                );
+                return countQualifiedBySubIntention(qualified, subs);
+            });
 
             logger.debug(
                 `[Discovery] Sub-intention counts for ${client.userId} / ${intention}: ${JSON.stringify(counts)}`

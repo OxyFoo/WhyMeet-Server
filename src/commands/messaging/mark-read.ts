@@ -2,7 +2,7 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_MarkRead, WSResponse_MarkRead } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
-import { getConnectedClients } from '@/server/Server';
+import { getClientsForUser } from '@/server/Server';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_MarkRead>('mark-read', async (client: Client, payload): Promise<WSResponse_MarkRead> => {
@@ -37,18 +37,16 @@ registerCommand<WSRequest_MarkRead>('mark-read', async (client: Client, payload)
 
         // Notify other participants so they can update read status in UI
         const otherParticipants = await db.conversationParticipant.findMany({
-            where: { conversationId, userId: { not: client.userId } }
+            where: { conversationId, userId: { not: client.userId } },
+            select: { userId: true }
         });
 
-        const connectedClients = getConnectedClients();
         for (const p of otherParticipants) {
-            for (const c of connectedClients.values()) {
-                if (c.userId === p.userId) {
-                    c.send({
-                        event: 'mark-read',
-                        payload: { conversationId }
-                    });
-                }
+            for (const c of getClientsForUser(p.userId)) {
+                c.send({
+                    event: 'mark-read',
+                    payload: { conversationId }
+                });
             }
         }
 

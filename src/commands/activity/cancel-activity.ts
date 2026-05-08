@@ -3,7 +3,7 @@ import type { Client } from '@/server/Client';
 import type { WSRequest_CancelActivity, WSResponse_CancelActivity } from '@oxyfoo/whymeet-types';
 import { cancelActivity } from '@/services/activityService';
 import { getDatabase } from '@/services/database';
-import { getConnectedClients } from '@/server/Server';
+import { getClientsForUser } from '@/server/Server';
 import { pushToUser } from '@/services/pushService';
 import { t, getUserLanguage } from '@/services/notifI18n';
 import { logger } from '@/config/logger';
@@ -28,7 +28,6 @@ registerCommand<WSRequest_CancelActivity>(
 
             // Notify all participants (except host)
             if (activity) {
-                const connectedClients = getConnectedClients();
                 for (const p of activity.participants) {
                     if (p.userId === client.userId) continue;
 
@@ -46,28 +45,25 @@ registerCommand<WSRequest_CancelActivity>(
                         }
                     });
 
-                    let isOnline = false;
-                    for (const c of connectedClients.values()) {
-                        if (c.userId === p.userId) {
-                            c.send({
-                                event: 'notification',
-                                payload: {
-                                    notification: {
-                                        id: notif.id,
-                                        type: 'system',
-                                        title,
-                                        body,
-                                        read: false,
-                                        activityId,
-                                        createdAt: notif.createdAt.toISOString()
-                                    }
+                    const participantClients = getClientsForUser(p.userId);
+                    for (const c of participantClients) {
+                        c.send({
+                            event: 'notification',
+                            payload: {
+                                notification: {
+                                    id: notif.id,
+                                    type: 'system',
+                                    title,
+                                    body,
+                                    read: false,
+                                    activityId,
+                                    createdAt: notif.createdAt.toISOString()
                                 }
-                            });
-                            isOnline = true;
-                        }
+                            }
+                        });
                     }
 
-                    if (!isOnline) {
+                    if (participantClients.length === 0) {
                         pushToUser(p.userId, { title, body, data: { type: 'activity_cancelled', activityId } });
                     }
                 }

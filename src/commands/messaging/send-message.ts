@@ -2,7 +2,7 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_SendMessage, WSResponse_SendMessage } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
-import { getConnectedClients } from '@/server/Server';
+import { getClientsForUser } from '@/server/Server';
 import { pushToUser } from '@/services/pushService';
 import { logger } from '@/config/logger';
 import { sendMessageSchema } from '@/config/validation';
@@ -31,7 +31,7 @@ registerCommand<WSRequest_SendMessage>(
             // Verify sender is not banned/suspended/deleted
             const sender = await db.user.findUnique({
                 where: { id: client.userId },
-                select: { banned: true, suspended: true, deleted: true }
+                select: { banned: true, suspended: true, deleted: true, name: true }
             });
             if (!sender || sender.banned || sender.suspended || sender.deleted) {
                 return { command: 'send-message', payload: { error: 'Account unavailable' } };
@@ -64,31 +64,21 @@ registerCommand<WSRequest_SendMessage>(
 
             // Push to other connected participants
             const otherParticipants = await db.conversationParticipant.findMany({
-                where: { conversationId, userId: { not: client.userId } }
+                where: { conversationId, userId: { not: client.userId } },
+                select: { userId: true }
             });
 
-            const connectedClients = getConnectedClients();
+            const senderName = sender.name || 'Someone';
             for (const p of otherParticipants) {
-                let isOnline = false;
-                for (const c of connectedClients.values()) {
-                    if (c.userId === p.userId) {
-                        c.send({
-                            event: 'new-message',
-                            payload: { conversationId, message: messagePayload }
-                        });
-                        isOnline = true;
-                    }
+                const userClients = getClientsForUser(p.userId);
+                for (const c of userClients) {
+                    c.send({
+                        event: 'new-message',
+                        payload: { conversationId, message: messagePayload }
+                    });
                 }
 
-                if (!isOnline) {
-                    const senderName =
-                        (
-                            await db.user.findUnique({
-                                where: { id: client.userId },
-                                select: { name: true }
-                            })
-                        )?.name ?? 'Someone';
-
+                if (userClients.length === 0) {
                     pushToUser(
                         p.userId,
                         {

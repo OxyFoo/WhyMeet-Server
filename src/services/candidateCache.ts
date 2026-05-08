@@ -4,15 +4,26 @@ import { logger } from '@/config/logger';
 
 const KEY_PREFIX = 'candidate:';
 
-// Date fields that must be revived when deserializing from Redis
-const DATE_FIELDS = new Set(['birthDate', 'createdAt', 'updatedAt', 'suspendedAt', 'deletedAt', 'timestamp']);
+// Date fields that must be revived when deserializing candidate rows from Redis.
+// The cache stores full nested Prisma payloads, so keys can appear at any depth.
+const DATE_FIELDS = new Set([
+    'birthDate',
+    'birthDateLastChangedAt',
+    'createdAt',
+    'updatedAt',
+    'suspendedAt',
+    'deletedAt',
+    'earnedAt',
+    'rewardClaimedAt',
+    'timestamp'
+]);
 
 function key(userId: string): string {
     return `${KEY_PREFIX}${userId}`;
 }
 
-function revive(_: string, value: unknown): unknown {
-    if (typeof value === 'string' && DATE_FIELDS.has(_) && value) {
+function revive(key: string, value: unknown): unknown {
+    if (typeof value === 'string' && DATE_FIELDS.has(key) && value) {
         const d = new Date(value);
         return isNaN(d.getTime()) ? value : d;
     }

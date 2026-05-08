@@ -66,13 +66,13 @@ Vue d'ensemble de tous les services externes nécessaires au fonctionnement du s
 
 ### Redis — Cache
 
-|               |                                                                                         |
-| ------------- | --------------------------------------------------------------------------------------- |
-| **Rôle**      | Cache 3 niveaux : profils candidats (5 min), pipeline setup (1 min), exclude list (24h) |
-| **Port**      | `6379`                                                                                  |
-| **Variables** | `REDIS_URL`, `REDIS_TTL_CANDIDATE_S`, `REDIS_TTL_SETUP_S`                               |
-| **Docker**    | `redis:7-alpine` (dev sans persistance) / 512 MB + LRU eviction (prod)                  |
-| **Si absent** | Cache désactivé, requêtes DB directes — **optionnel**                                   |
+|               |                                                                                           |
+| ------------- | ----------------------------------------------------------------------------------------- |
+| **Rôle**      | Cache 3 niveaux : profils candidats (5 min), pipeline setup (1 min), exclude list (24h)   |
+| **Port**      | `6379`                                                                                    |
+| **Variables** | `REDIS_URL`, `REDIS_TTL_CANDIDATE_S`, `REDIS_TTL_SETUP_S`, `REDIS_TTL_DISCOVERY_COUNTS_S` |
+| **Docker**    | `redis:7-alpine` (dev sans persistance) / 512 MB + LRU eviction (prod)                    |
+| **Si absent** | Cache désactivé, requêtes DB directes — **optionnel**                                     |
 
 <a id="service-minio"></a>
 
