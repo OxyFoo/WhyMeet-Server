@@ -18,6 +18,11 @@ jest.mock('@/services/interleaveResults', () => ({
     interleaveByBoost: jest.fn().mockImplementation((candidates: unknown[]) => candidates)
 }));
 
+const mockEnrichProfileIntentionsFromFilters = jest.fn().mockResolvedValue(undefined);
+jest.mock('@/services/intentionProfileEnrichment', () => ({
+    enrichProfileIntentionsFromFilters: (...args: unknown[]) => mockEnrichProfileIntentionsFromFilters(...args)
+}));
+
 const mockUserFindUnique = jest.fn();
 const mockUserFindMany = jest.fn();
 const mockMatchFindMany = jest.fn();
@@ -69,39 +74,57 @@ function fakeClient(userId = 'me'): Client {
     return { userId, id: 'c1', ip: '127.0.0.1', deviceId: 'd1' } as Client;
 }
 
-function prismaUser(id: string, intentions: string[] = ['dating'], tagLabels: string[] = ['Hiking']) {
+function prismaUser(
+    id: string,
+    intentionKeys: string[] = ['meet_simple_first_date'],
+    tagLabels: string[] = ['Hiking']
+) {
+    const interests = [...tagLabels];
+    while (interests.length < 5) interests.push(`${id}-interest-${interests.length}`);
+    const skills = Array.from({ length: 5 }, (_, index) => `${id}-skill-${index}`);
+
     return {
         id,
         name: 'User',
         age: 25,
+        birthDate: new Date('2000-01-01'),
         gender: 'female',
-        photos: [],
+        photos: [{ id: `${id}-photo-1` }],
         city: 'Paris',
         verified: true,
         suspended: false,
         banned: false,
         preferredPeriod: 'any',
         profile: {
-            bio: 'bio',
-            socialVibe: 'chill',
+            bio: 'Une bio assez longue',
+            socialVibe: 'balanced',
             country: 'FR',
             region: 'IDF',
             city: 'Paris',
-            latitude: null,
-            longitude: null,
+            latitude: 48.8566,
+            longitude: 2.3522,
             statConnections: 0,
             statMatches: 0,
             statVibes: 0,
-            intentions,
+            intentionKeys,
             spokenLanguages: ['fr']
         },
-        tags: tagLabels.map((label, i) => ({
-            id: `ut${i}`,
-            type: 'interest',
-            label,
-            labelLower: label.toLowerCase(),
-            tag: { id: `t${i}`, label }
-        })),
+        tags: [
+            ...interests.map((label, i) => ({
+                id: `interest-${id}-${i}`,
+                type: 'interest',
+                label,
+                labelLower: label.toLowerCase(),
+                tag: { id: `interest-tag-${id}-${i}`, label }
+            })),
+            ...skills.map((label, i) => ({
+                id: `skill-${id}-${i}`,
+                type: 'skill',
+                label,
+                labelLower: label.toLowerCase(),
+                tag: { id: `skill-tag-${id}-${i}`, label }
+            }))
+        ],
         _count: { receivedReports: 0 }
     };
 }
@@ -117,7 +140,7 @@ describe('get-candidates command', () => {
     });
 
     it('excludes current user and already-seen users', async () => {
-        mockUserFindUnique.mockResolvedValue(prismaUser('me', ['dating'], ['Yoga']));
+        mockUserFindUnique.mockResolvedValue(prismaUser('me', ['meet_simple_first_date'], ['Yoga']));
         mockMatchFindMany.mockResolvedValue([{ receiverId: 'seen-1' }, { receiverId: 'seen-2' }]);
         mockUserFindMany.mockResolvedValue([]);
 
@@ -134,14 +157,18 @@ describe('get-candidates command', () => {
 
     it('scores candidates using weighted scoring and sorts by total score', async () => {
         mockUserFindUnique.mockResolvedValue(
-            prismaUser('me', ['dating', 'friendship', 'networking'], ['Yoga', 'Café'])
+            prismaUser(
+                'me',
+                ['meet_simple_first_date', 'meet_make_acquaintance', 'build_collaboration'],
+                ['Yoga', 'Café']
+            )
         );
         mockMatchFindMany.mockResolvedValue([]);
-        // candidate-A: 1/3 common intentions + 1/2 common tags
-        // candidate-B: 3/3 common intentions + 0 common tags → higher intention score dominates
+        // candidate-A: 1/3 common contexts + 1/2 common tags
+        // candidate-B: 3/3 common contexts + 0 common tags → higher context score dominates
         mockUserFindMany.mockResolvedValue([
-            prismaUser('A', ['dating'], ['Yoga']),
-            prismaUser('B', ['dating', 'friendship', 'networking'], ['Surf'])
+            prismaUser('A', ['meet_simple_first_date'], ['Yoga']),
+            prismaUser('B', ['meet_simple_first_date', 'meet_make_acquaintance', 'build_collaboration'], ['Surf'])
         ]);
 
         const result = await routeCommand(fakeClient('me'), {
@@ -151,7 +178,7 @@ describe('get-candidates command', () => {
 
         const candidates = (result as { payload: { candidates: { id: string }[] } }).payload.candidates;
         expect(candidates.length).toBeGreaterThanOrEqual(2);
-        // B has full intention match (25pts) vs A's partial (8.3pts)
+        // B has full context match vs A's partial match.
         expect(candidates[0].id).toBe('B');
         expect(candidates[1].id).toBe('A');
     });
@@ -212,6 +239,36 @@ describe('like command', () => {
         expect((result as { payload: { matched: boolean } }).payload.matched).toBe(false);
     });
 
+    it('stores the selected intention on the match record', async () => {
+        mockMatchUpsert.mockResolvedValue({ id: 'm1' });
+        mockMatchFindFirst.mockResolvedValue(null);
+
+        await routeCommand(fakeClient('me'), {
+            command: 'like',
+            payload: {
+                candidateId: 'other',
+                selection: {
+                    categoryKey: 'see_if_it_clicks',
+                    intentionKey: 'meet_simple_first_date',
+                    tags: ['Café']
+                }
+            }
+        } as never);
+
+        expect(mockMatchUpsert).toHaveBeenCalledWith(
+            expect.objectContaining({
+                create: expect.objectContaining({
+                    categoryKey: 'see_if_it_clicks',
+                    intentionKey: 'meet_simple_first_date'
+                }),
+                update: expect.objectContaining({
+                    categoryKey: 'see_if_it_clicks',
+                    intentionKey: 'meet_simple_first_date'
+                })
+            })
+        );
+    });
+
     it('returns matched:true and creates conversation on mutual match', async () => {
         mockMatchUpsert.mockResolvedValue({ id: 'm1' });
         mockMatchFindFirst.mockResolvedValue({ id: 'm2' }); // reverse exists
@@ -260,6 +317,23 @@ describe('like command', () => {
         expect(result).toEqual(
             expect.objectContaining({ payload: expect.objectContaining({ error: 'Internal error' }) })
         );
+    });
+
+    it('rejects incoherent intention selections', async () => {
+        const result = await routeCommand(fakeClient('me'), {
+            command: 'like',
+            payload: {
+                candidateId: 'other',
+                selection: { categoryKey: 'build_connection', intentionKey: 'meet_simple_first_date' }
+            }
+        } as never);
+
+        expect(result).toEqual(
+            expect.objectContaining({
+                payload: expect.objectContaining({ error: 'Invalid field: selection.intentionKey' })
+            })
+        );
+        expect(mockMatchUpsert).not.toHaveBeenCalled();
     });
 });
 

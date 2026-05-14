@@ -4,7 +4,16 @@
  */
 
 import { z } from 'zod';
-import { SOCIAL_VIBES, INTENTION_KEYS, INTEREST_CATEGORY_KEYS, GENDERS } from '@oxyfoo/whymeet-types';
+import {
+    GENDERS,
+    INTEREST_CATEGORY_KEYS,
+    getCategoryKeyForIntention,
+    isIntentionKey,
+    isIntentionCategoryKey,
+    SOCIAL_VIBES,
+    type SearchFilters,
+    type IntentionSelection
+} from '@oxyfoo/whymeet-types';
 
 // ─── Limits ───────────────────────────────────────────────────────────────────
 
@@ -18,7 +27,7 @@ export const LIMITS = {
     INTERESTS_MAX: 30,
     SKILLS_MAX: 30,
     LANGUAGES_MAX: 20,
-    INTENTIONS_MAX: 7,
+    INTENTIONS_MAX: 12,
     PUSH_TOKEN_MAX: 300,
     LOCATION_NAME_MAX: 100,
     ACTIVITY_TITLE_MIN: 3,
@@ -128,13 +137,13 @@ export function validateProfileData(data: Record<string, unknown>): string | nul
             return 'Invalid field: socialVibe';
         }
     }
-    if (data.intentions !== undefined) {
+    if (data.intentionKeys !== undefined) {
         if (
-            !Array.isArray(data.intentions) ||
-            data.intentions.length > LIMITS.INTENTIONS_MAX ||
-            data.intentions.some((i) => !(INTENTION_KEYS as readonly string[]).includes(i as string))
+            !Array.isArray(data.intentionKeys) ||
+            data.intentionKeys.length > LIMITS.INTENTIONS_MAX ||
+            data.intentionKeys.some((key) => !isKnownIntentionValue(key))
         ) {
-            return 'Invalid field: intentions';
+            return 'Invalid field: intentionKeys';
         }
     }
     if (data.spokenLanguages !== undefined) {
@@ -157,4 +166,87 @@ export function validateProfileData(data: Record<string, unknown>): string | nul
         }
     }
     return null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function validateTagList(value: unknown, fieldName: string): string | null {
+    if (value === undefined) return null;
+    if (
+        !Array.isArray(value) ||
+        value.length > LIMITS.INTERESTS_MAX ||
+        value.some((tag) => typeof tag !== 'string' || tag.trim().length === 0 || tag.length > LIMITS.TAG_LABEL_MAX)
+    ) {
+        return `Invalid field: ${fieldName}`;
+    }
+    return null;
+}
+
+function isKnownIntentionValue(value: unknown): value is string {
+    return typeof value === 'string' && isIntentionKey(value);
+}
+
+export function validateIntentionSelection(selection: unknown): string | null {
+    if (!isRecord(selection)) return 'Invalid field: selection';
+
+    const { categoryKey, intentionKey, tags, query } = selection as Partial<IntentionSelection>;
+    if (typeof categoryKey !== 'string' || !isIntentionCategoryKey(categoryKey)) {
+        return 'Invalid field: selection.categoryKey';
+    }
+    if (!isKnownIntentionValue(intentionKey)) {
+        return 'Invalid field: selection.intentionKey';
+    }
+
+    const tagError = validateTagList(tags, 'selection.tags');
+    if (tagError) return tagError;
+    if (query !== undefined && (typeof query !== 'string' || query.trim().length > 120)) {
+        return 'Invalid field: selection.query';
+    }
+
+    if (getCategoryKeyForIntention(intentionKey) !== categoryKey) {
+        return 'Invalid field: selection.intentionKey';
+    }
+
+    return null;
+}
+
+export function validateSearchFilters(filters: unknown): string | null {
+    if (filters === undefined) return null;
+    if (!isRecord(filters)) return 'Invalid field: filters';
+
+    const { categoryKey, intentionKey, intentionKeys, tags, query } = filters as Partial<SearchFilters>;
+    if (categoryKey !== undefined && (typeof categoryKey !== 'string' || !isIntentionCategoryKey(categoryKey))) {
+        return 'Invalid field: categoryKey';
+    }
+    if (intentionKey !== undefined && !isKnownIntentionValue(intentionKey)) {
+        return 'Invalid field: intentionKey';
+    }
+    if (intentionKeys !== undefined) {
+        if (!Array.isArray(intentionKeys) || intentionKeys.some((key) => !isKnownIntentionValue(key))) {
+            return 'Invalid field: intentionKeys';
+        }
+    }
+
+    const selectedIntentionKeys = [
+        ...(isKnownIntentionValue(intentionKey) ? [intentionKey] : []),
+        ...(Array.isArray(intentionKeys) ? intentionKeys.filter(isKnownIntentionValue) : [])
+    ];
+    if (categoryKey && selectedIntentionKeys.length > 0) {
+        const mismatch = selectedIntentionKeys.some((key) => getCategoryKeyForIntention(key) !== categoryKey);
+        if (mismatch) return 'Invalid field: intentionKey';
+    }
+
+    const tagError = validateTagList(tags, 'tags');
+    if (tagError) return tagError;
+    if (query !== undefined && (typeof query !== 'string' || query.trim().length > 120)) {
+        return 'Invalid field: query';
+    }
+
+    return null;
+}
+
+export function validateOptionalSelectedTags(tags: unknown): string | null {
+    return validateTagList(tags, 'selectedTags');
 }

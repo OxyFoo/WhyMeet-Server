@@ -1,13 +1,14 @@
 import type {
     Profile,
     ProfilePhoto,
-    IntentionKey,
     Gender,
     PreferredPeriod,
+    IntentionKey,
     UserBadge,
     BadgeKey
 } from '@oxyfoo/whymeet-types';
 import { getHostLevel } from '@oxyfoo/whymeet-types';
+import { normalizeActiveIntentionKeys } from '@/services/intentionKeys';
 
 type DateLike = Date | string | null | undefined;
 
@@ -129,7 +130,7 @@ export function mapUserToProfile(user: {
         statConnections: number;
         statMatches: number;
         statVibes: number;
-        intentions: string[];
+        intentionKeys: string[];
         spokenLanguages: string[];
         trustScore: number;
         completedHostedCount: number;
@@ -187,7 +188,7 @@ export function mapUserToProfile(user: {
         skills: (user.tags ?? [])
             .filter((t) => t.type === 'skill')
             .map((t) => ({ id: t.id, label: t.label, source: t.source ?? null })),
-        intentions: (user.profile?.intentions ?? []) as IntentionKey[],
+        intentionKeys: normalizeActiveIntentionKeys(user.profile?.intentionKeys ?? []),
         spokenLanguages: user.profile?.spokenLanguages ?? [],
         preferredDiscoveryView: (user.profile?.preferredDiscoveryView ?? 'swipe') as Profile['preferredDiscoveryView'],
         location: {
@@ -256,23 +257,23 @@ type PrismaUserWithProfile = Parameters<typeof mapUserToProfile>[0];
 
 /**
  * Maps a Prisma User (with profile/tags) to a MatchCandidate.
- * @param priorityIntentions — intentions to sort first in the list
+ * @param priorityContextKeys — intentions to sort first in the list
  * @param refLatLng — reference user's coordinates for distance calculation
  * @param flags — additional flags (isPremium, isBoosted) derived at runtime
  */
 export function mapUserToCandidate(
     user: PrismaUserWithProfile,
-    priorityIntentions?: IntentionKey[],
+    priorityContextKeys?: IntentionKey[],
     refLatLng?: { latitude: number | null; longitude: number | null },
     flags?: { isPremium?: boolean; isBoosted?: boolean }
 ): MatchCandidate {
-    const userIntentions = Array.from(new Set((user.profile?.intentions ?? []) as IntentionKey[]));
-    const sorted = priorityIntentions?.length
+    const userContextKeys = normalizeActiveIntentionKeys(user.profile?.intentionKeys ?? []);
+    const sorted = priorityContextKeys?.length
         ? [
-              ...userIntentions.filter((i) => priorityIntentions.includes(i)),
-              ...userIntentions.filter((i) => !priorityIntentions.includes(i))
+              ...userContextKeys.filter((key) => priorityContextKeys.includes(key)),
+              ...userContextKeys.filter((key) => !priorityContextKeys.includes(key))
           ]
-        : userIntentions;
+        : userContextKeys;
 
     return {
         id: user.id,
@@ -297,7 +298,7 @@ export function mapUserToCandidate(
             isBoosted: flags?.isBoosted ?? false,
             badges: mapBadges(user.badges)
         },
-        intentions: sorted,
+        intentionKeys: sorted,
         bio: user.profile?.bio ?? '',
         interests: (user.tags ?? []).filter((t) => t.type === 'interest').map((t) => t.label),
         skills: (user.tags ?? []).filter((t) => t.type === 'skill').map((t) => t.label),

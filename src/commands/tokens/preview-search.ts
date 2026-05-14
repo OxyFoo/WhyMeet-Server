@@ -6,6 +6,7 @@ import { runDiscoveryPipeline, DISCOVERY_FETCH_LIMIT } from '@/services/discover
 import { getBoostedUserIds } from '@/services/boostService';
 import { interleaveByBoost } from '@/services/interleaveResults';
 import { obfuscateString } from '@/services/previewObfuscation';
+import { validateSearchFilters } from '@/config/validation';
 import { logger } from '@/config/logger';
 
 const MAX_RESULTS = 25;
@@ -24,13 +25,17 @@ registerCommand<WSRequest_PreviewSearch>(
         const { filters } = payload;
 
         try {
+            const validationError = validateSearchFilters(filters);
+            if (validationError) return { command: 'preview-search', payload: { error: validationError } };
+
             // Single source of truth: same pipeline as get-candidates and get-candidate-counts.
             const { qualified, ctx } = await runDiscoveryPipeline(client, filters, DISCOVERY_FETCH_LIMIT);
             const totalCount = qualified.length;
 
             const allCandidates = qualified.map((s) => {
-                const candidate = mapUserToCandidate(s.user, ctx.prefIntentions, ctx.myLatLng);
+                const candidate = mapUserToCandidate(s.user, ctx.prefIntentionKeys, ctx.myLatLng);
                 candidate.score = s.score;
+                candidate.intentionMatch = s.intentionMatch;
                 return candidate;
             });
 
@@ -54,7 +59,8 @@ registerCommand<WSRequest_PreviewSearch>(
                         city: c.user.city ? obfuscateString(c.user.city) : c.user.city
                     },
                     bio: obfuscateString(c.bio),
-                    intentions: c.intentions,
+                    intentionKeys: c.intentionKeys,
+                    intentionMatch: c.intentionMatch,
                     interests: c.interests.map(obfuscateString),
                     skills: c.skills.map(obfuscateString),
                     distance: c.distance ? obfuscateString(c.distance) : c.distance,

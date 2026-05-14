@@ -1,10 +1,21 @@
 import type { Client } from '@/server/Client';
 import type {
-    IntentionKey,
     InterestCategoryKey,
     PreferredPeriod,
     SearchFilters,
+    IntentionMatchSummary,
+    IntentionKey,
+    IntentionCategoryKey,
     SocialVibe
+} from '@oxyfoo/whymeet-types';
+import {
+    getAllIntentionsForCategory,
+    getAncestorIntentionKeys,
+    getDescendantIntentionKeys,
+    getCategoryKeyForIntention,
+    getParentKeyForIntention,
+    isIntentionKey,
+    SOCIAL_VIBES
 } from '@oxyfoo/whymeet-types';
 import type { Prisma } from '@prisma/client';
 import { getDatabase } from '@/services/database';
@@ -15,16 +26,19 @@ import {
     ageToBirthDateRange,
     geoBoundingBox
 } from '@/services/userMapper';
-import { computeMatchScore, MIN_SCORE_THRESHOLD } from '@/services/scoring';
+import { buildIntentionMatchSummary, computeMatchScore, MIN_SCORE_THRESHOLD } from '@/services/scoring';
 import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
+import { isProfileComplete } from '@/services/profileCompletion';
 import { getExcludeIds } from '@/services/excludeCache';
 import { getCandidates, setCandidates } from '@/services/candidateCache';
 import { getPipelineSetup, setPipelineSetup } from '@/services/pipelineSetupCache';
 import { isFeatureEnabled } from '@/services/featureFlagService';
 import { resolveDomain } from '@/services/tagDomain';
 import { logger } from '@/config/logger';
+import { normalizeActiveIntentionKeys } from '@/services/intentionKeys';
 
 const DEFAULT_MAX_DISTANCE = 50; // km
+const MIN_EXACT_INTENTION_RESULTS = 6;
 
 /**
  * Shared fetch limit for the whole discovery pipeline (swipe, counts, search).
@@ -45,50 +59,44 @@ type CandidateUser = Prisma.UserGetPayload<{ include: typeof candidateQueryInclu
 
 export interface QualifiedCandidate {
     user: CandidateUser;
-    intentions: IntentionKey[];
+    intentionKeys: IntentionKey[];
+    intentionMatch?: IntentionMatchSummary;
     score: number;
     distKm: number | null;
 }
 
-type SubIntentionCounterInput = {
-    key: string;
-    tags: readonly string[];
-};
-
-export function countQualifiedByIntention(
+export function countQualifiedByIntentionCategory(
     qualified: readonly QualifiedCandidate[],
-    intentions: readonly IntentionKey[]
+    categories: readonly IntentionCategoryKey[]
 ): Record<string, number> {
-    const counts = Object.fromEntries(intentions.map((key) => [key, 0])) as Record<string, number>;
-    const accepted = new Set<IntentionKey>(intentions);
+    const counts = Object.fromEntries(categories.map((key) => [key, 0])) as Record<string, number>;
+    const accepted = new Set<IntentionCategoryKey>(categories);
 
     for (const candidate of qualified) {
-        for (const intention of new Set(candidate.intentions)) {
-            if (accepted.has(intention)) counts[intention]++;
+        const candidateCategories = new Set(candidate.intentionKeys.map((key) => getCategoryKeyForIntention(key)));
+        for (const categoryKey of candidateCategories) {
+            if (accepted.has(categoryKey)) counts[categoryKey]++;
         }
     }
 
     return counts;
 }
 
-export function countQualifiedBySubIntention(
+export function countQualifiedByIntention(
     qualified: readonly QualifiedCandidate[],
-    subs: readonly SubIntentionCounterInput[]
+    intentionKeys: readonly IntentionKey[]
 ): Record<string, number> {
-    const counts = Object.fromEntries(subs.map((sub) => [sub.key, 0])) as Record<string, number>;
-    const subTags = subs.map((sub) => ({ key: sub.key, tags: new Set(sub.tags.map((tag) => tag.toLowerCase())) }));
+    const counts = Object.fromEntries(intentionKeys.map((key) => [key, 0])) as Record<string, number>;
+    const accepted = new Map<IntentionKey, Set<IntentionKey>>(
+        intentionKeys.map((key) => [key, new Set(expandIntentionKeysForMatching([key]))])
+    );
 
     for (const candidate of qualified) {
-        const candidateTags = new Set(
-            (candidate.user.tags ?? [])
-                .map((tag) => tag.labelLower ?? tag.label?.toLowerCase() ?? tag.tag?.label?.toLowerCase())
-                .filter((tag): tag is string => Boolean(tag))
-        );
-
-        for (const sub of subTags) {
-            for (const tag of sub.tags) {
-                if (candidateTags.has(tag)) {
-                    counts[sub.key]++;
+        const candidateKeys = new Set(expandIntentionKeysForMatching(candidate.intentionKeys));
+        for (const [requestedKey, matchingKeys] of accepted) {
+            for (const k of matchingKeys) {
+                if (candidateKeys.has(k)) {
+                    counts[requestedKey]++;
                     break;
                 }
             }
@@ -99,9 +107,10 @@ export function countQualifiedBySubIntention(
 }
 
 export interface PipelineContext {
-    myIntentions: IntentionKey[];
+    myIntentionKeys: IntentionKey[];
     myProfileComplete: boolean;
-    prefIntentions: IntentionKey[] | undefined;
+    prefCategoryKey: IntentionCategoryKey | undefined;
+    prefIntentionKeys: IntentionKey[] | undefined;
     prefMaxDistance: number;
     prefRemote: boolean;
     myLatLng: { latitude: number | null; longitude: number | null };
@@ -109,7 +118,7 @@ export interface PipelineContext {
 
 /** Pre-computed data shared across multiple pipeline queries for the same user. */
 export interface PipelineSetup {
-    myIntentions: IntentionKey[];
+    myIntentionKeys: IntentionKey[];
     myInterestLabels: Set<string>;
     mySkillLabels: Set<string>;
     myDomainCounts: Map<InterestCategoryKey, number>;
@@ -154,6 +163,31 @@ type TagRow = {
     labelLower?: string;
     tag?: { id: string; label?: string; domainKey?: string | null; embedding?: number[] | null } | null;
 };
+
+function expandIntentionKeysForStorage(keys: readonly IntentionKey[] | undefined): IntentionKey[] | undefined {
+    const activeKeys = normalizeActiveIntentionKeys(keys);
+    if (activeKeys.length === 0) return undefined;
+
+    const expandedActiveKeys = new Set<IntentionKey>();
+    for (const key of activeKeys) {
+        expandedActiveKeys.add(key);
+        for (const ancestorKey of getAncestorIntentionKeys(key)) expandedActiveKeys.add(ancestorKey);
+        for (const descendantKey of getDescendantIntentionKeys(key)) expandedActiveKeys.add(descendantKey);
+    }
+
+    return [...expandedActiveKeys];
+}
+
+function expandIntentionKeysForMatching(keys: readonly IntentionKey[]): IntentionKey[] {
+    const expanded = new Set<IntentionKey>();
+
+    for (const key of normalizeActiveIntentionKeys(keys)) {
+        expanded.add(key);
+        for (const ancestorKey of getAncestorIntentionKeys(key)) expanded.add(ancestorKey);
+    }
+
+    return [...expanded];
+}
 
 /**
  * Derive the structures needed by the scoring engine from a list of user
@@ -228,7 +262,7 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
 
     const mixBots = await isFeatureEnabled('stresstest.bot_user_mixing');
 
-    const myIntentions = (currentUser?.profile?.intentions ?? []) as IntentionKey[];
+    const myIntentionKeys = normalizeActiveIntentionKeys(currentUser?.profile?.intentionKeys ?? []);
     const {
         interestLabels: myInterestLabels,
         skillLabels: mySkillLabels,
@@ -243,16 +277,7 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
     const myLanguages = currentUser?.profile?.spokenLanguages ?? [];
     const myPreferredPeriod = (currentUser?.preferredPeriod ?? 'any') as PreferredPeriod;
     const mySocialVibe = (currentUser?.profile?.socialVibe ?? 'balanced') as SocialVibe;
-    const myProfileComplete =
-        currentUser?.birthDate != null &&
-        myGender !== '' &&
-        myIntentions.length > 0 &&
-        myLatLng.latitude != null &&
-        (currentUser?.profile?.bio ?? '') !== '' &&
-        (currentUser?.photos ?? []).length > 0 &&
-        (currentUser?.tags ?? []).some((t) => t.type === 'interest') &&
-        (currentUser?.tags ?? []).some((t) => t.type === 'skill') &&
-        (currentUser?.profile?.spokenLanguages ?? []).length > 0;
+    const myProfileComplete = currentUser ? isProfileComplete(currentUser) : false;
 
     const prefAgeMin = settings?.peopleAgeMin ?? 18;
     const prefAgeMax = settings?.peopleAgeMax ?? 99;
@@ -266,11 +291,11 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
     const excludeIds = await getExcludeIds(client.userId);
 
     logger.debug(
-        `[Pipeline] Context for ${client.userId}: ${myIntentions.length} intentions, ${excludeIds.length} excluded, profileComplete=${myProfileComplete}`
+        `[Pipeline] Setup for ${client.userId}: ${myIntentionKeys.length} intentions, ${excludeIds.length} excluded, profileComplete=${myProfileComplete}`
     );
 
     const setup: PipelineSetup = {
-        myIntentions,
+        myIntentionKeys,
         myInterestLabels,
         mySkillLabels,
         myDomainCounts,
@@ -306,7 +331,7 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
 function buildPipelineWhere(
     setup: PipelineSetup,
     filters?: SearchFilters,
-    prefIntentions?: IntentionKey[],
+    prefIntentionKeys?: IntentionKey[],
     prefRemote?: boolean
 ): Record<string, unknown> {
     const prefMaxDistance = filters?.maxDistance ?? setup.storedMaxDistance;
@@ -321,15 +346,18 @@ function buildPipelineWhere(
         ...(setup.mixBots ? {} : { bot: setup.myIsBot }),
         birthDate: { not: null },
         photos: { some: {} },
-        tags: { some: {} },
-        name: { not: '' }
+        name: { not: '' },
+        gender: { not: '' },
+        AND: [{ tags: { some: { type: 'interest' } } }, { tags: { some: { type: 'skill' } } }]
     };
 
     const profileWhere: Record<string, unknown> = {
         bio: { not: '' },
-        intentions: { isEmpty: false },
+        intentionKeys: { isEmpty: false },
+        socialVibe: { in: [...SOCIAL_VIBES] },
         spokenLanguages: { isEmpty: false },
-        latitude: { not: null }
+        latitude: { not: null },
+        longitude: { not: null }
     };
 
     if (setup.prefAgeMin > 18 || setup.prefAgeMax < 99) {
@@ -345,16 +373,21 @@ function buildPipelineWhere(
         where.verified = true;
     }
 
-    if (prefIntentions && prefIntentions.length > 0) {
-        profileWhere.intentions = { hasSome: prefIntentions };
-    } else if (setup.myIntentions.length > 0) {
-        profileWhere.intentions = { hasSome: setup.myIntentions };
+    if (prefIntentionKeys && prefIntentionKeys.length > 0) {
+        profileWhere.intentionKeys = { hasSome: expandIntentionKeysForStorage(prefIntentionKeys) };
+    } else if (filters?.categoryKey) {
+        profileWhere.intentionKeys = {
+            hasSome: expandIntentionKeysForStorage(
+                getAllIntentionsForCategory(filters.categoryKey).map((intention) => intention.key)
+            )
+        };
+    } else if (setup.myIntentionKeys.length > 0) {
+        profileWhere.intentionKeys = { hasSome: expandIntentionKeysForStorage(setup.myIntentionKeys) };
     }
 
     if (prefRemote && filters?.languages && filters.languages.length > 0) {
         profileWhere.spokenLanguages = { hasSome: filters.languages };
-    } else if (setup.prefLanguages.length > 0) {
-        // User-level language preference (people.languages) always applies
+    } else if (prefRemote && setup.prefLanguages.length > 0) {
         profileWhere.spokenLanguages = { hasSome: setup.prefLanguages };
     }
 
@@ -409,14 +442,8 @@ function buildPipelineWhere(
         const q = filters.query.trim();
         where.OR = [
             { name: { contains: q, mode: 'insensitive' } },
-            {
-                profile: {
-                    ...profileWhere,
-                    bio: { contains: q, mode: 'insensitive' }
-                }
-            }
+            { profile: { bio: { contains: q, mode: 'insensitive' } } }
         ];
-        delete where.profile;
     }
 
     return where;
@@ -438,9 +465,16 @@ export async function runPipelineQuery(
 
     const prefMaxDistance = filters?.maxDistance ?? setup.storedMaxDistance;
     const prefRemote = filters?.remote ?? setup.storedRemote;
-    const prefIntentions = filters?.intentions;
+    const prefIntentionKeys = normalizeActiveIntentionKeys(
+        filters?.intentionKeys ?? (filters?.intentionKey ? [filters.intentionKey] : undefined)
+    );
 
-    const where = buildPipelineWhere(setup, filters, prefIntentions, prefRemote);
+    const where = buildPipelineWhere(
+        setup,
+        filters,
+        prefIntentionKeys.length > 0 ? prefIntentionKeys : undefined,
+        prefRemote
+    );
 
     // ── Level 1 cache: candidate profiles ───────────────────────────────────
     // Step 1: lightweight ID scan (no JOINs)
@@ -475,7 +509,10 @@ export async function runPipelineQuery(
 
     // ── Score & post-filter ──────────────────────────────────────
     const scoringCtx: ScoringContext = {
-        myIntentions: setup.myIntentions,
+        myIntentionKeys: setup.myIntentionKeys,
+        targetCategoryKey: filters?.categoryKey,
+        targetIntentionKey: filters?.intentionKey,
+        targetIntentionKeys: prefIntentionKeys.length > 0 ? prefIntentionKeys : undefined,
         myInterestLabels: setup.myInterestLabels,
         mySkillLabels: setup.mySkillLabels,
         myDomainCounts: setup.myDomainCounts,
@@ -490,7 +527,7 @@ export async function runPipelineQuery(
 
     const qualified = users
         .map((u) => {
-            const theirIntentions = (u.profile?.intentions ?? []) as IntentionKey[];
+            const theirIntentionKeys = normalizeActiveIntentionKeys(u.profile?.intentionKeys ?? []);
             const theirTagData = buildTagScoringData(u.tags);
             const distKm = getDistanceKm(
                 setup.myLatLng.latitude,
@@ -500,7 +537,7 @@ export async function runPipelineQuery(
             );
 
             const candidate: ScoringCandidate = {
-                intentions: theirIntentions,
+                intentionKeys: theirIntentionKeys,
                 interestLabels: theirTagData.interestLabels,
                 skillLabels: theirTagData.skillLabels,
                 domainCounts: theirTagData.domainCounts,
@@ -517,14 +554,17 @@ export async function runPipelineQuery(
             };
 
             const breakdown = computeMatchScore(scoringCtx, candidate);
+            const intentionMatch = buildIntentionMatchSummary(scoringCtx, candidate, breakdown);
 
             return {
                 user: u as CandidateUser,
-                intentions: theirIntentions,
+                intentionKeys: theirIntentionKeys,
+                intentionMatch,
                 score: breakdown.total,
                 distKm
             } satisfies QualifiedCandidate;
         })
+        .filter((s) => isProfileComplete(s.user))
         .filter((s) => {
             if (prefRemote) return true;
             if (s.distKm == null) return true;
@@ -542,17 +582,18 @@ export async function runPipelineQuery(
 
     qualified.sort((a, b) => b.score - a.score);
 
-    const intentionLabel = prefIntentions?.join(',') ?? 'all';
+    const queryScope = prefIntentionKeys.length > 0 ? prefIntentionKeys.join(',') : (filters?.categoryKey ?? 'all');
     logger.debug(
-        `[Pipeline] Query(${intentionLabel}): ${users.length} fetched → ${qualified.length} qualified (limit=${fetchLimit})`
+        `[Pipeline] Query(${queryScope}): ${users.length} fetched → ${qualified.length} qualified (limit=${fetchLimit})`
     );
 
     return {
         qualified,
         ctx: {
-            myIntentions: setup.myIntentions,
+            myIntentionKeys: setup.myIntentionKeys,
             myProfileComplete: setup.myProfileComplete,
-            prefIntentions,
+            prefCategoryKey: filters?.categoryKey,
+            prefIntentionKeys: prefIntentionKeys.length > 0 ? prefIntentionKeys : undefined,
             prefMaxDistance,
             prefRemote,
             myLatLng: setup.myLatLng
@@ -567,5 +608,55 @@ export async function runDiscoveryPipeline(
     fetchLimit: number = 100
 ): Promise<{ qualified: QualifiedCandidate[]; ctx: PipelineContext }> {
     const setup = await buildPipelineContext(client);
-    return runPipelineQuery(setup, filters, fetchLimit);
+    const exact = await runPipelineQuery(setup, filters, fetchLimit);
+
+    if (!filters?.intentionKey || exact.qualified.length >= MIN_EXACT_INTENTION_RESULTS) {
+        return exact;
+    }
+
+    const seen = new Set(exact.qualified.map((candidate) => candidate.user.id));
+    const expanded = [...exact.qualified];
+    const fallbackSteps: Array<{ label: string; filters: SearchFilters }> = [];
+
+    const parentKey = getParentKeyForIntention(filters.intentionKey);
+    if (isIntentionKey(parentKey)) {
+        fallbackSteps.push({
+            label: parentKey,
+            filters: {
+                ...filters,
+                categoryKey: filters.categoryKey ?? getCategoryKeyForIntention(parentKey),
+                intentionKey: parentKey,
+                intentionKeys: undefined
+            }
+        });
+    }
+
+    const fallbackCategoryKey = filters.categoryKey ?? getCategoryKeyForIntention(filters.intentionKey);
+    fallbackSteps.push({
+        label: fallbackCategoryKey,
+        filters: {
+            ...filters,
+            categoryKey: fallbackCategoryKey,
+            intentionKey: undefined,
+            intentionKeys: undefined
+        }
+    });
+
+    for (const step of fallbackSteps) {
+        if (expanded.length >= MIN_EXACT_INTENTION_RESULTS) break;
+        const fallback = await runPipelineQuery(setup, step.filters, fetchLimit);
+        for (const candidate of fallback.qualified) {
+            if (seen.has(candidate.user.id)) continue;
+            seen.add(candidate.user.id);
+            expanded.push(candidate);
+        }
+
+        if (expanded.length > exact.qualified.length) {
+            logger.debug(
+                `[Pipeline] Expanded low-supply intention ${filters.intentionKey} from ${exact.qualified.length} to ${expanded.length} candidates via ${step.label}`
+            );
+        }
+    }
+
+    return { qualified: expanded, ctx: exact.ctx };
 }

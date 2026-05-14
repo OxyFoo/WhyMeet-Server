@@ -391,7 +391,7 @@ export function createAdminRouter(): Router {
                         city: '',
                         latitude: null,
                         longitude: null,
-                        intentions: []
+                        intentionKeys: []
                     }
                 }),
                 db.profilePhoto.deleteMany({ where: { userId: parsed.data.userId } })

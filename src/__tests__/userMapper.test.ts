@@ -20,7 +20,7 @@ function baseUser() {
         preferredPeriod: 'any',
         profile: {
             bio: 'Hello world',
-            socialVibe: 'chill',
+            socialVibe: 'balanced',
             country: 'France',
             region: 'Île-de-France',
             city: 'Paris',
@@ -29,7 +29,7 @@ function baseUser() {
             statConnections: 10,
             statMatches: 5,
             statVibes: 42,
-            intentions: ['dating', 'friendship'],
+            intentionKeys: ['meet_simple_first_date', 'meet_make_acquaintance'],
             spokenLanguages: ['fr', 'en'],
             trustScore: 0,
             completedHostedCount: 0
@@ -84,13 +84,13 @@ describe('mapUserToProfile', () => {
             isPremium: false,
             isBoosted: false,
             bio: 'Hello world',
-            socialVibe: 'chill',
+            socialVibe: 'balanced',
             interests: [
                 { id: 'ut-1', label: 'Photographie', source: null },
                 { id: 'ut-2', label: 'Randonnée', source: null }
             ],
             skills: [{ id: 'ut-3', label: 'JavaScript', source: null }],
-            intentions: ['dating', 'friendship'],
+            intentionKeys: ['meet_simple_first_date', 'meet_make_acquaintance'],
             spokenLanguages: ['fr', 'en'],
             location: {
                 country: 'France',
@@ -111,7 +111,7 @@ describe('mapUserToProfile', () => {
 
         expect(profile.bio).toBe('');
         expect(profile.socialVibe).toBe('balanced');
-        expect(profile.intentions).toEqual([]);
+        expect(profile.intentionKeys).toEqual([]);
         expect(profile.location).toEqual({ country: '', region: '', city: '', latitude: null, longitude: null });
         expect(profile.stats).toEqual({ connections: 0, matches: 0, vibes: 0 });
     });
@@ -195,7 +195,7 @@ describe('mapUserToCandidate', () => {
                 isBoosted: false,
                 badges: []
             },
-            intentions: ['dating', 'friendship'],
+            intentionKeys: ['meet_simple_first_date', 'meet_make_acquaintance'],
             bio: 'Hello world',
             interests: ['Photographie', 'Randonnée'],
             skills: ['JavaScript'],
@@ -207,36 +207,38 @@ describe('mapUserToCandidate', () => {
 
     it('sorts priority intentions first', () => {
         const user = makePrismaUser();
-        const candidate = mapUserToCandidate(user, ['friendship']);
+        const candidate = mapUserToCandidate(user, ['meet_make_acquaintance']);
 
-        expect(candidate.intentions).toEqual(['friendship', 'dating']);
+        expect(candidate.intentionKeys).toEqual(['meet_make_acquaintance', 'meet_simple_first_date']);
     });
 
     it('keeps original order when no priority intentions match', () => {
         const user = makePrismaUser();
-        const candidate = mapUserToCandidate(user, ['networking']);
+        const candidate = mapUserToCandidate(user, ['build_mentoring']);
 
-        expect(candidate.intentions).toEqual(['dating', 'friendship']);
+        expect(candidate.intentionKeys).toEqual(['meet_simple_first_date', 'meet_make_acquaintance']);
     });
 
     it('returns empty intentions when user has no intentions', () => {
         const user = makePrismaUser({
             profile: {
-                bio: 'No intentions',
-                socialVibe: 'chill',
+                bio: 'No contexts',
+                socialVibe: 'balanced',
                 country: '',
                 region: '',
                 city: '',
+                latitude: null,
+                longitude: null,
                 statConnections: 0,
                 statMatches: 0,
                 statVibes: 0,
-                intentions: [],
+                intentionKeys: [],
                 spokenLanguages: []
             }
         });
         const candidate = mapUserToCandidate(user);
 
-        expect(candidate.intentions).toEqual([]);
+        expect(candidate.intentionKeys).toEqual([]);
     });
 
     it('splits tag labels into interests and skills', () => {
@@ -252,7 +254,7 @@ describe('mapUserToCandidate', () => {
         const candidate = mapUserToCandidate(user);
 
         expect(candidate.bio).toBe('');
-        expect(candidate.intentions).toEqual([]);
+        expect(candidate.intentionKeys).toEqual([]);
     });
 
     it('maps earned badges with dates deserialized from cache', () => {

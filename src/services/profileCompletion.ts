@@ -1,13 +1,9 @@
 import { getDatabase } from '@/services/database';
 import { profileInclude } from '@/services/userMapper';
+import { SOCIAL_VIBES } from '@oxyfoo/whymeet-types';
 
-/**
- * Minimum number of tags required in each tag bucket (interests, skills) for
- * a profile to be considered complete. Must stay aligned with the client-side
- * value in `WhyMeet/src/features/profile/utils/computeCompletion.ts`.
- */
-export const PROFILE_MIN_TAGS = 5;
 export const PROFILE_MIN_BIO_LENGTH = 10;
+export const PROFILE_MIN_TAGS = 5;
 
 type LoadedUser = NonNullable<Awaited<ReturnType<ReturnType<typeof getDatabase>['user']['findUnique']>>> & {
     profile: NonNullable<unknown> | null;
@@ -15,22 +11,27 @@ type LoadedUser = NonNullable<Awaited<ReturnType<ReturnType<typeof getDatabase>[
     tags: { type: string }[];
 };
 
+function countTags(user: LoadedUser, type: 'interest' | 'skill'): number {
+    return (user.tags ?? []).filter((tag) => tag.type === type).length;
+}
+
 /** Returns `true` when every completion check passes. */
 export function isProfileComplete(user: LoadedUser): boolean {
     const profile = (user as unknown as { profile: Record<string, unknown> | null }).profile;
-    const interests = (user.tags ?? []).filter((t) => t.type === 'interest').length;
-    const skills = (user.tags ?? []).filter((t) => t.type === 'skill').length;
     return (
         (user.photos ?? []).length > 0 &&
+        ((user as unknown as { gender: string | null }).gender ?? '') !== '' &&
         ((profile?.bio as string | null | undefined) ?? '').trim().length >= PROFILE_MIN_BIO_LENGTH &&
-        Array.isArray(profile?.intentions) &&
-        (profile?.intentions as unknown[]).length > 0 &&
-        interests >= PROFILE_MIN_TAGS &&
-        skills >= PROFILE_MIN_TAGS &&
-        ((profile?.socialVibe as string | null | undefined) ?? '') !== '' &&
+        Array.isArray(profile?.intentionKeys) &&
+        (profile?.intentionKeys as unknown[]).length > 0 &&
+        countTags(user, 'interest') >= PROFILE_MIN_TAGS &&
+        countTags(user, 'skill') >= PROFILE_MIN_TAGS &&
+        typeof profile?.socialVibe === 'string' &&
+        (SOCIAL_VIBES as readonly string[]).includes(profile.socialVibe) &&
         Array.isArray(profile?.spokenLanguages) &&
         (profile?.spokenLanguages as unknown[]).length > 0 &&
         profile?.latitude != null &&
+        profile?.longitude != null &&
         (user as unknown as { birthDate: Date | null }).birthDate != null
     );
 }

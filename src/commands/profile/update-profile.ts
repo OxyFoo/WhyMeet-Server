@@ -14,6 +14,7 @@ import { invalidateActivityCatalogCache, invalidateActivityDiscoveryCache } from
 import { logAudit } from '@/services/auditLogService';
 import { isProfileComplete } from '@/services/profileCompletion';
 import { prepareUserTagSync, replaceUserTags } from '@/services/userTagSync';
+import { expandSelectedIntentionKeys } from '@/services/intentionProfileEnrichment';
 
 class ProfileWouldBecomeIncompleteError extends Error {
     constructor() {
@@ -138,7 +139,9 @@ registerCommand<WSRequest_UpdateProfile>(
                     profileData.latitude = discretized.latitude;
                     profileData.longitude = discretized.longitude;
                 }
-                if (data.intentions !== undefined) profileData.intentions = data.intentions;
+                if (data.intentionKeys !== undefined) {
+                    profileData.intentionKeys = expandSelectedIntentionKeys(data.intentionKeys);
+                }
                 if (data.spokenLanguages !== undefined) profileData.spokenLanguages = data.spokenLanguages;
 
                 if (Object.keys(profileData).length > 0) {
@@ -195,7 +198,10 @@ registerCommand<WSRequest_UpdateProfile>(
             }
 
             const affectsHostedActivityDiscovery =
-                data.gender !== undefined || data.interests !== undefined || data.spokenLanguages !== undefined;
+                data.gender !== undefined ||
+                data.interests !== undefined ||
+                data.spokenLanguages !== undefined ||
+                data.intentionKeys !== undefined;
 
             await Promise.allSettled([
                 invalidateCandidate(client.userId),

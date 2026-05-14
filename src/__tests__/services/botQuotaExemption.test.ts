@@ -39,13 +39,14 @@ import { addSearchTokens, getSearchQuota, useSearchQuota } from '@/services/sear
 import { canSwipe, getSwipeQuota, useSwipeQuota } from '@/services/swipeQuotaService';
 import { getActivityQuota, useActivityQuota } from '@/services/activityQuotaService';
 import { clearUsageLimitConfigCache } from '@/services/usageLimitsService';
+import { APP_CONFIG_DEFAULT_ROWS } from '@/config/usageLimitDefaults';
 
 describe('bot quota exemption', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         clearUsageLimitConfigCache();
         mockUserFindUnique.mockResolvedValue({ bot: true });
-        mockAppConfigFindMany.mockResolvedValue([]);
+        mockAppConfigFindMany.mockResolvedValue([...APP_CONFIG_DEFAULT_ROWS]);
     });
 
     it('makes search, swipe and activity quotas unlimited for bots', async () => {

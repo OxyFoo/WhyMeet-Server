@@ -3,7 +3,7 @@ import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
 
 function baseCtx(overrides: Partial<ScoringContext> = {}): ScoringContext {
     return {
-        myIntentions: ['dating'],
+        myIntentionKeys: ['meet_simple_first_date'],
         myInterestLabels: new Set(),
         mySkillLabels: new Set(),
         myDomainCounts: new Map(),
@@ -20,7 +20,7 @@ function baseCtx(overrides: Partial<ScoringContext> = {}): ScoringContext {
 
 function baseCandidate(overrides: Partial<ScoringCandidate> = {}): ScoringCandidate {
     return {
-        intentions: ['dating'],
+        intentionKeys: ['meet_simple_first_date'],
         interestLabels: new Set(),
         skillLabels: new Set(),
         domainCounts: new Map(),

@@ -186,7 +186,7 @@ POSTGRESQL_DATABASE=<database>
 
 ### Compteurs discovery cache-first
 
-Les compteurs `get-candidate-counts` et `get-subintention-counts` utilisent maintenant des clés Redis versionnées :
+Les compteurs `get-candidate-counts` et `get-intention-counts` utilisent maintenant des clés Redis versionnées :
 
 | Donnée                    | Clé                                            | TTL                            | Cohérence                                                                |
 | ------------------------- | ---------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------ |

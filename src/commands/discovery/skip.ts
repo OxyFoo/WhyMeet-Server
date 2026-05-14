@@ -1,14 +1,28 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_Skip, WSResponse_Skip } from '@oxyfoo/whymeet-types';
+import { getIntention } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { useSwipeQuota } from '@/services/swipeQuotaService';
 import { addExcluded } from '@/services/excludeCache';
+import { validateIntentionSelection } from '@/config/validation';
+import { normalizeActiveIntentionSelection } from '@/services/intentionKeys';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_Skip>('skip', async (client: Client, payload): Promise<WSResponse_Skip> => {
-    const { candidateId } = payload;
+    const { candidateId, selection } = payload;
     const db = getDatabase();
+    const selectionError = selection ? validateIntentionSelection(selection) : null;
+    if (selectionError) return { command: 'skip', payload: { success: false } };
+
+    const normalizedSelection = selection ? normalizeActiveIntentionSelection(selection) : null;
+    const selectedIntention = normalizedSelection ? getIntention(normalizedSelection.intentionKey) : null;
+    const intentionData = selectedIntention
+        ? {
+              categoryKey: selectedIntention.categoryKey,
+              intentionKey: selectedIntention.key
+          }
+        : {};
 
     try {
         // Check and consume swipe quota
@@ -25,8 +39,8 @@ registerCommand<WSRequest_Skip>('skip', async (client: Client, payload): Promise
             where: {
                 senderId_receiverId_category: { senderId: client.userId, receiverId: candidateId, category: 'skip' }
             },
-            update: {},
-            create: { senderId: client.userId, receiverId: candidateId, category: 'skip' }
+            update: intentionData,
+            create: { senderId: client.userId, receiverId: candidateId, category: 'skip', ...intentionData }
         });
 
         logger.debug(`[Discovery] User ${client.userId} skipped ${candidateId}`);

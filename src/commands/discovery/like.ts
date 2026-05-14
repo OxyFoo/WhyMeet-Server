@@ -1,6 +1,7 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_Like, WSResponse_Like } from '@oxyfoo/whymeet-types';
+import { getIntention } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { getClientsForUser } from '@/server/Server';
 import { pushToUser } from '@/services/pushService';
@@ -8,11 +9,24 @@ import { t, getUserLanguage } from '@/services/notifI18n';
 import { mapUserToProfile, profileInclude } from '@/services/userMapper';
 import { useSwipeQuota } from '@/services/swipeQuotaService';
 import { addExcluded } from '@/services/excludeCache';
+import { validateIntentionSelection } from '@/config/validation';
+import { normalizeActiveIntentionSelection } from '@/services/intentionKeys';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise<WSResponse_Like> => {
-    const { candidateId } = payload;
+    const { candidateId, selection } = payload;
     const db = getDatabase();
+    const selectionError = selection ? validateIntentionSelection(selection) : null;
+    if (selectionError) return { command: 'like', payload: { error: selectionError } };
+
+    const normalizedSelection = selection ? normalizeActiveIntentionSelection(selection) : null;
+    const selectedIntention = normalizedSelection ? getIntention(normalizedSelection.intentionKey) : null;
+    const intentionData = selectedIntention
+        ? {
+              categoryKey: selectedIntention.categoryKey,
+              intentionKey: selectedIntention.key
+          }
+        : {};
 
     try {
         // Check and consume swipe quota
@@ -41,8 +55,8 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
             where: {
                 senderId_receiverId_category: { senderId: client.userId, receiverId: candidateId, category: 'like' }
             },
-            update: {},
-            create: { senderId: client.userId, receiverId: candidateId, category: 'like' }
+            update: intentionData,
+            create: { senderId: client.userId, receiverId: candidateId, category: 'like', ...intentionData }
         });
 
         // Check for mutual match (did the other person also like us?)

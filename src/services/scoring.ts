@@ -1,4 +1,17 @@
-import type { IntentionKey, InterestCategoryKey, PreferredPeriod, SocialVibe } from '@oxyfoo/whymeet-types';
+import {
+    getAncestorIntentionKeys,
+    getDescendantIntentionKeys,
+    getCategoryKeyForIntention,
+    getIntention,
+    type IntentionFallbackLevel,
+    type IntentionMatchSummary,
+    type InterestCategoryKey,
+    type PreferredPeriod,
+    type IntentionKey,
+    type IntentionCategoryKey,
+    type SocialVibe
+} from '@oxyfoo/whymeet-types';
+import { normalizeActiveIntentionKeys } from '@/services/intentionKeys';
 
 // Local copy of the ordinal vibe scale (avoids ESM value import in CJS test env)
 const VIBE_SCALE: readonly SocialVibe[] = ['reserved', 'calm', 'balanced', 'outgoing', 'very_social'];
@@ -15,7 +28,7 @@ const VIBE_SCALE: readonly SocialVibe[] = ['reserved', 'calm', 'balanced', 'outg
  * UserTags without a canonical link contribute nothing to `domainCounts`.
  */
 export interface ScoringCandidate {
-    intentions: IntentionKey[];
+    intentionKeys: IntentionKey[];
     interestLabels: Set<string>;
     skillLabels: Set<string>;
     domainCounts: Map<InterestCategoryKey, number>;
@@ -32,7 +45,10 @@ export interface ScoringCandidate {
 }
 
 export interface ScoringContext {
-    myIntentions: IntentionKey[];
+    myIntentionKeys: IntentionKey[];
+    targetCategoryKey?: IntentionCategoryKey;
+    targetIntentionKey?: IntentionKey;
+    targetIntentionKeys?: IntentionKey[];
     myInterestLabels: Set<string>;
     mySkillLabels: Set<string>;
     myDomainCounts: Map<InterestCategoryKey, number>;
@@ -46,7 +62,7 @@ export interface ScoringContext {
 }
 
 export interface ScoreBreakdown {
-    intentions: number;
+    intentionFit: number;
     distance: number;
     interests: number;
     availability: number;
@@ -57,11 +73,11 @@ export interface ScoreBreakdown {
 
 // ─── Constants ──────────────────────────────────────────────────────
 
-const WEIGHT_INTENTIONS = 25;
-const WEIGHT_DISTANCE = 15;
-const WEIGHT_INTERESTS = 25;
-const WEIGHT_AVAILABILITY = 5;
-const WEIGHT_SOCIAL_VIBE = 10;
+const WEIGHT_INTENTION = 30;
+const WEIGHT_DISTANCE = 20;
+const WEIGHT_INTERESTS = 15;
+const WEIGHT_AVAILABILITY = 10;
+const WEIGHT_SOCIAL_VIBE = 5;
 const WEIGHT_QUALITY = 20;
 
 // Fuzzy-matching weights for tag overlap:
@@ -71,6 +87,7 @@ const WEIGHT_QUALITY = 20;
 const WEIGHT_TAG_SAME_TYPE = 1.0;
 const WEIGHT_TAG_CROSS_TYPE = 0.85;
 const WEIGHT_TAG_DOMAIN = 0.4;
+const WEIGHT_INTENTION_HIERARCHICAL = 0.82;
 
 export const MIN_SCORE_THRESHOLD = 15;
 
@@ -101,11 +118,55 @@ function hybridScore(common: number, maxSide: number, cap: number, weight: numbe
     return (0.4 * ratio + 0.6 * volume) * weight;
 }
 
-function scoreIntentions(mine: IntentionKey[], theirs: IntentionKey[]): number {
+function uniqueIntentionKeys(keys: readonly IntentionKey[]): IntentionKey[] {
+    return normalizeActiveIntentionKeys(keys);
+}
+
+function expandRequestedKeys(keys: readonly IntentionKey[]): IntentionKey[] {
+    const expanded = new Set<IntentionKey>();
+
+    for (const key of uniqueIntentionKeys(keys)) {
+        expanded.add(key);
+        for (const ancestorKey of getAncestorIntentionKeys(key)) expanded.add(ancestorKey);
+        for (const descendantKey of getDescendantIntentionKeys(key)) expanded.add(descendantKey);
+    }
+
+    return [...expanded];
+}
+
+function getRequestedIntentionKeys(ctx: ScoringContext): IntentionKey[] {
+    return uniqueIntentionKeys(
+        ctx.targetIntentionKeys?.length
+            ? ctx.targetIntentionKeys
+            : ctx.targetIntentionKey
+              ? [ctx.targetIntentionKey]
+              : ctx.myIntentionKeys
+    );
+}
+
+function scoreIntention(ctx: ScoringContext, candidate: ScoringCandidate): number {
+    const mine = uniqueIntentionKeys(ctx.myIntentionKeys);
+    const theirs = uniqueIntentionKeys(candidate.intentionKeys);
     if (mine.length === 0 && theirs.length === 0) return 0;
-    const max = Math.max(mine.length, theirs.length);
-    const common = mine.filter((i) => theirs.includes(i)).length;
-    return hybridScore(common, max, 3, WEIGHT_INTENTIONS);
+
+    const requested = getRequestedIntentionKeys(ctx);
+    const comparison = requested.length > 0 ? requested : mine;
+    const theirExpanded = new Set(expandRequestedKeys(theirs));
+    const directCommon = comparison.filter((key) => theirs.includes(key)).length;
+    const hierarchicalCommon = comparison.filter((key) => !theirs.includes(key) && theirExpanded.has(key)).length;
+    const weightedCommon = directCommon + hierarchicalCommon * WEIGHT_INTENTION_HIERARCHICAL;
+    const directScore = hybridScore(weightedCommon, Math.max(comparison.length, theirs.length), 3, WEIGHT_INTENTION);
+
+    const targetCategory =
+        ctx.targetCategoryKey ??
+        (ctx.targetIntentionKey ? getCategoryKeyForIntention(ctx.targetIntentionKey) : undefined);
+    const sameCategory = targetCategory
+        ? theirs.some((key) => getCategoryKeyForIntention(key) === targetCategory)
+        : comparison.some((wanted) =>
+              theirs.some((key) => getCategoryKeyForIntention(key) === getCategoryKeyForIntention(wanted))
+          );
+
+    return Math.max(directScore, sameCategory ? WEIGHT_INTENTION * 0.65 : 0);
 }
 
 function scoreDistance(ctx: ScoringContext, candidate: ScoringCandidate): number {
@@ -176,7 +237,7 @@ function scoreProfileQuality(candidate: ScoringCandidate): number {
     if (candidate.photoCount > 0) parts += 2;
     if (candidate.verified) parts += 2;
     if (candidate.tagCount >= 3) parts += 2;
-    if (candidate.intentions.length >= 1) parts += 1;
+    if (candidate.intentionKeys.length >= 1) parts += 1;
     if (candidate.spokenLanguages.length >= 1) parts += 1;
     return (parts / 10) * WEIGHT_QUALITY;
 }
@@ -192,7 +253,7 @@ function scoreSocialVibe(mine: SocialVibe, theirs: SocialVibe): number {
 // ─── Main ───────────────────────────────────────────────────────────
 
 export function computeMatchScore(ctx: ScoringContext, candidate: ScoringCandidate): ScoreBreakdown {
-    const intentions = scoreIntentions(ctx.myIntentions, candidate.intentions);
+    const intentionFit = scoreIntention(ctx, candidate);
     const distance = scoreDistance(ctx, candidate);
     const interests = scoreInterests(ctx, candidate);
     const availability = scoreAvailability(ctx.myPreferredPeriod, candidate.preferredPeriod);
@@ -200,8 +261,51 @@ export function computeMatchScore(ctx: ScoringContext, candidate: ScoringCandida
     const profileQuality = scoreProfileQuality(candidate);
     const total = Math.min(
         100,
-        Math.max(0, intentions + distance + interests + availability + socialVibe + profileQuality)
+        Math.max(0, intentionFit + distance + interests + availability + socialVibe + profileQuality)
     );
 
-    return { intentions, distance, interests, availability, socialVibe, profileQuality, total };
+    return { intentionFit, distance, interests, availability, socialVibe, profileQuality, total };
+}
+
+export function buildIntentionMatchSummary(
+    ctx: ScoringContext,
+    candidate: ScoringCandidate,
+    breakdown: ScoreBreakdown
+): IntentionMatchSummary | undefined {
+    const candidateKeys = uniqueIntentionKeys(candidate.intentionKeys);
+    if (candidateKeys.length === 0) return undefined;
+
+    const requested = getRequestedIntentionKeys(ctx);
+    const direct = requested.find((key) => candidateKeys.includes(key));
+    const hierarchyMatch = direct
+        ? undefined
+        : requested.find((key) =>
+              expandRequestedKeys([key]).some((expandedKey) => candidateKeys.includes(expandedKey))
+          );
+    const targetCategory =
+        ctx.targetCategoryKey ??
+        (ctx.targetIntentionKey ? getCategoryKeyForIntention(ctx.targetIntentionKey) : undefined);
+    const sameCategory = targetCategory
+        ? candidateKeys.find((key) => getCategoryKeyForIntention(key) === targetCategory)
+        : undefined;
+    const intentionKey = direct ?? hierarchyMatch ?? sameCategory ?? candidateKeys[0];
+    const intention = getIntention(intentionKey);
+
+    let fallbackLevel: IntentionFallbackLevel = 'none';
+    if (!direct && sameCategory) fallbackLevel = 'same_category';
+    else if (!direct && hierarchyMatch) fallbackLevel = 'broad_intention';
+    else if (!direct) fallbackLevel = intention.broad ? 'broad_intention' : 'related_domains';
+
+    return {
+        categoryKey: intention.categoryKey,
+        intentionKey: intention.key,
+        fallbackLevel,
+        scoreParts: {
+            intention: Math.round(breakdown.intentionFit),
+            tags: Math.round(breakdown.interests),
+            distance: Math.round(breakdown.distance),
+            trust: Math.round(breakdown.profileQuality),
+            vibe: Math.round(breakdown.socialVibe)
+        }
+    };
 }

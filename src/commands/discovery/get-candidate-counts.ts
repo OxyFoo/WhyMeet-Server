@@ -1,10 +1,10 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_GetCandidateCounts, WSResponse_GetCandidateCounts } from '@oxyfoo/whymeet-types';
-import { INTENTION_KEYS } from '@oxyfoo/whymeet-types';
+import { INTENTION_KEYS, INTENTION_CATEGORY_KEYS } from '@oxyfoo/whymeet-types';
 import {
     buildPipelineContext,
-    countQualifiedByIntention,
+    countQualifiedByIntentionCategory,
     runPipelineQuery,
     DISCOVERY_FETCH_LIMIT
 } from '@/services/discoveryPipeline';
@@ -19,10 +19,10 @@ registerCommand<WSRequest_GetCandidateCounts>(
                 const setup = await buildPipelineContext(client);
                 const { qualified } = await runPipelineQuery(
                     setup,
-                    { intentions: [...INTENTION_KEYS] },
+                    { intentionKeys: [...INTENTION_KEYS] },
                     DISCOVERY_FETCH_LIMIT
                 );
-                return countQualifiedByIntention(qualified, INTENTION_KEYS);
+                return countQualifiedByIntentionCategory(qualified, INTENTION_CATEGORY_KEYS);
             });
 
             logger.debug(`[Discovery] Counts for ${client.userId}: ${JSON.stringify(counts)}`);

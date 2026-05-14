@@ -7,7 +7,9 @@ import { getBoostedUserIds } from '@/services/boostService';
 import { interleaveByBoost } from '@/services/interleaveResults';
 import { runDiscoveryPipeline, DISCOVERY_FETCH_LIMIT } from '@/services/discoveryPipeline';
 import { obfuscateString } from '@/services/previewObfuscation';
+import { validateSearchFilters } from '@/config/validation';
 import { logger } from '@/config/logger';
+import { enrichProfileIntentionsFromFilters } from '@/services/intentionProfileEnrichment';
 
 registerCommand<WSRequest_GetCandidates>(
     'get-candidates',
@@ -15,12 +17,17 @@ registerCommand<WSRequest_GetCandidates>(
         const filters = payload.filters;
 
         try {
+            const validationError = validateSearchFilters(filters);
+            if (validationError) return { command: 'get-candidates', payload: { error: validationError } };
+
             const { qualified, ctx } = await runDiscoveryPipeline(client, filters, DISCOVERY_FETCH_LIMIT);
+            await enrichProfileIntentionsFromFilters(client.userId, filters);
 
             // Take top 20 and map to client-facing candidates
             const scoredCandidates = qualified.slice(0, 20).map((s) => {
-                const candidate = mapUserToCandidate(s.user, ctx.prefIntentions, ctx.myLatLng);
+                const candidate = mapUserToCandidate(s.user, ctx.prefIntentionKeys, ctx.myLatLng);
                 candidate.score = s.score;
+                candidate.intentionMatch = s.intentionMatch;
                 if (!ctx.myProfileComplete) {
                     candidate.blurred = true;
                     candidate.bio = obfuscateString(candidate.bio);

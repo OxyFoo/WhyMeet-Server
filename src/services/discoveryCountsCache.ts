@@ -1,19 +1,19 @@
 import { getRedis, isRedisAvailable } from '@/services/redisService';
 import { env } from '@/config/env';
 import { logger } from '@/config/logger';
-import type { IntentionKey } from '@oxyfoo/whymeet-types';
+import type { IntentionCategoryKey } from '@oxyfoo/whymeet-types';
 
-const KEY_PREFIX = 'discovery:counts:v2:';
+const KEY_PREFIX = 'discovery:counts:v3:';
 const CANDIDATE_PREFIX = `${KEY_PREFIX}candidate:`;
-const SUB_INTENTION_PREFIX = `${KEY_PREFIX}sub:`;
+const INTENTION_PREFIX = `${KEY_PREFIX}intention:`;
 const inFlight = new Map<string, Promise<unknown>>();
 
 function candidateKey(userId: string): string {
     return `${CANDIDATE_PREFIX}${userId}`;
 }
 
-function subIntentionKey(userId: string, intention: IntentionKey): string {
-    return `${SUB_INTENTION_PREFIX}${userId}:${intention}`;
+function intentionKey(userId: string, categoryKey: IntentionCategoryKey): string {
+    return `${INTENTION_PREFIX}${userId}:${categoryKey}`;
 }
 
 async function getJson<T>(key: string): Promise<T | null> {
@@ -65,7 +65,7 @@ async function coalesce<T>(key: string, compute: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Cache aggregated "count per intention" for a user. Swipe actions keep the
+ * Cache aggregated "count per intention category" for a user. Swipe actions keep the
  * exclusion set exact but let these UI counters expire naturally, which avoids
  * stampeding seven expensive pipelines during load bursts.
  */
@@ -86,12 +86,12 @@ export async function getOrComputeDiscoveryCounts(
     });
 }
 
-export async function getOrComputeSubIntentionCounts(
+export async function getOrComputeIntentionCounts(
     userId: string,
-    intention: IntentionKey,
+    categoryKey: IntentionCategoryKey,
     compute: () => Promise<Record<string, number>>
 ): Promise<Record<string, number>> {
-    const key = subIntentionKey(userId, intention);
+    const key = intentionKey(userId, categoryKey);
     const cached = await getJson<Record<string, number>>(key);
     if (cached) return cached;
 
@@ -108,7 +108,7 @@ export async function invalidateDiscoveryCounts(userId: string): Promise<void> {
     if (!isRedisAvailable()) return;
 
     try {
-        const subKeys = await scanKeys(`${SUB_INTENTION_PREFIX}${userId}:*`);
+        const subKeys = await scanKeys(`${INTENTION_PREFIX}${userId}:*`);
         await getRedis().del(candidateKey(userId), ...subKeys);
         logger.debug(`[DiscoveryCountsCache] Invalidated counts for user ${userId}`);
     } catch (error) {

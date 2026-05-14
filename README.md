@@ -16,8 +16,8 @@ docker compose -f docker-compose.dev.yml up --build
 # Production (app only, external DB & S3)
 docker compose -f docker-compose.prod.yml up --build
 
-# Ajouter les comptes de test
-npm run db:seed
+# Ajouter les comptes de test en local
+npm run db:seed:dev
 ```
 
 ## Scripts
@@ -33,7 +33,10 @@ npm run db:seed
 | `npm run db:generate` | Generate Prisma client    |
 | `npm run db:migrate`  | Run Prisma migrations     |
 | `npm run db:push`     | Push schema to DB         |
+| `npm run db:deploy`   | Deploy migrations + seed  |
 | `npm run db:studio`   | Open Prisma Studio        |
+| `npm run db:seed`     | Seed reference data       |
+| `npm run db:seed:dev` | Seed local dev data       |
 
 ## Lancer le projet manuellement
 
@@ -54,6 +57,17 @@ npx prisma migrate dev
 # 5. Build & run
 npm run dev
 ```
+
+### Services Docker, serveur local
+
+Pour lancer l'infra de dev sans le conteneur `whymeet-server-dev`, puis démarrer le serveur avec `npm run dev` sur la machine hôte :
+
+```bash
+docker compose -f docker-compose.dev.yml up -d whymeet-db-dev whymeet-pgbouncer-dev whymeet-redis-dev whymeet-minio-dev
+npm run dev
+```
+
+Ce mode est utile quand `@oxyfoo/whymeet-types` pointe vers `file:../WhyMeet-Types` dans `package.json` : le serveur tourne localement et utilise donc les types locaux installés par npm, au lieu de dépendre du conteneur applicatif.
 
 ## Structure
 

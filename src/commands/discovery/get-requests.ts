@@ -3,10 +3,11 @@ import type { Client } from '@/server/Client';
 import type {
     WSRequest_GetRequests,
     WSResponse_GetRequests,
-    IntentionKey,
     Gender,
     PreferredPeriod,
-    ProfilePhoto
+    ProfilePhoto,
+    IntentionKey,
+    IntentionCategoryKey
 } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { computeAge } from '@/services/userMapper';
@@ -64,7 +65,9 @@ registerCommand<WSRequest_GetRequests>('get-requests', async (client: Client): P
                     isBoosted: false,
                     badges: []
                 },
-                intentions: (m.sender.profile?.intentions ?? []) as IntentionKey[],
+                intentionKeys: (m.sender.profile?.intentionKeys ?? []) as IntentionKey[],
+                categoryKey: (m.categoryKey || undefined) as IntentionCategoryKey | undefined,
+                intentionKey: (m.intentionKey || undefined) as IntentionKey | undefined,
                 matchContext: m.matchContext,
                 sentAt: m.matchedAt.toISOString()
             }));

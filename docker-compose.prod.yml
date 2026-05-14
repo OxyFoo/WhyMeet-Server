@@ -42,14 +42,14 @@ services:
         ipv4_address: 172.16.0.12
     restart: unless-stopped
 
-  # One-shot service: applies pending Prisma migrations before the server starts.
+  # One-shot service: applies pending Prisma migrations and reference seed before the server starts.
   # Reuses the production image (it has prisma CLI + schema + migrations).
   whymeet-server-migrate:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: whymeet-server-migrate
-    command: npx prisma migrate deploy
+    command: npm run db:deploy
     env_file: .env.prod
     environment:
       # Connect directly to Postgres (skip pgbouncer) — Prisma migrate requires a real session.

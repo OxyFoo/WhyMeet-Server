@@ -2,8 +2,9 @@
 import './auth/handshake';
 import './discovery/get-candidates';
 import './discovery/get-candidate-counts';
-import './discovery/get-subintention-counts';
-import './discovery/get-popular-tags';
+import './discovery/get-intention-catalog';
+import './discovery/get-intention-counts';
+import './discovery/get-intention-popular-tags';
 import './discovery/get-requests';
 import './discovery/accept-request';
 import './discovery/decline-request';

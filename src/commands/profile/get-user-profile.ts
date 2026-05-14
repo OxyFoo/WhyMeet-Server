@@ -3,15 +3,15 @@ import type { Client } from '@/server/Client';
 import type {
     WSRequest_GetUserProfile,
     WSResponse_GetUserProfile,
-    IntentionKey,
     PreferredPeriod,
     SocialVibe
 } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { mapUserToCandidate, candidateInclude } from '@/services/userMapper';
-import { computeMatchScore } from '@/services/scoring';
+import { buildIntentionMatchSummary, computeMatchScore } from '@/services/scoring';
 import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
 import { buildTagScoringData } from '@/services/discoveryPipeline';
+import { normalizeActiveIntentionKeys } from '@/services/intentionKeys';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_GetUserProfile>(
@@ -82,7 +82,7 @@ registerCommand<WSRequest_GetUserProfile>(
             if (currentUser?.profile) {
                 const myTagData = buildTagScoringData(currentUser.tags);
                 const scoringCtx: ScoringContext = {
-                    myIntentions: (currentUser.profile.intentions ?? []) as IntentionKey[],
+                    myIntentionKeys: normalizeActiveIntentionKeys(currentUser.profile.intentionKeys ?? []),
                     myInterestLabels: myTagData.interestLabels,
                     mySkillLabels: myTagData.skillLabels,
                     myDomainCounts: myTagData.domainCounts,
@@ -96,7 +96,7 @@ registerCommand<WSRequest_GetUserProfile>(
                 };
                 const theirTagData = buildTagScoringData(targetUser.tags);
                 const scoringCandidate: ScoringCandidate = {
-                    intentions: (targetUser.profile?.intentions ?? []) as IntentionKey[],
+                    intentionKeys: normalizeActiveIntentionKeys(targetUser.profile?.intentionKeys ?? []),
                     interestLabels: theirTagData.interestLabels,
                     skillLabels: theirTagData.skillLabels,
                     domainCounts: theirTagData.domainCounts,
@@ -111,7 +111,9 @@ registerCommand<WSRequest_GetUserProfile>(
                     socialVibe: (targetUser.profile?.socialVibe ?? 'balanced') as SocialVibe,
                     reportCount: 0
                 };
-                candidate.score = computeMatchScore(scoringCtx, scoringCandidate).total;
+                const breakdown = computeMatchScore(scoringCtx, scoringCandidate);
+                candidate.score = breakdown.total;
+                candidate.intentionMatch = buildIntentionMatchSummary(scoringCtx, scoringCandidate, breakdown);
             }
 
             if (existingMatch || existingReport) {

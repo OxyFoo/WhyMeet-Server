@@ -104,7 +104,7 @@ model Profile {
     statVibes       Int @default(0)
 
     // Intentions (static keys from @oxyfoo/whymeet-types IntentionKey)
-    intentions String[] @default([])
+    intentionKeys String[] @default([])
 
     // Spoken languages for remote matching
     spokenLanguages String[] @default(["fr"])
@@ -256,17 +256,43 @@ model Match {
     id           String   @id @default(cuid())
     senderId     String
     receiverId   String
-    category     String // IntentionKey
+    category     String // "like" | "skip" | "star"
     matchContext String   @default("")
+    categoryKey  String?
+    intentionKey String?
     mutual       Boolean  @default(false)
     matchedAt    DateTime @default(now())
 
-    sender   User @relation("MatchSender", fields: [senderId], references: [id], onDelete: Cascade)
-    receiver User @relation("MatchReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+    sender            User                      @relation("MatchSender", fields: [senderId], references: [id], onDelete: Cascade)
+    receiver          User                      @relation("MatchReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+    intentionCategory IntentionCategoryCatalog? @relation(fields: [categoryKey], references: [key], onDelete: SetNull, onUpdate: Cascade)
+    intention         IntentionCatalog?         @relation(fields: [intentionKey], references: [key], onDelete: SetNull, onUpdate: Cascade)
 
     @@unique([senderId, receiverId, category])
     @@index([receiverId])
     @@map("matches")
+}
+
+// ─── Intention Catalog ─────────────────────────────────────────
+
+model IntentionCategoryCatalog {
+    key String @id
+
+    intentions IntentionCatalog[]
+    matches    Match[]
+
+    @@map("intention_categories")
+}
+
+model IntentionCatalog {
+    key         String @id
+    categoryKey String
+
+    category IntentionCategoryCatalog @relation(fields: [categoryKey], references: [key], onDelete: Cascade, onUpdate: Cascade)
+    matches  Match[]
+
+    @@index([categoryKey])
+    @@map("intentions")
 }
 
 // ─── Conversations & Messages ───────────────────────────────────────
@@ -665,6 +691,7 @@ model ActivityScheduledNotif {
 
 // ─── Badges ─────────────────────────────────────────────────────────
 
+/// Code-owned badge catalog. src/reference/badges.ts is the source of truth and may overwrite existing rows.
 model BadgeDefinition {
     key                 String  @id
     emoji               String

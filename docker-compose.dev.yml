@@ -97,7 +97,6 @@ services:
         condition: service_healthy
     volumes:
       - .:/app:z
-      - ../WhyMeet-Types/dist:/WhyMeet-Types/dist:ro,z
     networks:
       - default # Internal: pgbouncer, redis, minio
       - whymeet-dev # Shared: WhyMeet-Console can reach this server by name

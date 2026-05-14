@@ -7,6 +7,7 @@ import { obfuscateString } from '@/services/previewObfuscation';
 import { getSearchQuota, useSearchQuota } from '@/services/searchQuotaService';
 import { getBoostedUserIds } from '@/services/boostService';
 import { interleaveByBoost } from '@/services/interleaveResults';
+import { validateSearchFilters } from '@/config/validation';
 import { logger } from '@/config/logger';
 
 const MAX_RESULTS = 25;
@@ -25,6 +26,9 @@ registerCommand<WSRequest_SearchWithToken>(
         const { filters } = payload;
 
         try {
+            const validationError = validateSearchFilters(filters);
+            if (validationError) return { command: 'search-with-token', payload: { error: validationError } };
+
             const quota = await getSearchQuota(client.userId);
             if (quota.dailyLimit !== -1 && quota.remaining <= 0) {
                 return { command: 'search-with-token', payload: { error: 'no_tokens' } };
@@ -35,8 +39,9 @@ registerCommand<WSRequest_SearchWithToken>(
             const totalCount = qualified.length;
 
             const allCandidates = qualified.map((s) => {
-                const candidate = mapUserToCandidate(s.user, ctx.prefIntentions, ctx.myLatLng);
+                const candidate = mapUserToCandidate(s.user, ctx.prefIntentionKeys, ctx.myLatLng);
                 candidate.score = s.score;
+                candidate.intentionMatch = s.intentionMatch;
                 if (!ctx.myProfileComplete) {
                     candidate.blurred = true;
                     candidate.bio = obfuscateString(candidate.bio);
