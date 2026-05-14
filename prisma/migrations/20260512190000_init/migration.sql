@@ -1,3 +1,6 @@
+-- CreateSchema
+CREATE SCHEMA IF NOT EXISTS "public";
+
 -- CreateTable
 CREATE TABLE "users" (
     "id" TEXT NOT NULL,
@@ -16,6 +19,7 @@ CREATE TABLE "users" (
     "appealMessage" VARCHAR(500),
     "appealRequestedAt" TIMESTAMP(3),
     "preferredPeriod" TEXT NOT NULL DEFAULT 'any',
+    "bot" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -56,7 +60,7 @@ CREATE TABLE "profiles" (
     "statConnections" INTEGER NOT NULL DEFAULT 0,
     "statMatches" INTEGER NOT NULL DEFAULT 0,
     "statVibes" INTEGER NOT NULL DEFAULT 0,
-    "intentions" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "intentionKeys" TEXT[] DEFAULT ARRAY[]::TEXT[],
     "spokenLanguages" TEXT[] DEFAULT ARRAY['fr']::TEXT[],
     "trustScore" INTEGER NOT NULL DEFAULT 0,
     "completedHostedCount" INTEGER NOT NULL DEFAULT 0,
@@ -119,6 +123,7 @@ CREATE TABLE "tags" (
     "label" TEXT NOT NULL,
     "embedding" DOUBLE PRECISION[] DEFAULT ARRAY[]::DOUBLE PRECISION[],
     "domainKey" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "tags_pkey" PRIMARY KEY ("id")
 );
@@ -128,6 +133,7 @@ CREATE TABLE "tag_aliases" (
     "id" TEXT NOT NULL,
     "alias" TEXT NOT NULL,
     "tagId" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "tag_aliases_pkey" PRIMARY KEY ("id")
 );
@@ -136,9 +142,14 @@ CREATE TABLE "tag_aliases" (
 CREATE TABLE "user_tags" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
-    "tagId" TEXT NOT NULL,
+    "label" TEXT NOT NULL,
+    "labelLower" TEXT NOT NULL,
+    "labelNorm" TEXT NOT NULL,
+    "tagId" TEXT,
     "type" TEXT NOT NULL,
     "source" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "user_tags_pkey" PRIMARY KEY ("id")
 );
@@ -150,10 +161,27 @@ CREATE TABLE "matches" (
     "receiverId" TEXT NOT NULL,
     "category" TEXT NOT NULL,
     "matchContext" TEXT NOT NULL DEFAULT '',
+    "categoryKey" TEXT,
+    "intentionKey" TEXT,
     "mutual" BOOLEAN NOT NULL DEFAULT false,
     "matchedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "matches_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "intention_categories" (
+    "key" TEXT NOT NULL,
+
+    CONSTRAINT "intention_categories_pkey" PRIMARY KEY ("key")
+);
+
+-- CreateTable
+CREATE TABLE "intentions" (
+    "key" TEXT NOT NULL,
+    "categoryKey" TEXT NOT NULL,
+
+    CONSTRAINT "intentions_pkey" PRIMARY KEY ("key")
 );
 
 -- CreateTable
@@ -181,6 +209,7 @@ CREATE TABLE "messages" (
     "conversationId" TEXT NOT NULL,
     "senderId" TEXT NOT NULL,
     "text" TEXT NOT NULL,
+    "type" TEXT NOT NULL DEFAULT 'text',
     "read" BOOLEAN NOT NULL DEFAULT false,
     "timestamp" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -243,11 +272,72 @@ CREATE TABLE "audit_logs" (
     "id" TEXT NOT NULL,
     "userId" TEXT,
     "action" TEXT NOT NULL,
+    "targetActivityId" TEXT,
     "metadata" JSONB,
     "ip" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "audit_logs_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "api_usage_events" (
+    "id" TEXT NOT NULL,
+    "provider" TEXT NOT NULL,
+    "endpoint" TEXT NOT NULL,
+    "status" INTEGER NOT NULL,
+    "latencyMs" INTEGER NOT NULL,
+    "userId" TEXT,
+    "errorCode" TEXT,
+    "metadata" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "api_usage_events_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "feature_flags" (
+    "key" TEXT NOT NULL,
+    "enabled" BOOLEAN NOT NULL,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "feature_flags_pkey" PRIMARY KEY ("key")
+);
+
+-- CreateTable
+CREATE TABLE "app_config" (
+    "key" TEXT NOT NULL,
+    "valueInt" INTEGER NOT NULL,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "app_config_pkey" PRIMARY KEY ("key")
+);
+
+-- CreateTable
+CREATE TABLE "email_logs" (
+    "id" TEXT NOT NULL,
+    "type" TEXT NOT NULL,
+    "recipientEmail" TEXT NOT NULL,
+    "recipientUserId" TEXT,
+    "subject" TEXT NOT NULL,
+    "status" TEXT NOT NULL,
+    "errorMessage" TEXT,
+    "metadata" JSONB,
+    "sentBy" TEXT NOT NULL,
+    "actorAdminId" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "email_logs_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "email_auto_config" (
+    "type" TEXT NOT NULL,
+    "enabled" BOOLEAN NOT NULL DEFAULT true,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "updatedBy" TEXT,
+
+    CONSTRAINT "email_auto_config_pkey" PRIMARY KEY ("type")
 );
 
 -- CreateTable
@@ -267,6 +357,20 @@ CREATE TABLE "subscriptions" (
 );
 
 -- CreateTable
+CREATE TABLE "premium_overrides" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "forcedPremium" BOOLEAN NOT NULL,
+    "reason" VARCHAR(500) NOT NULL,
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "updatedByAdminId" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "premium_overrides_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "active_boosts" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
@@ -278,23 +382,33 @@ CREATE TABLE "active_boosts" (
 );
 
 -- CreateTable
-CREATE TABLE "token_balances" (
+CREATE TABLE "search_quotas" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
-    "tokens" INTEGER NOT NULL DEFAULT 5,
-    "lastRefillAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "remaining" INTEGER NOT NULL DEFAULT 5,
+    "resetAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "token_balances_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "search_quotas_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "swipe_quotas" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
-    "swipesUsed" INTEGER NOT NULL DEFAULT 0,
+    "remaining" INTEGER NOT NULL DEFAULT 20,
     "resetAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "swipe_quotas_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "activity_quotas" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "remaining" INTEGER NOT NULL DEFAULT 3,
+    "resetAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "activity_quotas_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -305,9 +419,9 @@ CREATE TABLE "activities" (
     "description" TEXT NOT NULL DEFAULT '',
     "category" TEXT NOT NULL,
     "dateTime" TIMESTAMP(3),
-    "locationName" TEXT NOT NULL DEFAULT '',
-    "latitude" DOUBLE PRECISION,
-    "longitude" DOUBLE PRECISION,
+    "locationName" TEXT NOT NULL,
+    "latitude" DOUBLE PRECISION NOT NULL,
+    "longitude" DOUBLE PRECISION NOT NULL,
     "maxParticipants" INTEGER,
     "isCancelled" BOOLEAN NOT NULL DEFAULT false,
     "isArchived" BOOLEAN NOT NULL DEFAULT false,
@@ -386,6 +500,8 @@ CREATE TABLE "badge_definitions" (
     CONSTRAINT "badge_definitions_pkey" PRIMARY KEY ("key")
 );
 
+COMMENT ON TABLE "badge_definitions" IS 'Code-owned badge catalog. src/reference/badges.ts is the source of truth and may overwrite existing rows.';
+
 -- CreateTable
 CREATE TABLE "user_badges" (
     "id" TEXT NOT NULL,
@@ -412,6 +528,9 @@ CREATE TABLE "feedbacks" (
 
 -- CreateIndex
 CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
+
+-- CreateIndex
+CREATE INDEX "users_bot_idx" ON "users"("bot");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "devices_uuid_key" ON "devices"("uuid");
@@ -447,13 +566,25 @@ CREATE INDEX "user_tags_tagId_idx" ON "user_tags"("tagId");
 CREATE INDEX "user_tags_userId_source_idx" ON "user_tags"("userId", "source");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "user_tags_userId_tagId_type_key" ON "user_tags"("userId", "tagId", "type");
+CREATE INDEX "user_tags_labelLower_idx" ON "user_tags"("labelLower");
+
+-- CreateIndex
+CREATE INDEX "user_tags_labelNorm_idx" ON "user_tags"("labelNorm");
+
+-- CreateIndex
+CREATE INDEX "user_tags_type_labelNorm_idx" ON "user_tags"("type", "labelNorm");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "user_tags_userId_type_labelNorm_key" ON "user_tags"("userId", "type", "labelNorm");
 
 -- CreateIndex
 CREATE INDEX "matches_receiverId_idx" ON "matches"("receiverId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "matches_senderId_receiverId_category_key" ON "matches"("senderId", "receiverId", "category");
+
+-- CreateIndex
+CREATE INDEX "intentions_categoryKey_idx" ON "intentions"("categoryKey");
 
 -- CreateIndex
 CREATE INDEX "conversation_participants_userId_idx" ON "conversation_participants"("userId");
@@ -495,19 +626,52 @@ CREATE INDEX "ip_logs_userId_idx" ON "ip_logs"("userId");
 CREATE INDEX "audit_logs_userId_action_idx" ON "audit_logs"("userId", "action");
 
 -- CreateIndex
+CREATE INDEX "audit_logs_targetActivityId_createdAt_idx" ON "audit_logs"("targetActivityId", "createdAt");
+
+-- CreateIndex
 CREATE INDEX "audit_logs_createdAt_idx" ON "audit_logs"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "api_usage_events_provider_createdAt_idx" ON "api_usage_events"("provider", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "api_usage_events_provider_status_createdAt_idx" ON "api_usage_events"("provider", "status", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "email_logs_type_createdAt_idx" ON "email_logs"("type", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "email_logs_recipientEmail_idx" ON "email_logs"("recipientEmail");
+
+-- CreateIndex
+CREATE INDEX "email_logs_status_createdAt_idx" ON "email_logs"("status", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "email_logs_createdAt_idx" ON "email_logs"("createdAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "subscriptions_userId_key" ON "subscriptions"("userId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "premium_overrides_userId_key" ON "premium_overrides"("userId");
+
+-- CreateIndex
+CREATE INDEX "premium_overrides_expiresAt_idx" ON "premium_overrides"("expiresAt");
+
+-- CreateIndex
+CREATE INDEX "premium_overrides_forcedPremium_expiresAt_idx" ON "premium_overrides"("forcedPremium", "expiresAt");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "active_boosts_userId_key" ON "active_boosts"("userId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "token_balances_userId_key" ON "token_balances"("userId");
+CREATE UNIQUE INDEX "search_quotas_userId_key" ON "search_quotas"("userId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "swipe_quotas_userId_key" ON "swipe_quotas"("userId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "activity_quotas_userId_key" ON "activity_quotas"("userId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "activities_conversationId_key" ON "activities"("conversationId");
@@ -573,13 +737,22 @@ ALTER TABLE "tag_aliases" ADD CONSTRAINT "tag_aliases_tagId_fkey" FOREIGN KEY ("
 ALTER TABLE "user_tags" ADD CONSTRAINT "user_tags_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "user_tags" ADD CONSTRAINT "user_tags_tagId_fkey" FOREIGN KEY ("tagId") REFERENCES "tags"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "user_tags" ADD CONSTRAINT "user_tags_tagId_fkey" FOREIGN KEY ("tagId") REFERENCES "tags"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "matches" ADD CONSTRAINT "matches_senderId_fkey" FOREIGN KEY ("senderId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "matches" ADD CONSTRAINT "matches_receiverId_fkey" FOREIGN KEY ("receiverId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "matches" ADD CONSTRAINT "matches_categoryKey_fkey" FOREIGN KEY ("categoryKey") REFERENCES "intention_categories"("key") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "matches" ADD CONSTRAINT "matches_intentionKey_fkey" FOREIGN KEY ("intentionKey") REFERENCES "intentions"("key") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "intentions" ADD CONSTRAINT "intentions_categoryKey_fkey" FOREIGN KEY ("categoryKey") REFERENCES "intention_categories"("key") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "conversation_participants" ADD CONSTRAINT "conversation_participants_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "conversations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -618,16 +791,25 @@ ALTER TABLE "ip_logs" ADD CONSTRAINT "ip_logs_deviceId_fkey" FOREIGN KEY ("devic
 ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_targetActivityId_fkey" FOREIGN KEY ("targetActivityId") REFERENCES "activities"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "subscriptions" ADD CONSTRAINT "subscriptions_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "premium_overrides" ADD CONSTRAINT "premium_overrides_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "active_boosts" ADD CONSTRAINT "active_boosts_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "token_balances" ADD CONSTRAINT "token_balances_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "search_quotas" ADD CONSTRAINT "search_quotas_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "swipe_quotas" ADD CONSTRAINT "swipe_quotas_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "activity_quotas" ADD CONSTRAINT "activity_quotas_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "activities" ADD CONSTRAINT "activities_hostId_fkey" FOREIGN KEY ("hostId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -661,3 +843,4 @@ ALTER TABLE "user_badges" ADD CONSTRAINT "user_badges_badgeKey_fkey" FOREIGN KEY
 
 -- AddForeignKey
 ALTER TABLE "feedbacks" ADD CONSTRAINT "feedbacks_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
