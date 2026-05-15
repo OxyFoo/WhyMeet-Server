@@ -1,6 +1,6 @@
 jest.mock('@/services/database', () => ({ getDatabase: jest.fn() }));
 
-import { INTEREST_CATEGORY_KEYS, type InterestCategoryKey } from '@oxyfoo/whymeet-types';
+import { INTEREST_CATEGORY_KEYS, SOCIAL_VIBES, type InterestCategoryKey } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import {
     getActivities,
@@ -83,15 +83,53 @@ function makeActivity(overrides: MockActivityOverrides = {}) {
     };
 }
 
+function makeViewer(
+    overrides: {
+        photos?: { id: string }[];
+        tags?: { type: string }[];
+        profile?: Partial<{
+            latitude: number;
+            longitude: number;
+            bio: string;
+            intentionKeys: string[];
+            socialVibe: string;
+            spokenLanguages: string[];
+        }>;
+    } = {}
+) {
+    return {
+        gender: 'male',
+        birthDate: birthDateForAge(34),
+        bot: false,
+        photos: overrides.photos ?? [{ id: 'photo-1' }],
+        tags: overrides.tags ?? [
+            { type: 'interest' },
+            { type: 'interest' },
+            { type: 'interest' },
+            { type: 'interest' },
+            { type: 'interest' },
+            { type: 'skill' },
+            { type: 'skill' },
+            { type: 'skill' },
+            { type: 'skill' },
+            { type: 'skill' }
+        ],
+        profile: {
+            latitude: 48.8566,
+            longitude: 2.3522,
+            bio: 'Je sors courir chaque semaine.',
+            intentionKeys: ['regular_sports_partner'],
+            socialVibe: SOCIAL_VIBES[0],
+            spokenLanguages: ['fr'],
+            ...(overrides.profile ?? {})
+        }
+    };
+}
+
 function makeActivityDiscoveryDb() {
     return {
         user: {
-            findUnique: jest.fn().mockResolvedValue({
-                gender: 'male',
-                birthDate: birthDateForAge(34),
-                bot: false,
-                profile: { latitude: 48.8566, longitude: 2.3522 }
-            })
+            findUnique: jest.fn().mockResolvedValue(makeViewer())
         },
         settings: {
             findUnique: jest.fn().mockResolvedValue({
@@ -182,5 +220,40 @@ describe('activity discovery queries', () => {
         expect(query).toContain('ORDER BY count DESC');
         expect(query).toContain('6371 * acos');
         expect(query).toContain('targetAgeRange');
+    });
+
+    it('obfuscates activity cards when the viewer profile is incomplete', async () => {
+        const category = INTEREST_CATEGORY_KEYS[0] as InterestCategoryKey;
+        const db = makeActivityDiscoveryDb();
+        db.user.findUnique.mockResolvedValue(makeViewer({ photos: [] }));
+        db.$queryRaw.mockResolvedValue([{ id: 'activity-1', totalCount: 1n }]);
+        db.activity.findMany.mockResolvedValue([makeActivity({ category })]);
+        mockedGetDatabase.mockReturnValue(db as never);
+
+        const result = await getActivities('viewer-incomplete', { category });
+
+        expect(result.activities).toHaveLength(1);
+        expect(result.activities[0]).toMatchObject({ blurred: true });
+        expect(result.activities[0].title).not.toBe('Morning run');
+        expect(result.activities[0].title).toHaveLength('Morning run'.length);
+        expect(result.activities[0].locationName).not.toBe('Paris');
+        expect(result.activities[0].hostName).not.toBe('Alice');
+    });
+
+    it('can force clear activity cards even when the viewer profile is incomplete', async () => {
+        const category = INTEREST_CATEGORY_KEYS[0] as InterestCategoryKey;
+        const db = makeActivityDiscoveryDb();
+        db.user.findUnique.mockResolvedValue(makeViewer({ photos: [] }));
+        db.$queryRaw.mockResolvedValue([{ id: 'activity-1', totalCount: 1n }]);
+        db.activity.findMany.mockResolvedValue([makeActivity({ category })]);
+        mockedGetDatabase.mockReturnValue(db as never);
+
+        const result = await getActivities('viewer-incomplete', { category }, { obfuscationMode: 'clear' });
+
+        expect(result.activities).toHaveLength(1);
+        expect(result.activities[0].blurred).toBeUndefined();
+        expect(result.activities[0].title).toBe('Morning run');
+        expect(result.activities[0].locationName).toBe('Paris');
+        expect(result.activities[0].hostName).toBe('Alice');
     });
 });

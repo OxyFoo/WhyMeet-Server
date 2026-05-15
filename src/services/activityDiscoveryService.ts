@@ -5,6 +5,8 @@ import { getDistanceKm, geoBoundingBox, computeAge } from '@/services/userMapper
 import { isFeatureEnabled } from '@/services/featureFlagService';
 import { getRedis, isRedisAvailable } from '@/services/redisService';
 import { INTEREST_CATEGORY_KEYS } from '@oxyfoo/whymeet-types';
+import { isProfileComplete, loadUserForCompletion } from '@/services/profileCompletion';
+import { obfuscateString } from '@/services/previewObfuscation';
 import { logger } from '@/config/logger';
 
 const ACTIVITY_CACHE_PREFIX = 'activity:discovery:v2:';
@@ -24,6 +26,7 @@ interface ViewerContext {
     longitude: number | null;
     gender: string | null;
     birthDate: Date | null;
+    myProfileComplete: boolean;
     /** Synthetic stresstest account flag — bots only see other bots' activities. */
     isBot: boolean;
     /** When true, the bot/user isolation is broken (stresstest.bot_user_mixing). */
@@ -46,6 +49,17 @@ type ActivitySummaryRow = Prisma.ActivityGetPayload<{ include: typeof activitySu
 type ActivityIdRow = { id: string; totalCount: number | bigint };
 type ActivityCountRow = { category: string; count: number | bigint };
 type ActivityTagRow = { label: string };
+
+type ActivityObfuscationMode = 'auto' | 'force' | 'clear';
+
+interface ActivityDiscoveryOptions {
+    /**
+     * `auto`: default discovery behavior, obfuscate only when the viewer profile is incomplete.
+     * `force`: preview behavior, always obfuscate the returned cards regardless of profile completion.
+     * `clear`: always return the cards in clear, even if the viewer profile is incomplete.
+     */
+    obfuscationMode?: ActivityObfuscationMode;
+}
 
 function activityCountsKey(userId: string, revision: string): string {
     return `${ACTIVITY_CACHE_PREFIX}${revision}:counts:${userId}`;
@@ -153,15 +167,7 @@ async function loadViewerContext(userId: string): Promise<ViewerContext> {
 
     const db = getDatabase();
     const [user, settings, mixBots] = await Promise.all([
-        db.user.findUnique({
-            where: { id: userId },
-            select: {
-                gender: true,
-                birthDate: true,
-                bot: true,
-                profile: { select: { latitude: true, longitude: true } }
-            }
-        }),
+        loadUserForCompletion(userId),
         db.settings.findUnique({ where: { userId } }),
         isFeatureEnabled('stresstest.bot_user_mixing')
     ]);
@@ -171,6 +177,7 @@ async function loadViewerContext(userId: string): Promise<ViewerContext> {
         longitude: user?.profile?.longitude ?? null,
         gender: user?.gender ?? null,
         birthDate: user?.birthDate ?? null,
+        myProfileComplete: user ? isProfileComplete(user) : false,
         isBot: user?.bot ?? false,
         mixBots,
         activityGenders: settings?.activityGenders ?? [],
@@ -340,11 +347,22 @@ function mapActivitySummary(
     };
 }
 
+function obfuscateActivitySummary(activity: ActivitySummary): ActivitySummary {
+    return {
+        ...activity,
+        title: obfuscateString(activity.title),
+        locationName: obfuscateString(activity.locationName),
+        hostName: obfuscateString(activity.hostName),
+        blurred: true
+    };
+}
+
 // ─── Get Activities ──────────────────────────────────────────────────
 
 export async function getActivities(
     userId: string,
-    filters?: ActivitySearchFilters
+    filters?: ActivitySearchFilters,
+    options: ActivityDiscoveryOptions = {}
 ): Promise<{ activities: ActivitySummary[]; totalCount: number }> {
     const db = getDatabase();
     const viewer = await loadViewerContext(userId);
@@ -361,18 +379,23 @@ export async function getActivities(
     const ids = rows.map((row) => row.id);
     if (ids.length === 0) return { activities: [], totalCount: 0 };
 
-    const activities = await db.activity.findMany({
+    const activityRecords = await db.activity.findMany({
         where: { id: { in: ids } },
         include: activitySummaryInclude
     });
 
-    const byId = new Map(activities.map((activity) => [activity.id, activity]));
+    const byId = new Map(activityRecords.map((activity) => [activity.id, activity]));
     const summaries = ids
         .map((id) => byId.get(id))
         .filter((activity): activity is ActivitySummaryRow => Boolean(activity))
         .map((activity) => mapActivitySummary(activity, viewer.latitude, viewer.longitude));
 
-    return { activities: summaries, totalCount: Number(rows[0]?.totalCount ?? summaries.length) };
+    const obfuscationMode = options.obfuscationMode ?? 'auto';
+    const shouldObfuscate = obfuscationMode === 'force' || (obfuscationMode === 'auto' && !viewer.myProfileComplete);
+
+    const activities = shouldObfuscate ? summaries.map(obfuscateActivitySummary) : summaries;
+
+    return { activities, totalCount: Number(rows[0]?.totalCount ?? summaries.length) };
 }
 
 // ─── Get Activity Counts ────────────────────────────────────────────
@@ -409,10 +432,11 @@ async function computeActivityCounts(userId: string): Promise<Record<string, num
 
 export async function searchActivities(
     userId: string,
-    filters: ActivitySearchFilters
+    filters: ActivitySearchFilters,
+    options?: ActivityDiscoveryOptions
 ): Promise<{ activities: ActivitySummary[]; totalCount: number }> {
     // Search reuses getActivities with the filters
-    return getActivities(userId, filters);
+    return getActivities(userId, filters, options);
 }
 
 // ─── Get Popular Activity Tags ──────────────────────────────────────

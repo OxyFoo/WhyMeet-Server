@@ -8,6 +8,10 @@ const DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://whymeet:whymeet@l
 const adapter = new PrismaPg({ connectionString: DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
+// Keep this aligned with the discovery completion rules.
+const MIN_DISCOVERY_TAGS = 5;
+const MAX_DISCOVERY_TAGS = 10;
+
 // ─── Data pools ─────────────────────────────────────────────────────
 
 const FIRST_NAMES = [
@@ -366,14 +370,13 @@ async function main() {
     }
     console.log(`  ✅ ${aliasCount} tag aliases created`);
 
-    // 2. Pre-fetch existing seed emails to skip duplicates
-    const existingUsers = await prisma.user.findMany({
-        where: { email: { endsWith: '@seed.whymeet.dev' } },
-        select: { email: true }
+    // 2. Rebuild seed users from scratch so reruns can repair an incomplete dev dataset.
+    const existingSeedUserCount = await prisma.user.count({
+        where: { email: { endsWith: '@seed.whymeet.dev' } }
     });
-    const existingEmails = new Set(existingUsers.map((u) => u.email));
-    if (existingEmails.size > 0) {
-        console.log(`  ℹ️  ${existingEmails.size} existing seed users found, will skip`);
+    if (existingSeedUserCount > 0) {
+        console.log(`  🧹 ${existingSeedUserCount} existing seed users found, deleting before rebuild`);
+        await prisma.user.deleteMany({ where: { email: { endsWith: '@seed.whymeet.dev' } } });
     }
 
     // 3. Create users in batches
@@ -386,8 +389,6 @@ async function main() {
             const firstName = FIRST_NAMES[i % FIRST_NAMES.length];
             const suffix = i >= FIRST_NAMES.length ? `${Math.floor(i / FIRST_NAMES.length) + 1}` : '';
             const email = `${firstName.toLowerCase().replace(/[éèê]/g, 'e').replace(/[àâ]/g, 'a').replace(/[ïî]/g, 'i').replace(/[ô]/g, 'o')}${suffix}@seed.whymeet.dev`;
-
-            if (existingEmails.has(email)) continue;
 
             const city = pick(CITIES);
             const coords = CITY_COORDS[city];
@@ -402,8 +403,8 @@ async function main() {
                 )
             ];
             const intentionKeys = pickProfileIntentionKeys();
-            const interests = pickN(INTEREST_LABELS, 2, 6);
-            const skills = pickN(SKILL_LABELS, 1, 4);
+            const interests = pickN(INTEREST_LABELS, MIN_DISCOVERY_TAGS, MAX_DISCOVERY_TAGS);
+            const skills = pickN(SKILL_LABELS, MIN_DISCOVERY_TAGS, MAX_DISCOVERY_TAGS);
             const gender = pick(GENDERS);
             const birthDate = randomBirthDate();
 
