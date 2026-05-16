@@ -118,7 +118,7 @@ export function mapUserToProfile(user: {
     suspended?: boolean;
     banned?: boolean;
     preferredPeriod?: string;
-    photos?: { id: string; key: string; description: string; position: number }[];
+    photos?: { id: string; key: string; keyBlurred: string; description: string; position: number }[];
     profile?: {
         bio: string;
         socialVibe: string;
@@ -165,12 +165,7 @@ export function mapUserToProfile(user: {
         age: computeAge(user.birthDate),
         birthDate: toIsoString(user.birthDate),
         gender: (user.gender || 'male') as Gender,
-        photos: (user.photos ?? []).map((p) => ({
-            id: p.id,
-            key: p.key,
-            description: p.description,
-            position: p.position
-        })) as ProfilePhoto[],
+        photos: mapProfilePhotos(user.photos),
         city: user.city,
         verified: user.verified,
         suspended: user.suspended ?? false,
@@ -254,6 +249,19 @@ export const profileInclude = {
 import type { MatchCandidate } from '@oxyfoo/whymeet-types';
 
 type PrismaUserWithProfile = Parameters<typeof mapUserToProfile>[0];
+type PhotoKeyMode = 'clear' | 'blurred';
+
+function mapProfilePhotos(
+    photos: { id: string; key: string; keyBlurred: string; description: string; position: number }[] | undefined,
+    mode: PhotoKeyMode = 'clear'
+): ProfilePhoto[] {
+    return (photos ?? []).map((photo) => ({
+        id: photo.id,
+        key: mode === 'blurred' ? photo.keyBlurred : photo.key,
+        description: photo.description,
+        position: photo.position
+    }));
+}
 
 /**
  * Maps a Prisma User (with profile/tags) to a MatchCandidate.
@@ -265,7 +273,7 @@ export function mapUserToCandidate(
     user: PrismaUserWithProfile,
     priorityContextKeys?: IntentionKey[],
     refLatLng?: { latitude: number | null; longitude: number | null },
-    flags?: { isPremium?: boolean; isBoosted?: boolean }
+    flags?: { isPremium?: boolean; isBoosted?: boolean; photoKeyMode?: PhotoKeyMode }
 ): MatchCandidate {
     const userContextKeys = normalizeActiveIntentionKeys(user.profile?.intentionKeys ?? []);
     const sorted = priorityContextKeys?.length
@@ -283,12 +291,7 @@ export function mapUserToCandidate(
             age: computeAge(user.birthDate),
             birthDate: toIsoString(user.birthDate),
             gender: (user.gender || 'male') as Gender,
-            photos: (user.photos ?? []).map((p) => ({
-                id: p.id,
-                key: p.key,
-                description: p.description,
-                position: p.position
-            })) as ProfilePhoto[],
+            photos: mapProfilePhotos(user.photos, flags?.photoKeyMode ?? 'clear'),
             city: user.city,
             verified: user.verified,
             suspended: user.suspended ?? false,

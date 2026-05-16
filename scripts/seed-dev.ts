@@ -460,6 +460,7 @@ async function main() {
                         photos: {
                             create: Array.from({ length: 2 + Math.floor(Math.random() * 3) }, (_, idx) => ({
                                 key: `https://i.pravatar.cc/300?u=${email}-${idx}`,
+                                keyBlurred: `https://i.pravatar.cc/12?u=${email}-${idx}`,
                                 description: '',
                                 position: idx
                             }))

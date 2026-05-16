@@ -5,7 +5,7 @@ import { mapUserToCandidate } from '@/services/userMapper';
 import { runDiscoveryPipeline, DISCOVERY_FETCH_LIMIT } from '@/services/discoveryPipeline';
 import { getBoostedUserIds } from '@/services/boostService';
 import { interleaveByBoost } from '@/services/interleaveResults';
-import { obfuscateString } from '@/services/previewObfuscation';
+import { obfuscateCandidatePreview } from '@/services/previewObfuscation';
 import { validateSearchFilters } from '@/config/validation';
 import { logger } from '@/config/logger';
 
@@ -33,7 +33,9 @@ registerCommand<WSRequest_PreviewSearch>(
             const totalCount = qualified.length;
 
             const allCandidates = qualified.map((s) => {
-                const candidate = mapUserToCandidate(s.user, ctx.prefIntentionKeys, ctx.myLatLng);
+                const candidate = mapUserToCandidate(s.user, ctx.prefIntentionKeys, ctx.myLatLng, {
+                    photoKeyMode: 'blurred'
+                });
                 candidate.score = s.score;
                 candidate.intentionMatch = s.intentionMatch;
                 return candidate;
@@ -47,26 +49,7 @@ registerCommand<WSRequest_PreviewSearch>(
             const limited = addRandomness(interleaved).slice(0, MAX_RESULTS);
 
             // Obfuscate data: keep structure (lengths, spaces) but scramble letters
-            const randomized = limited.map((c) => {
-                const obfuscatedAge = Math.max(18, (c.user.age ?? 25) + Math.floor(Math.random() * 5) - 2);
-
-                return {
-                    ...c,
-                    user: {
-                        ...c.user,
-                        name: obfuscateString(c.user.name),
-                        age: obfuscatedAge,
-                        city: c.user.city ? obfuscateString(c.user.city) : c.user.city
-                    },
-                    bio: obfuscateString(c.bio),
-                    intentionKeys: c.intentionKeys,
-                    intentionMatch: c.intentionMatch,
-                    interests: c.interests.map(obfuscateString),
-                    skills: c.skills.map(obfuscateString),
-                    distance: c.distance ? obfuscateString(c.distance) : c.distance,
-                    blurred: true
-                };
-            });
+            const randomized = limited.map(obfuscateCandidatePreview);
 
             logger.debug(`[Search] ${randomized.length}/${totalCount} preview results for user: ${client.userId}`);
             return { command: 'preview-search', payload: { results: randomized, totalCount } };

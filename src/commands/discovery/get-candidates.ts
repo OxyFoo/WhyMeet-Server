@@ -6,7 +6,7 @@ import { getSwipeQuota } from '@/services/swipeQuotaService';
 import { getBoostedUserIds } from '@/services/boostService';
 import { interleaveByBoost } from '@/services/interleaveResults';
 import { runDiscoveryPipeline, DISCOVERY_FETCH_LIMIT } from '@/services/discoveryPipeline';
-import { obfuscateString } from '@/services/previewObfuscation';
+import { obfuscateCandidatePreview } from '@/services/previewObfuscation';
 import { validateSearchFilters } from '@/config/validation';
 import { logger } from '@/config/logger';
 import { enrichProfileIntentionsFromFilters } from '@/services/intentionProfileEnrichment';
@@ -23,26 +23,23 @@ registerCommand<WSRequest_GetCandidates>(
             const { qualified, ctx } = await runDiscoveryPipeline(client, filters, DISCOVERY_FETCH_LIMIT);
             await enrichProfileIntentionsFromFilters(client.userId, filters);
 
+            const quota = await getSwipeQuota(client.userId);
+            const quotaExhausted = quota.dailyLimit !== -1 && quota.remaining <= 0;
+            const shouldPreview = !ctx.myProfileComplete || quotaExhausted;
+
             // Take top 20 and map to client-facing candidates
             const scoredCandidates = qualified.slice(0, 20).map((s) => {
-                const candidate = mapUserToCandidate(s.user, ctx.prefIntentionKeys, ctx.myLatLng);
+                const candidate = mapUserToCandidate(s.user, ctx.prefIntentionKeys, ctx.myLatLng, {
+                    photoKeyMode: shouldPreview ? 'blurred' : 'clear'
+                });
                 candidate.score = s.score;
                 candidate.intentionMatch = s.intentionMatch;
-                if (!ctx.myProfileComplete) {
-                    candidate.blurred = true;
-                    candidate.bio = obfuscateString(candidate.bio);
-                    candidate.interests = candidate.interests.map(obfuscateString);
-                    candidate.skills = candidate.skills.map(obfuscateString);
-                }
-                return candidate;
+                return shouldPreview ? obfuscateCandidatePreview(candidate) : candidate;
             });
 
             // Apply 60/40 boost interleave
             const boostedIds = await getBoostedUserIds();
             const candidates = interleaveByBoost(scoredCandidates, boostedIds);
-
-            // Get swipe quota info
-            const quota = await getSwipeQuota(client.userId);
 
             logger.debug(
                 `[Discovery] ${candidates.length} candidates (${qualified.length} total) for user: ${client.userId}`

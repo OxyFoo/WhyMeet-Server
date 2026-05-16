@@ -1,7 +1,9 @@
 jest.mock('@/services/database', () => ({ getDatabase: jest.fn() }));
+jest.mock('@/services/swipeQuotaService', () => ({ getSwipeQuota: jest.fn() }));
 
 import { INTEREST_CATEGORY_KEYS, SOCIAL_VIBES, type InterestCategoryKey } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
+import { getSwipeQuota } from '@/services/swipeQuotaService';
 import {
     getActivities,
     getActivityCounts,
@@ -10,6 +12,7 @@ import {
 } from '@/services/activityDiscoveryService';
 
 const mockedGetDatabase = getDatabase as jest.MockedFunction<typeof getDatabase>;
+const mockedGetSwipeQuota = getSwipeQuota as jest.MockedFunction<typeof getSwipeQuota>;
 
 /** Build a Date such that computeAge() returns exactly `age` today. */
 function birthDateForAge(age: number): Date {
@@ -77,7 +80,7 @@ function makeActivity(overrides: MockActivityOverrides = {}) {
         maxParticipants: 8,
         host: { name: 'Alice' },
         participants: [{ userId: 'host-1' }],
-        photos: [{ id: 'photo-1', key: 'activity.webp', position: 0 }],
+        photos: [{ id: 'photo-1', key: 'activity.webp', keyBlurred: 'activity.blurred.webp', position: 0 }],
         targetGenders: ['male', 'female'],
         targetAgeRange: overrides.targetAgeRange ?? [18, 80]
     };
@@ -153,6 +156,7 @@ function makeActivityDiscoveryDb() {
 describe('activity discovery queries', () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        mockedGetSwipeQuota.mockResolvedValue({ remaining: 20, dailyLimit: 20 });
     });
 
     it('loads the first exact SQL page and preserves SQL ordering', async () => {
@@ -234,6 +238,7 @@ describe('activity discovery queries', () => {
 
         expect(result.activities).toHaveLength(1);
         expect(result.activities[0]).toMatchObject({ blurred: true });
+        expect(result.activities[0].photoKey).toBe('activity.blurred.webp');
         expect(result.activities[0].title).not.toBe('Morning run');
         expect(result.activities[0].title).toHaveLength('Morning run'.length);
         expect(result.activities[0].locationName).not.toBe('Paris');
@@ -252,8 +257,24 @@ describe('activity discovery queries', () => {
 
         expect(result.activities).toHaveLength(1);
         expect(result.activities[0].blurred).toBeUndefined();
+        expect(result.activities[0].photoKey).toBe('activity.webp');
         expect(result.activities[0].title).toBe('Morning run');
         expect(result.activities[0].locationName).toBe('Paris');
         expect(result.activities[0].hostName).toBe('Alice');
+    });
+
+    it('obfuscates activity cards by default when the swipe quota is exhausted', async () => {
+        const category = INTEREST_CATEGORY_KEYS[0] as InterestCategoryKey;
+        const db = makeActivityDiscoveryDb();
+        db.$queryRaw.mockResolvedValue([{ id: 'activity-1', totalCount: 1n }]);
+        db.activity.findMany.mockResolvedValue([makeActivity({ category })]);
+        mockedGetDatabase.mockReturnValue(db as never);
+        mockedGetSwipeQuota.mockResolvedValue({ remaining: 0, dailyLimit: 20 });
+
+        const result = await getActivities('viewer-quota-exhausted', { category });
+
+        expect(result.activities).toHaveLength(1);
+        expect(result.activities[0]).toMatchObject({ blurred: true });
+        expect(result.activities[0].photoKey).toBe('activity.blurred.webp');
     });
 });

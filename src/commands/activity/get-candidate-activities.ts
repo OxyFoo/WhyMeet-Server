@@ -9,13 +9,16 @@ registerCommand<WSRequest_GetCandidateActivities>(
     'get-candidate-activities',
     async (client: Client, payload): Promise<WSResponse_GetCandidateActivities> => {
         try {
-            const { activities, totalCount } = await getActivities(client.userId, {
-                category: payload.category,
-                tags: payload.tags,
-                query: payload.query
-            });
-
             const quota = await getSwipeQuota(client.userId);
+            const { activities, totalCount } = await getActivities(
+                client.userId,
+                {
+                    category: payload.category,
+                    tags: payload.tags,
+                    query: payload.query
+                },
+                { discoveryContext: { swipeQuota: quota } }
+            );
 
             return {
                 command: 'get-candidate-activities',

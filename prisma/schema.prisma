@@ -172,6 +172,7 @@ model ProfilePhoto {
     id          String   @id @default(cuid())
     userId      String
     key         String // S3 object key
+    keyBlurred  String // S3 object key for the pre-blurred preview variant
     description String   @default("")
     position    Int      @default(0)
     createdAt   DateTime @default(now())
@@ -647,6 +648,7 @@ model ActivityPhoto {
     id         String   @id @default(cuid())
     activityId String
     key        String // S3 object key
+    keyBlurred String // S3 object key for the pre-blurred preview variant
     position   Int      @default(0)
     createdAt  DateTime @default(now())
 

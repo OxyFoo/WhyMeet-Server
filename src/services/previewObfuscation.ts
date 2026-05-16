@@ -4,6 +4,8 @@
  * overall visual shape (length, spaces, punctuation, emojis).
  */
 
+import type { MatchCandidate } from '@oxyfoo/whymeet-types';
+
 const LOWERS = 'abcdefghijklmnopqrstuvwxyz';
 const UPPERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const DIGITS = '0123456789';
@@ -27,4 +29,27 @@ export function obfuscateString(str: string): string {
         }
     }
     return result;
+}
+
+function obfuscateAge(age: number): number {
+    const base = Number.isFinite(age) && age >= 18 ? age : 25;
+    const delta = Math.floor(Math.random() * 7) - 3;
+    return Math.max(18, Math.min(99, base + delta));
+}
+
+export function obfuscateCandidatePreview(candidate: MatchCandidate): MatchCandidate {
+    return {
+        ...candidate,
+        user: {
+            ...candidate.user,
+            name: obfuscateString(candidate.user.name),
+            age: obfuscateAge(candidate.user.age),
+            city: candidate.user.city ? obfuscateString(candidate.user.city) : candidate.user.city
+        },
+        bio: obfuscateString(candidate.bio),
+        interests: candidate.interests.map(obfuscateString),
+        skills: candidate.skills.map(obfuscateString),
+        distance: candidate.distance ? obfuscateString(candidate.distance) : candidate.distance,
+        blurred: true
+    };
 }

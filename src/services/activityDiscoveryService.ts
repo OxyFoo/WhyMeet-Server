@@ -1,4 +1,10 @@
-import type { ActivitySummary, ActivitySearchFilters, InterestCategoryKey, Gender } from '@oxyfoo/whymeet-types';
+import type {
+    ActivitySummary,
+    ActivitySearchFilters,
+    InterestCategoryKey,
+    Gender,
+    SwipeQuotaInfo
+} from '@oxyfoo/whymeet-types';
 import { Prisma } from '@prisma/client';
 import { getDatabase } from '@/services/database';
 import { getDistanceKm, geoBoundingBox, computeAge } from '@/services/userMapper';
@@ -7,6 +13,7 @@ import { getRedis, isRedisAvailable } from '@/services/redisService';
 import { INTEREST_CATEGORY_KEYS } from '@oxyfoo/whymeet-types';
 import { isProfileComplete, loadUserForCompletion } from '@/services/profileCompletion';
 import { obfuscateString } from '@/services/previewObfuscation';
+import { getSwipeQuota } from '@/services/swipeQuotaService';
 import { logger } from '@/config/logger';
 
 const ACTIVITY_CACHE_PREFIX = 'activity:discovery:v2:';
@@ -52,13 +59,18 @@ type ActivityTagRow = { label: string };
 
 type ActivityObfuscationMode = 'auto' | 'force' | 'clear';
 
+interface ActivityDiscoveryContext {
+    swipeQuota?: SwipeQuotaInfo;
+}
+
 interface ActivityDiscoveryOptions {
     /**
-     * `auto`: default discovery behavior, obfuscate only when the viewer profile is incomplete.
+     * `auto`: default discovery behavior, obfuscate when the profile is incomplete or the swipe quota is exhausted.
      * `force`: preview behavior, always obfuscate the returned cards regardless of profile completion.
      * `clear`: always return the cards in clear, even if the viewer profile is incomplete.
      */
     obfuscationMode?: ActivityObfuscationMode;
+    discoveryContext?: ActivityDiscoveryContext;
 }
 
 function activityCountsKey(userId: string, revision: string): string {
@@ -322,10 +334,15 @@ function activityDiscoveryFrom(): Prisma.Sql {
 function mapActivitySummary(
     activity: ActivitySummaryRow,
     viewerLat?: number | null,
-    viewerLng?: number | null
+    viewerLng?: number | null,
+    photoKeyMode: 'clear' | 'blurred' = 'clear'
 ): ActivitySummary {
     const distKm = getDistanceKm(viewerLat, viewerLng, activity.latitude, activity.longitude);
     const distStr = distKm != null ? (distKm < 1 ? '< 1 km' : `${Math.round(distKm)} km`) : undefined;
+
+    const photo = activity.photos[0];
+    const photoKey = photo?.key ?? null;
+    const photoKeyBlurred = photo?.keyBlurred ?? null;
 
     return {
         id: activity.id,
@@ -335,7 +352,7 @@ function mapActivitySummary(
         locationName: activity.locationName,
         participantCount: activity.participants.length,
         maxParticipants: activity.maxParticipants,
-        photoKey: activity.photos[0]?.key ?? null,
+        photoKey: photoKeyMode === 'blurred' ? photoKeyBlurred : photoKey,
         hostName: activity.host.name,
         targetGenders: activity.targetGenders as Gender[],
         targetAgeRange: (activity.targetAgeRange?.length === 2 ? activity.targetAgeRange : [18, 80]) as [
@@ -355,6 +372,24 @@ function obfuscateActivitySummary(activity: ActivitySummary): ActivitySummary {
         hostName: obfuscateString(activity.hostName),
         blurred: true
     };
+}
+
+function isSwipeQuotaExhausted(quota: SwipeQuotaInfo): boolean {
+    return quota.dailyLimit !== -1 && quota.remaining <= 0;
+}
+
+async function shouldObfuscateActivityCards(
+    userId: string,
+    viewer: ViewerContext,
+    options: ActivityDiscoveryOptions
+): Promise<boolean> {
+    const obfuscationMode = options.obfuscationMode ?? 'auto';
+    if (obfuscationMode === 'force') return true;
+    if (obfuscationMode === 'clear') return false;
+    if (!viewer.myProfileComplete) return true;
+
+    const quota = options.discoveryContext?.swipeQuota ?? (await getSwipeQuota(userId));
+    return isSwipeQuotaExhausted(quota);
 }
 
 // ─── Get Activities ──────────────────────────────────────────────────
@@ -385,13 +420,14 @@ export async function getActivities(
     });
 
     const byId = new Map(activityRecords.map((activity) => [activity.id, activity]));
+    const shouldObfuscate = await shouldObfuscateActivityCards(userId, viewer, options);
+
     const summaries = ids
         .map((id) => byId.get(id))
         .filter((activity): activity is ActivitySummaryRow => Boolean(activity))
-        .map((activity) => mapActivitySummary(activity, viewer.latitude, viewer.longitude));
-
-    const obfuscationMode = options.obfuscationMode ?? 'auto';
-    const shouldObfuscate = obfuscationMode === 'force' || (obfuscationMode === 'auto' && !viewer.myProfileComplete);
+        .map((activity) =>
+            mapActivitySummary(activity, viewer.latitude, viewer.longitude, shouldObfuscate ? 'blurred' : 'clear')
+        );
 
     const activities = shouldObfuscate ? summaries.map(obfuscateActivitySummary) : summaries;
 

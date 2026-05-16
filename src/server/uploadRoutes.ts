@@ -2,12 +2,20 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import multer from 'multer';
-import sharp from 'sharp';
 import crypto from 'crypto';
 import { getDatabase } from '@/services/database';
 import { tokenManager } from '@/services/tokenManager';
 import { uploadFile, deleteFile } from '@/services/storageService';
 import { invalidateCandidate } from '@/services/candidateCache';
+import { invalidatePipelineSetup } from '@/services/pipelineSetupCache';
+import { invalidateDiscoveryCounts } from '@/services/discoveryCountsCache';
+import { invalidateActivityCatalogCache, invalidateActivityDiscoveryCache } from '@/services/activityDiscoveryService';
+import {
+    buildBlurredImageKey,
+    createActivityPhotoVariants,
+    createProfilePhotoVariants,
+    type PhotoImageVariants
+} from '@/services/imageVariants';
 import { logger } from '@/config/logger';
 import { env } from '@/config/env';
 
@@ -44,6 +52,48 @@ const upload = multer({
 });
 
 const MAX_PHOTOS = 6;
+
+interface StoredImagePair {
+    key: string;
+    keyBlurred: string;
+}
+
+async function uploadImagePair(
+    variants: PhotoImageVariants,
+    key: string,
+    keyBlurred: string
+): Promise<StoredImagePair | null> {
+    let storedKey: string | null = null;
+    try {
+        storedKey = await uploadFile(variants.normal, key, 'image/webp');
+        if (!storedKey) return null;
+
+        const storedKeyBlurred = await uploadFile(variants.blurred, keyBlurred, 'image/webp');
+        if (!storedKeyBlurred) {
+            await deleteFile(storedKey).catch(() => {});
+            return null;
+        }
+
+        return { key: storedKey, keyBlurred: storedKeyBlurred };
+    } catch (error) {
+        if (storedKey) await deleteFile(storedKey).catch(() => {});
+        throw error;
+    }
+}
+
+function deleteImagePair(key: string, keyBlurred: string): void {
+    deleteFile(key).catch(() => {});
+    deleteFile(keyBlurred).catch(() => {});
+}
+
+function invalidateProfilePhotoCaches(userId: string): void {
+    Promise.allSettled([
+        invalidateCandidate(userId),
+        invalidatePipelineSetup(userId),
+        invalidateDiscoveryCounts(userId),
+        invalidateActivityDiscoveryCache(userId)
+    ]).catch(() => {});
+}
 
 /**
  * Authenticates a device from request headers.
@@ -93,6 +143,8 @@ uploadRouter.post('/photo', uploadLimiter, upload.single('photo'), async (req, r
         return;
     }
 
+    let stored: StoredImagePair | null = null;
+
     try {
         // Check photo count limit
         const count = await db.profilePhoto.count({ where: { userId } });
@@ -101,16 +153,12 @@ uploadRouter.post('/photo', uploadLimiter, upload.single('photo'), async (req, r
             return;
         }
 
-        // Process image: resize and convert to webp
-        const processed = await sharp(req.file.buffer)
-            .resize(800, 800, { fit: 'cover', withoutEnlargement: true })
-            .webp({ quality: 80 })
-            .toBuffer();
-
         const key = `photos/${userId}/${crypto.randomUUID()}.webp`;
+        const keyBlurred = buildBlurredImageKey(key);
+        const variants = await createProfilePhotoVariants(req.file.buffer);
 
-        const storedKey = await uploadFile(processed, key, 'image/webp');
-        if (!storedKey) {
+        stored = await uploadImagePair(variants, key, keyBlurred);
+        if (!stored) {
             res.status(503).json({ error: 'Storage service unavailable' });
             return;
         }
@@ -120,16 +168,18 @@ uploadRouter.post('/photo', uploadLimiter, upload.single('photo'), async (req, r
         const photo = await db.profilePhoto.create({
             data: {
                 userId,
-                key: storedKey,
+                key: stored.key,
+                keyBlurred: stored.keyBlurred,
                 description,
                 position: count // append at end
             }
         });
 
         logger.info(`[Upload] Photo added for user ${userId} (position ${count})`);
-        invalidateCandidate(userId).catch(() => {});
+        invalidateProfilePhotoCaches(userId);
         res.json({ photo: { id: photo.id, key: photo.key, description: photo.description, position: photo.position } });
     } catch (error) {
+        if (stored) deleteImagePair(stored.key, stored.keyBlurred);
         logger.error('[Upload] Photo upload error', error);
         res.status(500).json({ error: 'Upload failed' });
     }
@@ -159,7 +209,7 @@ uploadRouter.delete('/photo/:id', uploadLimiter, async (req, res) => {
         }
 
         // Delete from S3
-        deleteFile(photo.key).catch(() => {});
+        deleteImagePair(photo.key, photo.keyBlurred);
 
         // Delete from DB
         await db.profilePhoto.delete({ where: { id: photo.id } });
@@ -176,7 +226,7 @@ uploadRouter.delete('/photo/:id', uploadLimiter, async (req, res) => {
         }
 
         logger.info(`[Upload] Photo ${photo.id} deleted for user ${userId}`);
-        invalidateCandidate(userId).catch(() => {});
+        invalidateProfilePhotoCaches(userId);
         res.json({ success: true });
     } catch (error) {
         logger.error('[Upload] Photo delete error', error);
@@ -230,6 +280,7 @@ uploadRouter.post('/reorder-photos', uploadLimiter, async (req, res) => {
         }
 
         logger.info(`[Upload] Photos reordered for user ${userId}`);
+        invalidateCandidate(userId).catch(() => {});
         res.json({ success: true });
     } catch (error) {
         logger.error('[Upload] Reorder error', error);
@@ -266,6 +317,7 @@ uploadRouter.patch('/photo/:id', uploadLimiter, async (req, res) => {
         });
 
         logger.info(`[Upload] Photo ${photo.id} description updated for user ${userId}`);
+        invalidateCandidate(userId).catch(() => {});
         res.json({
             photo: { id: updated.id, key: updated.key, description: updated.description, position: updated.position }
         });
@@ -299,6 +351,8 @@ uploadRouter.post('/activity-photo', uploadLimiter, upload.single('photo'), asyn
         return;
     }
 
+    let stored: StoredImagePair | null = null;
+
     try {
         // Verify user is the activity host
         const activity = await db.activity.findUnique({ where: { id: activityId } });
@@ -313,15 +367,12 @@ uploadRouter.post('/activity-photo', uploadLimiter, upload.single('photo'), asyn
             return;
         }
 
-        const processed = await sharp(req.file.buffer)
-            .resize(1200, 800, { fit: 'cover', withoutEnlargement: true })
-            .webp({ quality: 80 })
-            .toBuffer();
-
         const key = `activities/${activityId}/${crypto.randomUUID()}.webp`;
+        const keyBlurred = buildBlurredImageKey(key);
+        const variants = await createActivityPhotoVariants(req.file.buffer);
 
-        const storedKey = await uploadFile(processed, key, 'image/webp');
-        if (!storedKey) {
+        stored = await uploadImagePair(variants, key, keyBlurred);
+        if (!stored) {
             res.status(503).json({ error: 'Storage service unavailable' });
             return;
         }
@@ -329,14 +380,17 @@ uploadRouter.post('/activity-photo', uploadLimiter, upload.single('photo'), asyn
         const photo = await db.activityPhoto.create({
             data: {
                 activityId,
-                key: storedKey,
+                key: stored.key,
+                keyBlurred: stored.keyBlurred,
                 position: count
             }
         });
 
         logger.info(`[Upload] Activity photo added for activity ${activityId} by user ${userId}`);
+        invalidateActivityCatalogCache().catch(() => {});
         res.json({ photo: { id: photo.id, key: photo.key, position: photo.position } });
     } catch (error) {
+        if (stored) deleteImagePair(stored.key, stored.keyBlurred);
         logger.error('[Upload] Activity photo upload error', error);
         res.status(500).json({ error: 'Upload failed' });
     }
@@ -371,7 +425,7 @@ uploadRouter.delete('/activity-photo/:id', uploadLimiter, async (req, res) => {
             return;
         }
 
-        deleteFile(photo.key).catch(() => {});
+        deleteImagePair(photo.key, photo.keyBlurred);
 
         await db.activityPhoto.delete({ where: { id: photo.id } });
 
@@ -387,6 +441,7 @@ uploadRouter.delete('/activity-photo/:id', uploadLimiter, async (req, res) => {
         }
 
         logger.info(`[Upload] Activity photo ${photo.id} deleted for activity ${activityId} by user ${userId}`);
+        invalidateActivityCatalogCache().catch(() => {});
         res.json({ success: true });
     } catch (error) {
         logger.error('[Upload] Activity photo delete error', error);
@@ -446,6 +501,7 @@ uploadRouter.post('/reorder-activity-photos', uploadLimiter, async (req, res) =>
         }
 
         logger.info(`[Upload] Activity photos reordered for activity ${activityId} by user ${userId}`);
+        invalidateActivityCatalogCache().catch(() => {});
         res.json({ success: true });
     } catch (error) {
         logger.error('[Upload] Activity photos reorder error', error);

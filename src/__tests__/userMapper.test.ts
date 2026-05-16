@@ -14,7 +14,15 @@ function baseUser() {
         name: 'Alice',
         birthDate: BIRTH_DATE,
         gender: 'female',
-        photos: [{ id: 'photo-1', key: 'photos/user-1/abc.webp', description: '', position: 0 }],
+        photos: [
+            {
+                id: 'photo-1',
+                key: 'photos/user-1/abc.webp',
+                keyBlurred: 'photos/user-1/abc.blurred.webp',
+                description: '',
+                position: 0
+            }
+        ],
         city: 'Paris',
         verified: true,
         preferredPeriod: 'any',
@@ -203,6 +211,15 @@ describe('mapUserToCandidate', () => {
             distanceKm: undefined,
             mutualFriends: 0
         });
+    });
+
+    it('maps to MatchCandidate with blurred photo keys when requested', () => {
+        const user = makePrismaUser();
+        const candidate = mapUserToCandidate(user, undefined, undefined, { photoKeyMode: 'blurred' });
+
+        expect(candidate.user.photos).toEqual([
+            { id: 'photo-1', key: 'photos/user-1/abc.blurred.webp', description: '', position: 0 }
+        ]);
     });
 
     it('sorts priority intentions first', () => {

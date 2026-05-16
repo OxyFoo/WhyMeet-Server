@@ -3,7 +3,7 @@ import type { Client } from '@/server/Client';
 import type { WSRequest_SearchWithToken, WSResponse_SearchWithToken, MatchCandidate } from '@oxyfoo/whymeet-types';
 import { mapUserToCandidate } from '@/services/userMapper';
 import { runDiscoveryPipeline, DISCOVERY_FETCH_LIMIT } from '@/services/discoveryPipeline';
-import { obfuscateString } from '@/services/previewObfuscation';
+import { obfuscateCandidatePreview } from '@/services/previewObfuscation';
 import { getSearchQuota, useSearchQuota } from '@/services/searchQuotaService';
 import { getBoostedUserIds } from '@/services/boostService';
 import { interleaveByBoost } from '@/services/interleaveResults';
@@ -39,16 +39,13 @@ registerCommand<WSRequest_SearchWithToken>(
             const totalCount = qualified.length;
 
             const allCandidates = qualified.map((s) => {
-                const candidate = mapUserToCandidate(s.user, ctx.prefIntentionKeys, ctx.myLatLng);
+                const shouldPreview = !ctx.myProfileComplete;
+                const candidate = mapUserToCandidate(s.user, ctx.prefIntentionKeys, ctx.myLatLng, {
+                    photoKeyMode: shouldPreview ? 'blurred' : 'clear'
+                });
                 candidate.score = s.score;
                 candidate.intentionMatch = s.intentionMatch;
-                if (!ctx.myProfileComplete) {
-                    candidate.blurred = true;
-                    candidate.bio = obfuscateString(candidate.bio);
-                    candidate.interests = candidate.interests.map(obfuscateString);
-                    candidate.skills = candidate.skills.map(obfuscateString);
-                }
-                return candidate;
+                return shouldPreview ? obfuscateCandidatePreview(candidate) : candidate;
             });
 
             // Apply 60/40 boost interleave
