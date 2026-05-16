@@ -2,20 +2,18 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import multer from 'multer';
-import crypto from 'crypto';
 import { getDatabase } from '@/services/database';
 import { tokenManager } from '@/services/tokenManager';
-import { uploadFile, deleteFile } from '@/services/storageService';
 import { invalidateCandidate } from '@/services/candidateCache';
 import { invalidatePipelineSetup } from '@/services/pipelineSetupCache';
 import { invalidateDiscoveryCounts } from '@/services/discoveryCountsCache';
 import { invalidateActivityCatalogCache, invalidateActivityDiscoveryCache } from '@/services/activityDiscoveryService';
 import {
-    buildBlurredImageKey,
-    createActivityPhotoVariants,
-    createProfilePhotoVariants,
-    type PhotoImageVariants
-} from '@/services/imageVariants';
+    deleteImagePair,
+    storeActivityPhotoFromBuffer,
+    storeProfilePhotoFromBuffer,
+    type StoredImagePair
+} from '@/services/photoStorageService';
 import { logger } from '@/config/logger';
 import { env } from '@/config/env';
 
@@ -52,39 +50,6 @@ const upload = multer({
 });
 
 const MAX_PHOTOS = 6;
-
-interface StoredImagePair {
-    key: string;
-    keyBlurred: string;
-}
-
-async function uploadImagePair(
-    variants: PhotoImageVariants,
-    key: string,
-    keyBlurred: string
-): Promise<StoredImagePair | null> {
-    let storedKey: string | null = null;
-    try {
-        storedKey = await uploadFile(variants.normal, key, 'image/webp');
-        if (!storedKey) return null;
-
-        const storedKeyBlurred = await uploadFile(variants.blurred, keyBlurred, 'image/webp');
-        if (!storedKeyBlurred) {
-            await deleteFile(storedKey).catch(() => {});
-            return null;
-        }
-
-        return { key: storedKey, keyBlurred: storedKeyBlurred };
-    } catch (error) {
-        if (storedKey) await deleteFile(storedKey).catch(() => {});
-        throw error;
-    }
-}
-
-function deleteImagePair(key: string, keyBlurred: string): void {
-    deleteFile(key).catch(() => {});
-    deleteFile(keyBlurred).catch(() => {});
-}
 
 function invalidateProfilePhotoCaches(userId: string): void {
     Promise.allSettled([
@@ -153,11 +118,7 @@ uploadRouter.post('/photo', uploadLimiter, upload.single('photo'), async (req, r
             return;
         }
 
-        const key = `photos/${userId}/${crypto.randomUUID()}.webp`;
-        const keyBlurred = buildBlurredImageKey(key);
-        const variants = await createProfilePhotoVariants(req.file.buffer);
-
-        stored = await uploadImagePair(variants, key, keyBlurred);
+        stored = await storeProfilePhotoFromBuffer(userId, req.file.buffer);
         if (!stored) {
             res.status(503).json({ error: 'Storage service unavailable' });
             return;
@@ -179,7 +140,7 @@ uploadRouter.post('/photo', uploadLimiter, upload.single('photo'), async (req, r
         invalidateProfilePhotoCaches(userId);
         res.json({ photo: { id: photo.id, key: photo.key, description: photo.description, position: photo.position } });
     } catch (error) {
-        if (stored) deleteImagePair(stored.key, stored.keyBlurred);
+        if (stored) void deleteImagePair(stored.key, stored.keyBlurred);
         logger.error('[Upload] Photo upload error', error);
         res.status(500).json({ error: 'Upload failed' });
     }
@@ -209,7 +170,7 @@ uploadRouter.delete('/photo/:id', uploadLimiter, async (req, res) => {
         }
 
         // Delete from S3
-        deleteImagePair(photo.key, photo.keyBlurred);
+        void deleteImagePair(photo.key, photo.keyBlurred);
 
         // Delete from DB
         await db.profilePhoto.delete({ where: { id: photo.id } });
@@ -367,11 +328,7 @@ uploadRouter.post('/activity-photo', uploadLimiter, upload.single('photo'), asyn
             return;
         }
 
-        const key = `activities/${activityId}/${crypto.randomUUID()}.webp`;
-        const keyBlurred = buildBlurredImageKey(key);
-        const variants = await createActivityPhotoVariants(req.file.buffer);
-
-        stored = await uploadImagePair(variants, key, keyBlurred);
+        stored = await storeActivityPhotoFromBuffer(activityId, req.file.buffer);
         if (!stored) {
             res.status(503).json({ error: 'Storage service unavailable' });
             return;
@@ -390,7 +347,7 @@ uploadRouter.post('/activity-photo', uploadLimiter, upload.single('photo'), asyn
         invalidateActivityCatalogCache().catch(() => {});
         res.json({ photo: { id: photo.id, key: photo.key, position: photo.position } });
     } catch (error) {
-        if (stored) deleteImagePair(stored.key, stored.keyBlurred);
+        if (stored) void deleteImagePair(stored.key, stored.keyBlurred);
         logger.error('[Upload] Activity photo upload error', error);
         res.status(500).json({ error: 'Upload failed' });
     }
@@ -425,7 +382,7 @@ uploadRouter.delete('/activity-photo/:id', uploadLimiter, async (req, res) => {
             return;
         }
 
-        deleteImagePair(photo.key, photo.keyBlurred);
+        void deleteImagePair(photo.key, photo.keyBlurred);
 
         await db.activityPhoto.delete({ where: { id: photo.id } });
 

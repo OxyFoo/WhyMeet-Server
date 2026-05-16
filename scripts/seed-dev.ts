@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { INTENTIONS, INTENTION_CATEGORIES } from '@oxyfoo/whymeet-types';
 import { seedReferenceData } from '../prisma/seed';
+import { deleteImagePair, storeProfilePhotoFromBuffer } from '../src/services/photoStorageService';
 
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://whymeet:whymeet@localhost:5432/whymeet?schema=public';
 
@@ -11,6 +12,10 @@ const prisma = new PrismaClient({ adapter });
 // Keep this aligned with the discovery completion rules.
 const MIN_DISCOVERY_TAGS = 5;
 const MAX_DISCOVERY_TAGS = 10;
+const SEED_PROFILE_PHOTO_COUNT = 1;
+const SEED_AVATAR_POOL_SIZE = 48;
+const SEED_AVATAR_SOURCE_SIZE = 512;
+const SEED_STORAGE_CONCURRENCY = 6;
 
 // ─── Data pools ─────────────────────────────────────────────────────
 
@@ -328,6 +333,61 @@ function randomBirthDate(): Date {
     return new Date(year, month, day);
 }
 
+async function mapWithConcurrency<T, R>(
+    items: T[],
+    limit: number,
+    mapper: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+
+    async function worker(): Promise<void> {
+        while (nextIndex < items.length) {
+            const currentIndex = nextIndex;
+            nextIndex += 1;
+            results[currentIndex] = await mapper(items[currentIndex] as T, currentIndex);
+        }
+    }
+
+    const workerCount = Math.min(limit, items.length);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+    return results;
+}
+
+function buildSeedAvatarFallback(index: number): Buffer {
+    const backgroundHue = (index * 47) % 360;
+    const accentHue = (backgroundHue + 160) % 360;
+    const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="${SEED_AVATAR_SOURCE_SIZE}" height="${SEED_AVATAR_SOURCE_SIZE}" viewBox="0 0 ${SEED_AVATAR_SOURCE_SIZE} ${SEED_AVATAR_SOURCE_SIZE}">
+            <defs>
+                <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stop-color="hsl(${backgroundHue} 68% 58%)" />
+                    <stop offset="100%" stop-color="hsl(${accentHue} 70% 44%)" />
+                </linearGradient>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#bg)" rx="72" />
+            <circle cx="256" cy="196" r="92" fill="rgba(255,255,255,0.9)" />
+            <path d="M96 454c34-92 108-138 160-138s126 46 160 138" fill="rgba(255,255,255,0.82)" />
+        </svg>
+    `;
+    return Buffer.from(svg);
+}
+
+async function fetchSeedAvatarBuffer(index: number): Promise<Buffer> {
+    try {
+        const imageId = (index % 70) + 1;
+        const response = await fetch(`https://i.pravatar.cc/${SEED_AVATAR_SOURCE_SIZE}?img=${imageId}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return Buffer.from(await response.arrayBuffer());
+    } catch {
+        return buildSeedAvatarFallback(index);
+    }
+}
+
+async function loadSeedAvatarPool(): Promise<Buffer[]> {
+    return Promise.all(Array.from({ length: SEED_AVATAR_POOL_SIZE }, (_unused, index) => fetchSeedAvatarBuffer(index)));
+}
+
 // ─── Main ───────────────────────────────────────────────────────────
 
 async function main() {
@@ -338,6 +398,9 @@ async function main() {
 
     await seedReferenceData(prisma);
     console.log('  ✅ Reference data seeded');
+
+    const avatarPool = await loadSeedAvatarPool();
+    console.log(`  ✅ ${avatarPool.length} source avatars loaded`);
 
     // 1. Pre-create all tags
     const allLabels = [...new Set([...INTEREST_LABELS, ...SKILL_LABELS])];
@@ -376,6 +439,14 @@ async function main() {
     });
     if (existingSeedUserCount > 0) {
         console.log(`  🧹 ${existingSeedUserCount} existing seed users found, deleting before rebuild`);
+        const existingSeedPhotos = await prisma.profilePhoto.findMany({
+            where: { user: { email: { endsWith: '@seed.whymeet.dev' } } },
+            select: { key: true, keyBlurred: true }
+        });
+        await mapWithConcurrency(existingSeedPhotos, SEED_STORAGE_CONCURRENCY, async (photo) => {
+            await deleteImagePair(photo.key, photo.keyBlurred);
+            return null;
+        });
         await prisma.user.deleteMany({ where: { email: { endsWith: '@seed.whymeet.dev' } } });
     }
 
@@ -384,6 +455,7 @@ async function main() {
     for (let batchStart = 0; batchStart < USER_COUNT; batchStart += BATCH_SIZE) {
         const batchEnd = Math.min(batchStart + BATCH_SIZE, USER_COUNT);
         const operations = [];
+        const batchPhotoPlans: { email: string; avatarPoolIndex: number; position: number }[] = [];
 
         for (let i = batchStart; i < batchEnd; i++) {
             const firstName = FIRST_NAMES[i % FIRST_NAMES.length];
@@ -412,6 +484,11 @@ async function main() {
             const visAgeMin = 18 + Math.floor(Math.random() * 5); // 18-22
             const visAgeMax = 30 + Math.floor(Math.random() * 20); // 30-49
             const visGenders = pickN(GENDERS, 1, GENDERS.length);
+            const avatarPoolIndex = Math.floor(Math.random() * avatarPool.length);
+
+            for (let position = 0; position < SEED_PROFILE_PHOTO_COUNT; position += 1) {
+                batchPhotoPlans.push({ email, avatarPoolIndex, position });
+            }
 
             operations.push(
                 prisma.user.create({
@@ -457,15 +534,6 @@ async function main() {
                             }
                         },
 
-                        photos: {
-                            create: Array.from({ length: 2 + Math.floor(Math.random() * 3) }, (_, idx) => ({
-                                key: `https://i.pravatar.cc/300?u=${email}-${idx}`,
-                                keyBlurred: `https://i.pravatar.cc/12?u=${email}-${idx}`,
-                                description: '',
-                                position: idx
-                            }))
-                        },
-
                         tags: {
                             create: [
                                 ...interests.map((label) => ({
@@ -493,6 +561,35 @@ async function main() {
 
         if (operations.length > 0) {
             await prisma.$transaction(operations);
+
+            const createdUsers = await prisma.user.findMany({
+                where: { email: { in: batchPhotoPlans.map((plan) => plan.email) } },
+                select: { id: true, email: true }
+            });
+            const userIdsByEmail = new Map(createdUsers.map((user) => [user.email, user.id]));
+
+            const photoRows = await mapWithConcurrency(batchPhotoPlans, SEED_STORAGE_CONCURRENCY, async (plan) => {
+                const userId = userIdsByEmail.get(plan.email);
+                const avatarBuffer = avatarPool[plan.avatarPoolIndex];
+                if (!userId || !avatarBuffer) {
+                    throw new Error(`Missing seed photo dependencies for ${plan.email}`);
+                }
+
+                const stored = await storeProfilePhotoFromBuffer(userId, avatarBuffer);
+                if (!stored) {
+                    throw new Error(`Storage unavailable while seeding photos for ${plan.email}`);
+                }
+
+                return {
+                    userId,
+                    key: stored.key,
+                    keyBlurred: stored.keyBlurred,
+                    description: '',
+                    position: plan.position
+                };
+            });
+            await prisma.profilePhoto.createMany({ data: photoRows });
+
             created += operations.length;
         }
 
