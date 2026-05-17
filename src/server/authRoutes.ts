@@ -286,7 +286,8 @@ authRouter.post('/enter', enterLimiter, async (req, res) => {
                     status: 'authenticated',
                     wsToken,
                     newSessionToken,
-                    user: mapUserToProfile(existingUser)
+                    user: mapUserToProfile(existingUser),
+                    email: existingUser.email
                 };
                 res.json(response);
                 return;
@@ -305,7 +306,8 @@ authRouter.post('/enter', enterLimiter, async (req, res) => {
                     status: 'authenticated',
                     wsToken,
                     newSessionToken,
-                    user: mapUserToProfile(existingUser)
+                    user: mapUserToProfile(existingUser),
+                    email: existingUser.email
                 };
                 res.json(response);
                 return;
@@ -377,7 +379,8 @@ authRouter.post('/enter', enterLimiter, async (req, res) => {
                 status: 'authenticated',
                 wsToken,
                 newSessionToken,
-                user: mapUserToProfile(newUserFull!)
+                user: mapUserToProfile(newUserFull!),
+                email
             };
             res.json(response);
             return;
@@ -459,7 +462,8 @@ authRouter.post('/google-signin', oauthLimiter, async (req, res) => {
             status: 'authenticated',
             wsToken,
             newSessionToken,
-            user: mapUserToProfile(user)
+            user: mapUserToProfile(user),
+            email: user.email
         };
         res.json(response);
     } catch (error) {
@@ -528,7 +532,8 @@ authRouter.post('/apple-signin', oauthLimiter, async (req, res) => {
             status: 'authenticated',
             wsToken,
             newSessionToken,
-            user: mapUserToProfile(user)
+            user: mapUserToProfile(user),
+            email: user.email
         };
         res.json(response);
     } catch (error) {
@@ -666,7 +671,12 @@ authRouter.post('/refresh-ws-token', refreshLimiter, async (req, res) => {
 
         logger.info(`[Auth] WS token refreshed: device=${device.id}`);
 
-        const response: HTTPResponse_RefreshWSToken = { wsToken, newSessionToken, user: mapUserToProfile(user) };
+        const response: HTTPResponse_RefreshWSToken = {
+            wsToken,
+            newSessionToken,
+            user: mapUserToProfile(user),
+            email: user.email
+        };
         res.json(response);
     } catch (error) {
         logger.error('[Auth] Refresh WS token error', error);
