@@ -419,6 +419,7 @@ CREATE TABLE "activities" (
     "description" TEXT NOT NULL DEFAULT '',
     "category" TEXT NOT NULL,
     "dateTime" TIMESTAMP(3),
+    "durationMinutes" INTEGER,
     "locationName" TEXT NOT NULL,
     "latitude" DOUBLE PRECISION NOT NULL,
     "longitude" DOUBLE PRECISION NOT NULL,

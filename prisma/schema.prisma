@@ -600,6 +600,7 @@ model Activity {
     description           String    @default("")
     category              String // InterestCategoryKey
     dateTime              DateTime?
+    durationMinutes       Int?
     locationName          String
     latitude              Float
     longitude             Float

@@ -60,6 +60,7 @@ interface PrismaActivityWithRelations {
     description: string;
     category: string;
     dateTime: Date | null;
+    durationMinutes: number | null;
     locationName: string;
     latitude: number;
     longitude: number;
@@ -98,6 +99,7 @@ function mapToActivity(
         description: a.description,
         category: a.category as InterestCategoryKey,
         dateTime: a.dateTime?.toISOString() ?? null,
+        durationMinutes: a.durationMinutes,
         locationName: a.locationName,
         latitude: a.latitude,
         longitude: a.longitude,
@@ -152,6 +154,7 @@ export async function createActivity(
         description: string;
         category: string;
         dateTime?: string;
+        durationMinutes?: number | null;
         locationName: string;
         latitude: number;
         longitude: number;
@@ -180,6 +183,7 @@ export async function createActivity(
             description: data.description,
             category: data.category,
             dateTime: data.dateTime ? new Date(data.dateTime) : null,
+            durationMinutes: data.durationMinutes ?? null,
             locationName: data.locationName,
             latitude: data.latitude,
             longitude: data.longitude,
@@ -208,6 +212,7 @@ export async function createActivity(
                 description: activity.description,
                 category: activity.category,
                 dateTime: activity.dateTime?.toISOString() ?? null,
+                durationMinutes: activity.durationMinutes,
                 locationName: activity.locationName,
                 latitude: activity.latitude,
                 longitude: activity.longitude,
@@ -240,6 +245,7 @@ export async function updateActivity(
         description?: string;
         category?: string;
         dateTime?: string | null;
+        durationMinutes?: number | null;
         locationName?: string;
         latitude?: number;
         longitude?: number;
@@ -269,6 +275,7 @@ export async function updateActivity(
     if (data.latitude !== undefined) updateData.latitude = data.latitude;
     if (data.longitude !== undefined) updateData.longitude = data.longitude;
     if (data.maxParticipants !== undefined) updateData.maxParticipants = data.maxParticipants;
+    if (data.durationMinutes !== undefined) updateData.durationMinutes = data.durationMinutes;
     if (data.targetGenders !== undefined) updateData.targetGenders = data.targetGenders;
     if (data.targetAgeRange !== undefined) updateData.targetAgeRange = data.targetAgeRange;
 
@@ -302,6 +309,7 @@ export async function updateActivity(
         'description',
         'category',
         'dateTime',
+        'durationMinutes',
         'locationName',
         'latitude',
         'longitude',

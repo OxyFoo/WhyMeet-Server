@@ -274,6 +274,20 @@ function buildActivityDiscoveryWhere(
         clauses.push(Prisma.sql`a."dateTime" <= ${new Date(filters.dateTo)}`);
     }
 
+    if (filters?.timeFromMin != null || filters?.timeToMin != null) {
+        const offsetMin = filters.timezoneOffsetMin ?? 0;
+        // Convert UTC dateTime to viewer-local minute-of-day in [0, 1440).
+        // EXTRACT(EPOCH ...) gives seconds since epoch; divide by 60, add offset,
+        // take modulo 1440 with double-modulo to ensure a non-negative result.
+        const localMin = Prisma.sql`((((EXTRACT(EPOCH FROM a."dateTime")::bigint / 60) + ${offsetMin})::bigint % 1440 + 1440) % 1440)`;
+        if (filters.timeFromMin != null) {
+            clauses.push(Prisma.sql`${localMin} >= ${filters.timeFromMin}`);
+        }
+        if (filters.timeToMin != null) {
+            clauses.push(Prisma.sql`${localMin} <= ${filters.timeToMin}`);
+        }
+    }
+
     const query = filters?.query?.trim();
     if (query) {
         const pattern = `%${query}%`;
@@ -349,6 +363,7 @@ function mapActivitySummary(
         title: activity.title,
         category: activity.category as InterestCategoryKey,
         dateTime: activity.dateTime?.toISOString() ?? null,
+        durationMinutes: activity.durationMinutes,
         locationName: activity.locationName,
         participantCount: activity.participants.length,
         maxParticipants: activity.maxParticipants,

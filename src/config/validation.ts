@@ -35,6 +35,8 @@ export const LIMITS = {
     ACTIVITY_DESC_MAX: 2000,
     PARTICIPANTS_MIN: 2,
     PARTICIPANTS_MAX: 100,
+    ACTIVITY_DURATION_MIN: 5,
+    ACTIVITY_DURATION_MAX: 60 * 24 * 7,
     PHOTO_DESCRIPTION_MAX: 128
 } as const;
 
@@ -58,6 +60,13 @@ export const createActivitySchema = z.object({
     latitude: z.number().min(-90).max(90),
     longitude: z.number().min(-180).max(180),
     maxParticipants: z.number().int().min(LIMITS.PARTICIPANTS_MIN).max(LIMITS.PARTICIPANTS_MAX).optional(),
+    durationMinutes: z
+        .number()
+        .int()
+        .min(LIMITS.ACTIVITY_DURATION_MIN)
+        .max(LIMITS.ACTIVITY_DURATION_MAX)
+        .nullable()
+        .optional(),
     targetGenders: z
         .array(z.enum(GENDERS as unknown as [string, ...string[]]))
         .min(1)
@@ -84,6 +93,13 @@ export const updateActivitySchema = z
             .int()
             .min(LIMITS.PARTICIPANTS_MIN)
             .max(LIMITS.PARTICIPANTS_MAX)
+            .nullable()
+            .optional(),
+        durationMinutes: z
+            .number()
+            .int()
+            .min(LIMITS.ACTIVITY_DURATION_MIN)
+            .max(LIMITS.ACTIVITY_DURATION_MAX)
             .nullable()
             .optional(),
         targetGenders: z
