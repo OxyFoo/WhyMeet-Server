@@ -15,6 +15,7 @@ import { logAudit } from '@/services/auditLogService';
 import { isProfileComplete } from '@/services/profileCompletion';
 import { prepareUserTagSync, replaceUserTags } from '@/services/userTagSync';
 import { expandSelectedIntentionKeys } from '@/services/intentionProfileEnrichment';
+import { normalizeActiveIntentionKeys } from '@/services/intentionKeys';
 
 class ProfileWouldBecomeIncompleteError extends Error {
     constructor() {
@@ -38,6 +39,22 @@ registerCommand<WSRequest_UpdateProfile>(
                 validationError
             });
             return { command: 'update-profile', payload: { error: validationError } };
+        }
+
+        const submittedIntentionKeys = Array.isArray(data.intentionKeys)
+            ? data.intentionKeys.filter((key) => typeof key === 'string')
+            : undefined;
+        const normalizedIntentionKeys = normalizeActiveIntentionKeys(submittedIntentionKeys);
+        const normalizedIntentionKeySet = new Set(normalizedIntentionKeys);
+        const droppedIntentionKeys = Array.from(
+            new Set((submittedIntentionKeys ?? []).filter((key) => !normalizedIntentionKeySet.has(key)))
+        );
+
+        if (droppedIntentionKeys.length > 0) {
+            logger.warn(`[Profile] Dropped unknown intention keys for user ${client.userId}`, {
+                updatedFields,
+                droppedIntentionKeys
+            });
         }
         // ─────────────────────────────────────────────────────────────────────
 
@@ -148,7 +165,7 @@ registerCommand<WSRequest_UpdateProfile>(
                     profileData.longitude = discretized.longitude;
                 }
                 if (data.intentionKeys !== undefined) {
-                    profileData.intentionKeys = expandSelectedIntentionKeys(data.intentionKeys);
+                    profileData.intentionKeys = expandSelectedIntentionKeys(normalizedIntentionKeys);
                 }
                 if (data.spokenLanguages !== undefined) profileData.spokenLanguages = data.spokenLanguages;
 

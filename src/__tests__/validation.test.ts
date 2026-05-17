@@ -1,4 +1,4 @@
-import { validateSearchFilters, validateIntentionSelection } from '@/config/validation';
+import { validateSearchFilters, validateIntentionSelection, validateProfileData } from '@/config/validation';
 import { INTENTION_KEYS, INTENTIONS_BY_KEY, INTENTION_CATEGORY_KEYS } from '@oxyfoo/whymeet-types';
 
 describe('intention validation', () => {
@@ -58,5 +58,37 @@ describe('intention validation', () => {
 
     it('rejects deprecated intention keys in search filters', () => {
         expect(validateSearchFilters({ intentionKey: 'simple_first_meet' })).toBe('Invalid field: intentionKey');
+    });
+
+    it('accepts deprecated profile intention keys so update-profile can sanitize them', () => {
+        expect(
+            validateProfileData({
+                intentionKeys: ['meet_simple_first_date', 'simple_first_meet']
+            })
+        ).toBeNull();
+    });
+
+    it('accepts up to 16 profile intention keys', () => {
+        expect(
+            validateProfileData({
+                intentionKeys: INTENTION_KEYS.slice(0, 16)
+            })
+        ).toBeNull();
+    });
+
+    it('rejects more than 16 profile intention keys', () => {
+        expect(
+            validateProfileData({
+                intentionKeys: INTENTION_KEYS.slice(0, 17)
+            })
+        ).toBe('Invalid field: intentionKeys');
+    });
+
+    it('rejects non-string profile intention keys', () => {
+        expect(
+            validateProfileData({
+                intentionKeys: ['meet_simple_first_date', 42]
+            } as Record<string, unknown>)
+        ).toBe('Invalid field: intentionKeys');
     });
 });

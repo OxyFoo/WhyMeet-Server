@@ -27,7 +27,7 @@ export const LIMITS = {
     INTERESTS_MAX: 30,
     SKILLS_MAX: 30,
     LANGUAGES_MAX: 20,
-    INTENTIONS_MAX: 12,
+    INTENTIONS_MAX: 16,
     PUSH_TOKEN_MAX: 300,
     LOCATION_NAME_MAX: 100,
     ACTIVITY_TITLE_MIN: 3,
@@ -141,7 +141,7 @@ export function validateProfileData(data: Record<string, unknown>): string | nul
         if (
             !Array.isArray(data.intentionKeys) ||
             data.intentionKeys.length > LIMITS.INTENTIONS_MAX ||
-            data.intentionKeys.some((key) => !isKnownIntentionValue(key))
+            data.intentionKeys.some((key) => typeof key !== 'string')
         ) {
             return 'Invalid field: intentionKeys';
         }
