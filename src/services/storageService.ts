@@ -71,15 +71,26 @@ export async function uploadFile(buffer: Buffer, key: string, contentType: strin
     return key;
 }
 
+export function resolveStorageKey(value: string): string | null {
+    if (!value) return null;
+    if (/^https?:\/\//i.test(value)) {
+        return extractKeyFromUrl(value);
+    }
+    return value;
+}
+
 export async function deleteFile(key: string): Promise<void> {
     const client = getS3Client();
     if (!client) return;
+
+    const resolvedKey = resolveStorageKey(key);
+    if (!resolvedKey) return;
 
     try {
         await client.send(
             new DeleteObjectCommand({
                 Bucket: env.S3_BUCKET,
-                Key: key
+                Key: resolvedKey
             })
         );
     } catch (error) {

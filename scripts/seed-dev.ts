@@ -2,7 +2,8 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { INTENTIONS, INTENTION_CATEGORIES } from '@oxyfoo/whymeet-types';
 import { seedReferenceData } from '../prisma/seed';
-import { deleteImagePair, storeProfilePhotoFromBuffer } from '../src/services/photoStorageService';
+import { storeProfilePhotoFromBuffer } from '../src/services/photoStorageService';
+import { resetSeedDevData, SEED_EMAIL_SUFFIX, SEED_STORAGE_CONCURRENCY } from './seed-dev-shared';
 
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://whymeet:whymeet@localhost:5432/whymeet?schema=public';
 
@@ -15,7 +16,6 @@ const MAX_DISCOVERY_TAGS = 10;
 const SEED_PROFILE_PHOTO_COUNT = 1;
 const SEED_AVATAR_POOL_SIZE = 48;
 const SEED_AVATAR_SOURCE_SIZE = 512;
-const SEED_STORAGE_CONCURRENCY = 6;
 
 // ─── Data pools ─────────────────────────────────────────────────────
 
@@ -435,19 +435,14 @@ async function main() {
 
     // 2. Rebuild seed users from scratch so reruns can repair an incomplete dev dataset.
     const existingSeedUserCount = await prisma.user.count({
-        where: { email: { endsWith: '@seed.whymeet.dev' } }
+        where: { email: { endsWith: SEED_EMAIL_SUFFIX } }
     });
     if (existingSeedUserCount > 0) {
         console.log(`  🧹 ${existingSeedUserCount} existing seed users found, deleting before rebuild`);
-        const existingSeedPhotos = await prisma.profilePhoto.findMany({
-            where: { user: { email: { endsWith: '@seed.whymeet.dev' } } },
-            select: { key: true, keyBlurred: true }
-        });
-        await mapWithConcurrency(existingSeedPhotos, SEED_STORAGE_CONCURRENCY, async (photo) => {
-            await deleteImagePair(photo.key, photo.keyBlurred);
-            return null;
-        });
-        await prisma.user.deleteMany({ where: { email: { endsWith: '@seed.whymeet.dev' } } });
+        const resetResult = await resetSeedDevData(prisma);
+        console.log(
+            `  ✅ Removed ${resetResult.deletedUsers} seed users, ${resetResult.deletedConversations} conversations, ${resetResult.deletedProfileImages} profile images, ${resetResult.deletedActivityImages} activity images`
+        );
     }
 
     // 3. Create users in batches
@@ -460,7 +455,7 @@ async function main() {
         for (let i = batchStart; i < batchEnd; i++) {
             const firstName = FIRST_NAMES[i % FIRST_NAMES.length];
             const suffix = i >= FIRST_NAMES.length ? `${Math.floor(i / FIRST_NAMES.length) + 1}` : '';
-            const email = `${firstName.toLowerCase().replace(/[éèê]/g, 'e').replace(/[àâ]/g, 'a').replace(/[ïî]/g, 'i').replace(/[ô]/g, 'o')}${suffix}@seed.whymeet.dev`;
+            const email = `${firstName.toLowerCase().replace(/[éèê]/g, 'e').replace(/[àâ]/g, 'a').replace(/[ïî]/g, 'i').replace(/[ô]/g, 'o')}${suffix}${SEED_EMAIL_SUFFIX}`;
 
             const city = pick(CITIES);
             const coords = CITY_COORDS[city];
@@ -672,7 +667,7 @@ async function main() {
 
     // Fetch some seed users to be activity hosts
     const seedUsers = await prisma.user.findMany({
-        where: { email: { endsWith: '@seed.whymeet.dev' } },
+        where: { email: { endsWith: SEED_EMAIL_SUFFIX } },
         select: { id: true, city: true },
         take: 100
     });

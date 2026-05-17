@@ -18,25 +18,33 @@ docker compose -f docker-compose.prod.yml up --build
 
 # Ajouter les comptes de test en local
 npm run db:seed:dev
+
+# Supprimer uniquement les donnees seed locales
+npm run db:seed:dev:reset
 ```
 
 ## Scripts
 
-| Script                | Description               |
-| --------------------- | ------------------------- |
-| `npm start`           | Start the compiled server |
-| `npm run build`       | Compile TypeScript        |
-| `npm run dev`         | Build + Start             |
-| `npm run lint`        | ESLint check              |
-| `npm run typecheck`   | TypeScript check          |
-| `npm test`            | Run tests                 |
-| `npm run db:generate` | Generate Prisma client    |
-| `npm run db:migrate`  | Run Prisma migrations     |
-| `npm run db:push`     | Push schema to DB         |
-| `npm run db:deploy`   | Deploy migrations + seed  |
-| `npm run db:studio`   | Open Prisma Studio        |
-| `npm run db:seed`     | Seed reference data       |
-| `npm run db:seed:dev` | Seed local dev data       |
+| Script                      | Description                    |
+| --------------------------- | ------------------------------ |
+| `npm start`                 | Start the compiled server      |
+| `npm run build`             | Compile TypeScript             |
+| `npm run dev`               | Build + Start                  |
+| `npm run lint`              | ESLint check                   |
+| `npm run typecheck`         | TypeScript check               |
+| `npm test`                  | Run tests                      |
+| `npm run db:generate`       | Generate Prisma client         |
+| `npm run db:migrate`        | Run Prisma migrations          |
+| `npm run db:push`           | Push schema to DB              |
+| `npm run db:deploy`         | Deploy migrations + seed       |
+| `npm run db:studio`         | Open Prisma Studio             |
+| `npm run db:seed`           | Seed reference data            |
+| `npm run db:seed:dev`       | Seed local dev data            |
+| `npm run db:seed:dev:reset` | Reset only local dev seed data |
+
+`npm run db:seed` ne touche qu'aux donnees de reference.
+`npm run db:seed:dev` reconstruit les faux users seed et leurs activites locales.
+`npm run db:seed:dev:reset` supprime uniquement ce slice seed de dev, sans supprimer les tags, ni les vrais users.
 
 ## Lancer le projet manuellement
 
