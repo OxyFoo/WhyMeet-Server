@@ -28,10 +28,15 @@ registerCommand<WSRequest_UpdateProfile>(
     async (client: Client, payload): Promise<WSResponse_UpdateProfile> => {
         const { data } = payload;
         const db = getDatabase();
+        const updatedFields = Object.keys(data);
 
         // ─── Input validation ─────────────────────────────────────────────────
         const validationError = validateProfileData(data as Record<string, unknown>);
         if (validationError) {
+            logger.warn(`[Profile] Validation failed for user ${client.userId}`, {
+                updatedFields,
+                validationError
+            });
             return { command: 'update-profile', payload: { error: validationError } };
         }
         // ─────────────────────────────────────────────────────────────────────
@@ -55,6 +60,9 @@ registerCommand<WSRequest_UpdateProfile>(
                 if (previousBirthDate && !isSameDate && currentUser?.birthDateLastChangedAt) {
                     const msPerYear = 365 * 24 * 60 * 60 * 1000;
                     if (Date.now() - currentUser.birthDateLastChangedAt.getTime() < msPerYear) {
+                        logger.warn(`[Profile] Birth date change rate limited for user ${client.userId}`, {
+                            updatedFields
+                        });
                         return { command: 'update-profile', payload: { error: 'birthDateChangeRateLimited' } };
                     }
                 }
@@ -183,7 +191,7 @@ registerCommand<WSRequest_UpdateProfile>(
                 }
             });
 
-            logger.info(`[Profile] Updated profile for user: ${client.userId}`);
+            logger.info(`[Profile] Updated profile for user: ${client.userId}`, { updatedFields });
 
             // Audit log for birthDate change
             // TypeScript doesn't track let mutations inside async callbacks — cast is safe here
@@ -218,15 +226,21 @@ registerCommand<WSRequest_UpdateProfile>(
             });
 
             if (!updated) {
+                logger.error(`[Profile] User not found after update for user ${client.userId}`, {
+                    updatedFields
+                });
                 return { command: 'update-profile', payload: { error: 'User not found' } };
             }
 
             return { command: 'update-profile', payload: { user: mapUserToProfile(updated) } };
         } catch (error) {
             if (error instanceof ProfileWouldBecomeIncompleteError) {
+                logger.warn(`[Profile] Rejected update that would make profile incomplete for user ${client.userId}`, {
+                    updatedFields
+                });
                 return { command: 'update-profile', payload: { error: 'profileWouldBecomeIncomplete' } };
             }
-            logger.error('[Profile] Update profile error', error);
+            logger.error(`[Profile] Update profile error for user ${client.userId}`, { updatedFields }, error);
             return { command: 'update-profile', payload: { error: 'Internal error' } };
         }
     }
