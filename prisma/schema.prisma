@@ -257,7 +257,7 @@ model Match {
     id           String   @id @default(cuid())
     senderId     String
     receiverId   String
-    category     String // "like" | "skip" | "star"
+    category     String // "like" | "skip"
     matchContext String   @default("")
     categoryKey  String?
     intentionKey String?

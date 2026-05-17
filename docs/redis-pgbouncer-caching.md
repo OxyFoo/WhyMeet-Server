@@ -105,7 +105,6 @@ runPipelineQuery()
 | -------------------- | -------------------------------- |
 | `like.ts`            | moi → candidat                   |
 | `skip.ts`            | moi → candidat                   |
-| `star.ts`            | moi → candidat                   |
 | `accept-request.ts`  | moi → envoyeur                   |
 | `decline-request.ts` | moi → envoyeur                   |
 | `block-user.ts`      | moi → bloqué **ET** bloqué → moi |
@@ -153,7 +152,6 @@ WebSocket: DISCOVERY_GET_CANDIDATES
 | `src/services/discoveryPipeline.ts`           | Intégration des 3 niveaux de cache dans `buildPipelineContext` et `runPipelineQuery` |
 | `src/commands/discovery/like.ts`              | `addExcluded` post-swipe                                                             |
 | `src/commands/discovery/skip.ts`              | `addExcluded` post-swipe                                                             |
-| `src/commands/discovery/star.ts`              | `addExcluded` post-swipe                                                             |
 | `src/commands/discovery/accept-request.ts`    | `addExcluded` post-accept                                                            |
 | `src/commands/discovery/decline-request.ts`   | `addExcluded` post-decline                                                           |
 | `src/commands/moderation/block-user.ts`       | `addExcluded` bidirectionnel                                                         |
@@ -193,7 +191,7 @@ Les compteurs `get-candidate-counts` et `get-intention-counts` utilisent mainten
 | Counts par intention      | `discovery:counts:v2:candidate:{userId}`       | `REDIS_TTL_DISCOVERY_COUNTS_S` | Forte après changement profil/préférences, éventuelle courte après swipe |
 | Counts par sous-intention | `discovery:counts:v2:sub:{userId}:{intention}` | `REDIS_TTL_DISCOVERY_COUNTS_S` | Forte après changement profil/préférences, éventuelle courte après swipe |
 
-Les swipes (`like`, `skip`, `star`, accept/decline, block/report) continuent de mettre à jour immédiatement le Redis Set `excluded:{userId}`. La liste réelle des candidats reste donc exacte: un profil swipé ou bloqué ne réapparaît pas dans `get-candidates`. Les compteurs UI peuvent en revanche rester légèrement périmés jusqu'au TTL court, ce qui évite de relancer des pipelines lourds à chaque action sous charge.
+Les swipes (`like`, `skip`, accept/decline, block/report) continuent de mettre à jour immédiatement le Redis Set `excluded:{userId}`. La liste réelle des candidats reste donc exacte: un profil swipé ou bloqué ne réapparaît pas dans `get-candidates`. Les compteurs UI peuvent en revanche rester légèrement périmés jusqu'au TTL court, ce qui évite de relancer des pipelines lourds à chaque action sous charge.
 
 Les calculs identiques simultanés sont coalescés in-memory par process: si plusieurs requêtes demandent le même compteur au même moment, une seule calcule et les autres attendent le résultat.
 

@@ -66,7 +66,6 @@ jest.mock('@/server/Server', () => ({
 import '@/commands/discovery/get-candidates';
 import '@/commands/discovery/like';
 import '@/commands/discovery/skip';
-import '@/commands/discovery/star';
 import { routeCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 
@@ -369,61 +368,5 @@ describe('skip command', () => {
         } as never);
 
         expect((result as { payload: { success: boolean } }).payload.success).toBe(false);
-    });
-});
-
-// ─── star ───────────────────────────────────────────────────────────
-
-describe('star command', () => {
-    beforeEach(() => {
-        jest.clearAllMocks();
-        mockProfileUpdateMany.mockResolvedValue({});
-        mockUserFindUnique.mockResolvedValue(prismaUser('me'));
-    });
-
-    it('creates a like match with matchContext=star', async () => {
-        mockMatchUpsert.mockResolvedValue({ id: 'm1' });
-        mockMatchFindFirst.mockResolvedValue(null);
-
-        await routeCommand(fakeClient('me'), {
-            command: 'star',
-            payload: { candidateId: 'other' }
-        } as never);
-
-        expect(mockMatchUpsert).toHaveBeenCalledWith(
-            expect.objectContaining({
-                create: expect.objectContaining({ category: 'like', matchContext: 'star' }),
-                update: { matchContext: 'star' }
-            })
-        );
-    });
-
-    it('detects mutual match just like like command', async () => {
-        mockMatchUpsert.mockResolvedValue({ id: 'm1' });
-        mockMatchFindFirst.mockResolvedValue({ id: 'm2' });
-        mockMatchUpdateMany.mockResolvedValue({});
-        mockConversationCreate.mockResolvedValue({ id: 'conv-1' });
-        mockUserFindUnique.mockResolvedValue(prismaUser('me'));
-
-        const result = await routeCommand(fakeClient('me'), {
-            command: 'star',
-            payload: { candidateId: 'other' }
-        } as never);
-
-        expect(mockConversationCreate).toHaveBeenCalled();
-        expect((result as { payload: { success: boolean } }).payload.success).toBe(true);
-    });
-
-    it('returns error payload on failure', async () => {
-        mockMatchUpsert.mockRejectedValue(new Error('fail'));
-
-        const result = await routeCommand(fakeClient(), {
-            command: 'star',
-            payload: { candidateId: 'other' }
-        } as never);
-
-        expect(result).toEqual(
-            expect.objectContaining({ payload: expect.objectContaining({ error: 'Internal error' }) })
-        );
     });
 });

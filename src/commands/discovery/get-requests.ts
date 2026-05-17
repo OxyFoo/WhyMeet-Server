@@ -17,7 +17,7 @@ registerCommand<WSRequest_GetRequests>('get-requests', async (client: Client): P
     const db = getDatabase();
 
     try {
-        // Get likes/stars received that are NOT mutual (i.e. pending requests)
+        // Get likes received that are NOT mutual (i.e. pending requests)
         const receivedMatches = await db.match.findMany({
             where: {
                 receiverId: client.userId,
