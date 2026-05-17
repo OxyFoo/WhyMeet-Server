@@ -14,14 +14,17 @@ registerCommand<WSRequest_GetActivity>(
                 return { command: 'get-activity', payload: { error: 'Activity not found' } };
             }
 
-            try {
-                await useActivityQuota(client.userId);
-            } catch (err) {
-                if (err instanceof Error && err.message === 'activity_quota_exceeded') {
-                    return { command: 'get-activity', payload: { error: 'activity_quota_exceeded' } };
+            if (!activity.isHost && !activity.isParticipant) {
+                try {
+                    await useActivityQuota(client.userId);
+                } catch (err) {
+                    if (err instanceof Error && err.message === 'activity_quota_exceeded') {
+                        return { command: 'get-activity', payload: { error: 'activity_quota_exceeded' } };
+                    }
+                    throw err;
                 }
-                throw err;
             }
+
             return { command: 'get-activity', payload: { activity } };
         } catch (error) {
             logger.error('[Activity] Get error', error);
