@@ -6,6 +6,7 @@ import { getClientsForUser } from '@/server/Server';
 import { pushToUser } from '@/services/pushService';
 import { logger } from '@/config/logger';
 import { sendMessageSchema } from '@/config/validation';
+import { encryptText } from '@/services/messageEncryption';
 
 registerCommand<WSRequest_SendMessage>(
     'send-message',
@@ -37,12 +38,14 @@ registerCommand<WSRequest_SendMessage>(
                 return { command: 'send-message', payload: { error: 'Account unavailable' } };
             }
 
-            // Create message
+            // Create message. The `text` column stores ciphertext at rest; we keep
+            // the plaintext locally to broadcast it to other connected participants.
+            const encryptedText = encryptText(text);
             const message = await db.message.create({
                 data: {
                     conversationId,
                     senderId: client.userId,
-                    text,
+                    text: encryptedText,
                     type: 'text'
                 }
             });
@@ -55,7 +58,7 @@ registerCommand<WSRequest_SendMessage>(
 
             const messagePayload = {
                 id: message.id,
-                text: message.text,
+                text,
                 senderId: message.senderId,
                 timestamp: message.timestamp.toISOString(),
                 read: false,

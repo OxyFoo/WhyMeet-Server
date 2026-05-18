@@ -13,6 +13,7 @@ import { getDatabase } from '@/services/database';
 import type { Prisma } from '@prisma/client';
 import { computeAge } from '@/services/userMapper';
 import { logger } from '@/config/logger';
+import { safeDecryptText } from '@/services/messageEncryption';
 
 type UserWithPhotos = Prisma.UserGetPayload<{ include: { photos: true } }>;
 
@@ -96,7 +97,7 @@ registerCommand<WSRequest_GetConversations>(
 
                     const base = {
                         id: conv.id,
-                        lastMessage: lastMsg?.text,
+                        lastMessage: lastMsg?.type === 'text' ? safeDecryptText(lastMsg.text) : lastMsg?.text,
                         lastMessageTime: lastMsg?.timestamp.toISOString(),
                         lastMessageType: lastMsg ? ((lastMsg.type ?? 'text') as MessageType) : undefined,
                         lastMessageSenderId: lastMsg?.senderId,

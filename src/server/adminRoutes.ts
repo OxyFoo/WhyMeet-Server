@@ -28,6 +28,7 @@ import {
     refreshBotWSTokens
 } from '@/services/stresstestService';
 import { runTagPromotionPass } from '@/services/tagPromotion';
+import { safeDecryptText } from '@/services/messageEncryption';
 import { getStorageStats } from '@/services/storageService';
 
 const FEATURE_FLAG_KEYS = ['mapbox', 'stresstest.bot_user_mixing'] as const;
@@ -633,6 +634,64 @@ export function createAdminRouter(): Router {
         } catch (err) {
             logger.error('[AdminAPI] stresstest-status failed', err);
             res.status(500).json({ error: 'status_failed' });
+        }
+    });
+
+    // ─── Moderation: read a user's conversation messages ────────────
+    // Returns the user's recent conversations with decrypted message bodies.
+    // The console gates this call behind a "report or reason" check and writes
+    // its own audit log entry; this endpoint just enforces hard size limits.
+    const MAX_CONVERSATIONS = 50;
+    const MAX_MESSAGES_PER_CONVERSATION = 200;
+    router.get('/users/:userId/messages', async (req, res) => {
+        const userId = String(req.params.userId ?? '');
+        if (!userId) {
+            res.status(400).json({ error: 'invalid_user_id' });
+            return;
+        }
+        const db = getDatabase();
+        try {
+            const participants = await db.conversationParticipant.findMany({
+                where: { userId },
+                select: { conversationId: true, conversation: { select: { createdAt: true } } },
+                take: MAX_CONVERSATIONS * 4 // overscan; final order resolved below
+            });
+            // Sort by most recently created conversation first, then cap.
+            participants.sort((a, b) => b.conversation.createdAt.getTime() - a.conversation.createdAt.getTime());
+            const conversationIds = participants.slice(0, MAX_CONVERSATIONS).map((p) => p.conversationId);
+
+            const conversations = await Promise.all(
+                conversationIds.map(async (conversationId) => {
+                    const [allParticipants, messages] = await Promise.all([
+                        db.conversationParticipant.findMany({
+                            where: { conversationId },
+                            select: { userId: true }
+                        }),
+                        db.message.findMany({
+                            where: { conversationId },
+                            orderBy: { timestamp: 'desc' },
+                            take: MAX_MESSAGES_PER_CONVERSATION
+                        })
+                    ]);
+                    messages.reverse();
+                    return {
+                        conversationId,
+                        participantIds: allParticipants.map((p) => p.userId),
+                        messages: messages.map((m) => ({
+                            id: m.id,
+                            senderId: m.senderId,
+                            text: m.type === 'text' ? safeDecryptText(m.text) : '',
+                            type: m.type,
+                            timestamp: m.timestamp.toISOString()
+                        }))
+                    };
+                })
+            );
+
+            res.json({ conversations });
+        } catch (err) {
+            logger.error('[AdminAPI] user messages fetch failed', err);
+            res.status(500).json({ error: 'fetch_failed' });
         }
     });
 

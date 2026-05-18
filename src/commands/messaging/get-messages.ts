@@ -3,6 +3,7 @@ import type { Client } from '@/server/Client';
 import type { WSRequest_GetMessages, WSResponse_GetMessages, MessageType } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { logger } from '@/config/logger';
+import { safeDecryptText } from '@/services/messageEncryption';
 
 registerCommand<WSRequest_GetMessages>(
     'get-messages',
@@ -39,7 +40,7 @@ registerCommand<WSRequest_GetMessages>(
                 payload: {
                     messages: messages.map((m) => ({
                         id: m.id,
-                        text: m.text,
+                        text: safeDecryptText(m.text),
                         senderId: m.senderId,
                         timestamp: m.timestamp.toISOString(),
                         read: m.read,

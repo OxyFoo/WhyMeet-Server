@@ -30,6 +30,8 @@ const envSchema = z.object({
         .default(24 * 60 * 60 * 1000), // 24 hours
 
     CRYPT_KEY_MAIL: z.string().min(16),
+    // AES-256-GCM key for encrypting message bodies at rest (64 hex chars / 32 bytes).
+    CRYPT_KEY_MESSAGES: z.string().length(64, 'CRYPT_KEY_MESSAGES must be 64 hex chars (32 bytes)'),
     WS_TOKEN_EXPIRES_SECONDS: z.coerce.number().int().positive().default(60),
     MAIL_TOKEN_TTL_MINUTES: z.coerce.number().int().positive().default(15),
 
