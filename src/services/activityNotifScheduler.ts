@@ -3,7 +3,7 @@ import { pushToUser } from '@/services/pushService';
 import { t, getUserLanguage } from '@/services/notifI18n';
 import { logger } from '@/config/logger';
 
-const CHECK_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — keeps 1h reminders within ±5 min
 
 let intervalId: ReturnType<typeof setInterval> | null = null;
 
@@ -36,6 +36,9 @@ async function processScheduledNotifs(): Promise<void> {
 
         logger.info(`[ActivityNotifScheduler] Processing ${dueNotifs.length} due notifications`);
 
+        let sent = 0;
+        let skipped = 0;
+
         for (const notif of dueNotifs) {
             const { activity } = notif;
             if (!activity || activity.isCancelled || activity.isArchived) {
@@ -44,6 +47,7 @@ async function processScheduledNotifs(): Promise<void> {
                     where: { id: notif.id },
                     data: { sent: true, sentAt: now }
                 });
+                skipped++;
                 continue;
             }
 
@@ -104,8 +108,10 @@ async function processScheduledNotifs(): Promise<void> {
                 data: { sent: true, sentAt: now }
             });
 
-            logger.info(`[ActivityNotifScheduler] Sent ${notif.type} reminder for activity ${activity.id}`);
+            sent++;
         }
+
+        logger.info(`[ActivityNotifScheduler] Done — sent: ${sent}, skipped: ${skipped}/${dueNotifs.length}`);
     } catch (error) {
         logger.error('[ActivityNotifScheduler] Error processing notifications', error);
     }

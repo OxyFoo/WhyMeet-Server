@@ -6,6 +6,7 @@
     "type": "commonjs",
     "license": "UNLICENSED",
     "scripts": {
+        "postinstall": "prisma generate",
         "start": "node dist/index.js",
         "build": "tsc && tsc-alias",
         "dev": "npx prisma db push && npx prisma db seed && tsx src/index.ts",
@@ -29,7 +30,7 @@
     },
     "dependencies": {
         "@aws-sdk/client-s3": "^3.1029.0",
-        "@oxyfoo/whymeet-types": "^0.0.28",
+        "@oxyfoo/whymeet-types": "^0.0.29",
         "@prisma/adapter-pg": "^7.5.0",
         "@prisma/client": "^7.5.0",
         "apple-signin-auth": "^2.0.0",

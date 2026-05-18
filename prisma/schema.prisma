@@ -741,3 +741,40 @@ model Feedback {
     @@index([type])
     @@map("feedbacks")
 }
+
+// Anonymous client-side analytics event (mobile app usage tracking).
+// `deviceId` is the server-side cuid of the Device row (not the client uuid),
+// so events stay anonymous from the outside while still allowing joins for
+// derived stats (e.g. "% of devices whose user has a complete profile").
+model AnalyticsEvent {
+    id         String   @id @default(cuid())
+    name       String
+    deviceId   String
+    ts         DateTime
+    platform   String
+    appVersion String
+    props      Json?
+    createdAt  DateTime @default(now())
+
+    @@index([name, ts])
+    @@index([ts])
+    @@index([deviceId, ts])
+    @@map("analytics_events")
+}
+
+// Pre-aggregated daily counters consumed by the admin dashboard.
+// `dimension` is "" for the total or a "key=value" string (e.g. "platform=ios").
+// Kept non-null so the (date,name,dimension) unique constraint works in Postgres.
+model AnalyticsDailyMetric {
+    id            String   @id @default(cuid())
+    date          DateTime @db.Date
+    name          String
+    dimension     String   @default("")
+    count         Int      @default(0)
+    uniqueDevices Int      @default(0)
+    updatedAt     DateTime @updatedAt
+
+    @@unique([date, name, dimension])
+    @@index([name, date])
+    @@map("analytics_daily_metrics")
+}

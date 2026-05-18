@@ -7,6 +7,7 @@ import { startServer, stopServer } from '@/server/Server';
 import { getRegisteredCommands } from '@/server/Router';
 import { startActivityNotifScheduler, stopActivityNotifScheduler } from '@/services/activityNotifScheduler';
 import { startTagPromotionScheduler, stopTagPromotionScheduler } from '@/services/tagPromotion';
+import { startAnalyticsScheduler, stopAnalyticsScheduler } from '@/services/analyticsScheduler';
 import { connectRedis, disconnectRedis } from '@/services/redisService';
 
 // Register all commands
@@ -68,6 +69,10 @@ async function main(): Promise<void> {
         printService('TagPromotion', 'warn', 'Disabled (TAG_PROMOTION_ENABLED=false)');
     }
 
+    // Start analytics daily aggregation & retention scheduler
+    startAnalyticsScheduler();
+    printService('Analytics', 'ok', 'Started (daily at 03:00 UTC)');
+
     // Final ready message
     const commands = getRegisteredCommands();
     printReady(commands.length);
@@ -82,6 +87,7 @@ async function onExit(): Promise<void> {
     logger.info('[Main] Shutting down...');
     stopActivityNotifScheduler();
     stopTagPromotionScheduler();
+    stopAnalyticsScheduler();
     await stopServer();
     await disconnectRedis();
     await disconnectDatabase();
