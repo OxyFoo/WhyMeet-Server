@@ -22,8 +22,9 @@ export function isProfileComplete(user: LoadedUser): boolean {
         (user.photos ?? []).length > 0 &&
         ((user as unknown as { gender: string | null }).gender ?? '') !== '' &&
         ((profile?.bio as string | null | undefined) ?? '').trim().length >= PROFILE_MIN_BIO_LENGTH &&
-        Array.isArray(profile?.intentionKeys) &&
-        (profile?.intentionKeys as unknown[]).length > 0 &&
+        ((Array.isArray(profile?.intentionKeys) && (profile?.intentionKeys as unknown[]).length > 0) ||
+            (Array.isArray(profile?.intentionCategoryKeys) &&
+                (profile?.intentionCategoryKeys as unknown[]).length > 0)) &&
         countTags(user, 'interest') >= PROFILE_MIN_TAGS &&
         countTags(user, 'skill') >= PROFILE_MIN_TAGS &&
         typeof profile?.socialVibe === 'string' &&

@@ -74,5 +74,39 @@ describe('isProfileComplete', () => {
                 }) as never
             )
         ).toBe(false);
+
+        // intentionCategoryKeys sans intentionKeys doit aussi être considéré complet
+        expect(
+            isProfileComplete(
+                makeLoadedUser({
+                    profile: {
+                        bio: 'Une bio assez longue',
+                        intentionKeys: [],
+                        intentionCategoryKeys: ['meet'],
+                        socialVibe: 'balanced',
+                        spokenLanguages: ['fr'],
+                        latitude: 48.8566,
+                        longitude: 2.3522
+                    }
+                }) as never
+            )
+        ).toBe(true);
+
+        // ni intentionKeys ni intentionCategoryKeys → incomplet
+        expect(
+            isProfileComplete(
+                makeLoadedUser({
+                    profile: {
+                        bio: 'Une bio assez longue',
+                        intentionKeys: [],
+                        intentionCategoryKeys: [],
+                        socialVibe: 'balanced',
+                        spokenLanguages: ['fr'],
+                        latitude: 48.8566,
+                        longitude: 2.3522
+                    }
+                }) as never
+            )
+        ).toBe(false);
     });
 });
