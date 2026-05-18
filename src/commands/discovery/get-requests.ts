@@ -11,6 +11,7 @@ import type {
 } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { computeAge } from '@/services/userMapper';
+import { isPremium } from '@/services/subscriptionService';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_GetRequests>('get-requests', async (client: Client): Promise<WSResponse_GetRequests> => {
@@ -32,12 +33,11 @@ registerCommand<WSRequest_GetRequests>('get-requests', async (client: Client): P
             orderBy: { matchedAt: 'desc' }
         });
 
-        // Exclude ones where the current user has already acted (liked or skipped the sender)
-        const actedOn = await db.match.findMany({
-            where: { senderId: client.userId },
-            select: { receiverId: true }
-        });
-        const actedOnIds = new Set(actedOn.map((m) => m.receiverId));
+        const [actedOnRaw, userIsPremium] = await Promise.all([
+            db.match.findMany({ where: { senderId: client.userId }, select: { receiverId: true } }),
+            isPremium(client.userId)
+        ]);
+        const actedOnIds = new Set(actedOnRaw.map((m) => m.receiverId));
 
         const requests = receivedMatches
             .filter((m) => !actedOnIds.has(m.senderId))
@@ -52,7 +52,7 @@ registerCommand<WSRequest_GetRequests>('get-requests', async (client: Client): P
                     gender: (m.sender.gender || 'male') as Gender,
                     photos: (m.sender.photos ?? []).map((p) => ({
                         id: p.id,
-                        key: p.key,
+                        key: userIsPremium ? p.key : p.keyBlurred,
                         description: p.description,
                         position: p.position
                     })) as ProfilePhoto[],
