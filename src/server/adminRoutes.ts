@@ -30,6 +30,7 @@ import {
 import { runTagPromotionPass } from '@/services/tagPromotion';
 import { safeDecryptText } from '@/services/messageEncryption';
 import { getStorageStats } from '@/services/storageService';
+import { deleteImagePair } from '@/services/photoStorageService';
 
 const FEATURE_FLAG_KEYS = ['mapbox', 'stresstest.bot_user_mixing'] as const;
 const featureFlagKeySchema = z.enum(FEATURE_FLAG_KEYS);
@@ -416,6 +417,48 @@ export function createAdminRouter(): Router {
         } catch (err) {
             logger.error('[AdminAPI] reset-profile failed', err);
             res.status(500).json({ error: 'reset_failed' });
+        }
+    });
+
+    const hardDeleteSchema = z.object({ userId: z.string().min(1) });
+    router.post('/users/hard-delete', async (req, res) => {
+        const parsed = hardDeleteSchema.safeParse(getJson(req));
+        if (!parsed.success) {
+            res.status(400).json({ error: 'invalid_payload' });
+            return;
+        }
+        const db = getDatabase();
+        try {
+            // Fetch photos before deletion for S3 cleanup
+            const photos = await db.profilePhoto.findMany({
+                where: { userId: parsed.data.userId },
+                select: { key: true, keyBlurred: true }
+            });
+
+            // Kick active WebSocket connections
+            for (const client of getConnectedClients().values()) {
+                if (client.userId === parsed.data.userId) client.close(4002, 'Account deleted');
+            }
+
+            // Hard delete — cascade handles all related records
+            await db.user.delete({ where: { id: parsed.data.userId } });
+
+            // Clean up S3 files (fire-and-forget)
+            void Promise.allSettled(photos.map((p) => deleteImagePair(p.key, p.keyBlurred)));
+
+            res.json({ ok: true, deletedPhotoCount: photos.length });
+        } catch (err: unknown) {
+            if (
+                typeof err === 'object' &&
+                err !== null &&
+                'code' in err &&
+                (err as { code: string }).code === 'P2025'
+            ) {
+                res.status(404).json({ error: 'user_not_found' });
+                return;
+            }
+            logger.error('[AdminAPI] hard-delete failed', err);
+            res.status(500).json({ error: 'hard_delete_failed' });
         }
     });
 
