@@ -148,6 +148,10 @@ export interface PipelineSetup {
     storedMaxDistance: number;
     storedRemote: boolean;
     excludeIds: string[];
+    /** IDs of users who have an unresponded pending like on me. They bypass the
+     *  visibility pre-filter: if someone already liked me they clearly want to
+     *  be discovered by me, regardless of their visibility settings. */
+    incomingLikerIds: string[];
 }
 
 /**
@@ -223,6 +227,20 @@ async function lazyResolveDomain(tagId: string, embedding: number[]): Promise<vo
 }
 
 /**
+ * Returns the IDs of users who have an unresponded pending like on `userId`.
+ * Not cached — incoming likes must be reflected immediately.
+ * Capped at 500 to bound the Prisma `notIn` / `in` clause size.
+ */
+async function getIncomingLikerIds(userId: string, db: ReturnType<typeof getDatabase>): Promise<string[]> {
+    const rows = await db.match.findMany({
+        where: { receiverId: userId, category: 'like', mutual: false },
+        select: { senderId: true },
+        take: 500
+    });
+    return rows.map((r) => r.senderId);
+}
+
+/**
  * Build the shared context for the discovery pipeline (user, settings, exclusion list).
  * Call once, then pass the result to `runPipelineQuery` for each intention / filter set.
  */
@@ -230,9 +248,14 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
     // ── Level 2 cache: PipelineSetup (user + settings, excludeIds NOT cached) ─
     const cached = await getPipelineSetup(client.userId);
     if (cached) {
-        const excludeIds = await getExcludeIds(client.userId);
-        logger.debug(`[Pipeline] Setup cache hit for ${client.userId} (${excludeIds.length} excluded)`);
-        return { ...cached, excludeIds };
+        const [excludeIds, incomingLikerIds] = await Promise.all([
+            getExcludeIds(client.userId),
+            getIncomingLikerIds(client.userId, getDatabase())
+        ]);
+        logger.debug(
+            `[Pipeline] Setup cache hit for ${client.userId} (${excludeIds.length} excluded, ${incomingLikerIds.length} likers)`
+        );
+        return { ...cached, excludeIds, incomingLikerIds };
     }
 
     const db = getDatabase();
@@ -275,11 +298,14 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
     const storedMaxDistance = settings?.peopleMaxDistance ?? DEFAULT_MAX_DISTANCE;
     const storedRemote = settings?.peopleRemoteMode ?? false;
 
-    // ── Level 3 cache: excludeIds via Redis Set ──────────────────────────
-    const excludeIds = await getExcludeIds(client.userId);
+    // ── Level 3 cache: excludeIds via Redis Set / incomingLikerIds from DB ─
+    const [excludeIds, incomingLikerIds] = await Promise.all([
+        getExcludeIds(client.userId),
+        getIncomingLikerIds(client.userId, db)
+    ]);
 
     logger.debug(
-        `[Pipeline] Setup for ${client.userId}: ${myIntentionKeys.length} intentions, ${excludeIds.length} excluded, profileComplete=${myProfileComplete}`
+        `[Pipeline] Setup for ${client.userId}: ${myIntentionKeys.length} intentions, ${excludeIds.length} excluded, ${incomingLikerIds.length} likers, profileComplete=${myProfileComplete}`
     );
 
     const setup: PipelineSetup = {
@@ -304,11 +330,12 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
         prefLanguages,
         storedMaxDistance,
         storedRemote,
-        excludeIds
+        excludeIds,
+        incomingLikerIds
     };
 
-    // Store setup in cache (without excludeIds — those are always fresh from Redis Set)
-    await setPipelineSetup(client.userId, { ...setup, excludeIds: [] });
+    // Store setup in cache (without excludeIds/incomingLikerIds — those are always fetched fresh)
+    await setPipelineSetup(client.userId, { ...setup, excludeIds: [], incomingLikerIds: [] });
 
     return setup;
 }
@@ -432,7 +459,15 @@ function buildPipelineWhere(
             visibilityFilter.push({ visibilityGenders: { hasSome: [setup.myGender] } });
         }
 
-        where.settings = { AND: visibilityFilter };
+        if (setup.incomingLikerIds.length > 0) {
+            // Someone who already liked me clearly wants to be found by me — bypass their
+            // visibility settings. We push an AND condition so other filters still apply.
+            (where.AND as unknown[]).push({
+                OR: [{ id: { in: setup.incomingLikerIds } }, { settings: { AND: visibilityFilter } }]
+            });
+        } else {
+            where.settings = { AND: visibilityFilter };
+        }
     }
 
     // ── Tags filter (user must have at least one matching tag) ───
