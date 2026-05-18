@@ -4,7 +4,8 @@ import {
     DeleteObjectCommand,
     HeadBucketCommand,
     CreateBucketCommand,
-    PutBucketPolicyCommand
+    PutBucketPolicyCommand,
+    ListObjectsV2Command
 } from '@aws-sdk/client-s3';
 import { env } from '@/config/env';
 import { logger } from '@/config/logger';
@@ -123,4 +124,53 @@ export function extractKeyFromUrl(url: string): string | null {
     }
 
     return null;
+}
+
+// ─── Storage stats ────────────────────────────────────────────────────
+
+export type StorageProvider = 'minio' | 's3' | 'disabled';
+
+export type StorageStats = {
+    provider: StorageProvider;
+    endpoint: string;
+    bucket: string;
+    publicUrl: string;
+    objectCount: number;
+    totalBytes: number;
+};
+
+export async function getStorageStats(): Promise<StorageStats> {
+    const endpoint = env.S3_ENDPOINT ?? '';
+    const bucket = env.S3_BUCKET;
+    const publicUrl = env.S3_PUBLIC_URL ?? '';
+
+    const client = getS3Client();
+
+    let provider: StorageProvider = 'disabled';
+    if (client) {
+        provider = endpoint.includes('amazonaws.com') ? 's3' : 'minio';
+    }
+
+    if (!client) {
+        return { provider, endpoint, bucket, publicUrl, objectCount: 0, totalBytes: 0 };
+    }
+
+    let objectCount = 0;
+    let totalBytes = 0;
+    let continuationToken: string | undefined;
+
+    do {
+        const response = await client.send(
+            new ListObjectsV2Command({ Bucket: bucket, ContinuationToken: continuationToken })
+        );
+
+        for (const obj of response.Contents ?? []) {
+            objectCount++;
+            totalBytes += obj.Size ?? 0;
+        }
+
+        continuationToken = response.NextContinuationToken;
+    } while (continuationToken);
+
+    return { provider, endpoint, bucket, publicUrl, objectCount, totalBytes };
 }

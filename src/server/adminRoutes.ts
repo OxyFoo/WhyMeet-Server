@@ -28,6 +28,7 @@ import {
     refreshBotWSTokens
 } from '@/services/stresstestService';
 import { runTagPromotionPass } from '@/services/tagPromotion';
+import { getStorageStats } from '@/services/storageService';
 
 const FEATURE_FLAG_KEYS = ['mapbox', 'stresstest.bot_user_mixing'] as const;
 const featureFlagKeySchema = z.enum(FEATURE_FLAG_KEYS);
@@ -179,6 +180,16 @@ export function createAdminRouter(): Router {
 
     router.get('/ping', (_req, res) => {
         res.json({ ok: true, time: Date.now(), version: APP_VERSION });
+    });
+
+    router.get('/storage/stats', async (_req, res) => {
+        try {
+            const stats = await getStorageStats();
+            res.json(stats);
+        } catch (err) {
+            logger.error('[AdminAPI] Failed to fetch storage stats', err);
+            res.status(500).json({ error: 'storage_stats_failed' });
+        }
     });
 
     router.get('/metrics', async (_req, res) => {
