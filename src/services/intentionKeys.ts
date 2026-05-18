@@ -1,6 +1,8 @@
 import {
     getCategoryKeyForIntention,
+    isIntentionCategoryKey,
     isIntentionKey,
+    type IntentionCategoryKey,
     type IntentionKey,
     type IntentionSelection
 } from '@oxyfoo/whymeet-types';
@@ -14,6 +16,21 @@ export function normalizeActiveIntentionKeys(values: readonly string[] | undefin
     for (const value of values ?? []) {
         const intentionKey = normalizeActiveIntentionKey(value);
         if (intentionKey) normalized.add(intentionKey);
+    }
+    return [...normalized];
+}
+
+export function normalizeActiveIntentionCategoryKey(value: string | undefined | null): IntentionCategoryKey | null {
+    return value && isIntentionCategoryKey(value) ? value : null;
+}
+
+export function normalizeActiveIntentionCategoryKeys(
+    values: readonly string[] | undefined | null
+): IntentionCategoryKey[] {
+    const normalized = new Set<IntentionCategoryKey>();
+    for (const value of values ?? []) {
+        const categoryKey = normalizeActiveIntentionCategoryKey(value);
+        if (categoryKey) normalized.add(categoryKey);
     }
     return [...normalized];
 }

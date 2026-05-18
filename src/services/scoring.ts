@@ -1,6 +1,4 @@
 import {
-    getAncestorIntentionKeys,
-    getDescendantIntentionKeys,
     getCategoryKeyForIntention,
     getIntention,
     type IntentionFallbackLevel,
@@ -29,6 +27,7 @@ const VIBE_SCALE: readonly SocialVibe[] = ['reserved', 'calm', 'balanced', 'outg
  */
 export interface ScoringCandidate {
     intentionKeys: IntentionKey[];
+    intentionCategoryKeys: IntentionCategoryKey[];
     interestLabels: Set<string>;
     skillLabels: Set<string>;
     domainCounts: Map<InterestCategoryKey, number>;
@@ -122,18 +121,6 @@ function uniqueIntentionKeys(keys: readonly IntentionKey[]): IntentionKey[] {
     return normalizeActiveIntentionKeys(keys);
 }
 
-function expandRequestedKeys(keys: readonly IntentionKey[]): IntentionKey[] {
-    const expanded = new Set<IntentionKey>();
-
-    for (const key of uniqueIntentionKeys(keys)) {
-        expanded.add(key);
-        for (const ancestorKey of getAncestorIntentionKeys(key)) expanded.add(ancestorKey);
-        for (const descendantKey of getDescendantIntentionKeys(key)) expanded.add(descendantKey);
-    }
-
-    return [...expanded];
-}
-
 function getRequestedIntentionKeys(ctx: ScoringContext): IntentionKey[] {
     return uniqueIntentionKeys(
         ctx.targetIntentionKeys?.length
@@ -147,13 +134,26 @@ function getRequestedIntentionKeys(ctx: ScoringContext): IntentionKey[] {
 function scoreIntention(ctx: ScoringContext, candidate: ScoringCandidate): number {
     const mine = uniqueIntentionKeys(ctx.myIntentionKeys);
     const theirs = uniqueIntentionKeys(candidate.intentionKeys);
-    if (mine.length === 0 && theirs.length === 0) return 0;
+    const theirCategoryKeys = new Set<IntentionCategoryKey>(candidate.intentionCategoryKeys);
+    if (mine.length === 0 && theirs.length === 0 && theirCategoryKeys.size === 0) return 0;
 
     const requested = getRequestedIntentionKeys(ctx);
     const comparison = requested.length > 0 ? requested : mine;
-    const theirExpanded = new Set(expandRequestedKeys(theirs));
-    const directCommon = comparison.filter((key) => theirs.includes(key)).length;
-    const hierarchicalCommon = comparison.filter((key) => !theirs.includes(key) && theirExpanded.has(key)).length;
+    // A direct hit is either an exact intentionKey match, or one of our requested
+    // intentions whose category appears in the candidate's category-global picks.
+    const directCommon = comparison.filter(
+        (key) => theirs.includes(key) || theirCategoryKeys.has(getCategoryKeyForIntention(key))
+    ).length;
+    // Hierarchical bonus: count comparison keys whose category appears in theirs
+    // (via a leaf intention) but no exact intention match — siblings of selected
+    // intention. Already-counted direct hits are excluded.
+    const theirCategoriesFromLeaves = new Set(theirs.map((key) => getCategoryKeyForIntention(key)));
+    const hierarchicalCommon = comparison.filter((key) => {
+        if (theirs.includes(key)) return false;
+        const category = getCategoryKeyForIntention(key);
+        if (theirCategoryKeys.has(category)) return false; // already counted as direct
+        return theirCategoriesFromLeaves.has(category);
+    }).length;
     const weightedCommon = directCommon + hierarchicalCommon * WEIGHT_INTENTION_HIERARCHICAL;
     const directScore = hybridScore(weightedCommon, Math.max(comparison.length, theirs.length), 3, WEIGHT_INTENTION);
 
@@ -161,10 +161,12 @@ function scoreIntention(ctx: ScoringContext, candidate: ScoringCandidate): numbe
         ctx.targetCategoryKey ??
         (ctx.targetIntentionKey ? getCategoryKeyForIntention(ctx.targetIntentionKey) : undefined);
     const sameCategory = targetCategory
-        ? theirs.some((key) => getCategoryKeyForIntention(key) === targetCategory)
-        : comparison.some((wanted) =>
-              theirs.some((key) => getCategoryKeyForIntention(key) === getCategoryKeyForIntention(wanted))
-          );
+        ? theirCategoryKeys.has(targetCategory) ||
+          theirs.some((key) => getCategoryKeyForIntention(key) === targetCategory)
+        : comparison.some((wanted) => {
+              const category = getCategoryKeyForIntention(wanted);
+              return theirCategoryKeys.has(category) || theirCategoriesFromLeaves.has(category);
+          });
 
     return Math.max(directScore, sameCategory ? WEIGHT_INTENTION * 0.65 : 0);
 }
@@ -273,15 +275,20 @@ export function buildIntentionMatchSummary(
     breakdown: ScoreBreakdown
 ): IntentionMatchSummary | undefined {
     const candidateKeys = uniqueIntentionKeys(candidate.intentionKeys);
-    if (candidateKeys.length === 0) return undefined;
+    const candidateCategoryKeys = new Set<IntentionCategoryKey>(candidate.intentionCategoryKeys);
+    if (candidateKeys.length === 0 && candidateCategoryKeys.size === 0) return undefined;
 
     const requested = getRequestedIntentionKeys(ctx);
-    const direct = requested.find((key) => candidateKeys.includes(key));
+    const direct = requested.find(
+        (key) => candidateKeys.includes(key) || candidateCategoryKeys.has(getCategoryKeyForIntention(key))
+    );
+    const candidateCategories = new Set([
+        ...candidateKeys.map((key) => getCategoryKeyForIntention(key)),
+        ...candidateCategoryKeys
+    ]);
     const hierarchyMatch = direct
         ? undefined
-        : requested.find((key) =>
-              expandRequestedKeys([key]).some((expandedKey) => candidateKeys.includes(expandedKey))
-          );
+        : requested.find((key) => candidateCategories.has(getCategoryKeyForIntention(key)));
     const targetCategory =
         ctx.targetCategoryKey ??
         (ctx.targetIntentionKey ? getCategoryKeyForIntention(ctx.targetIntentionKey) : undefined);
@@ -289,6 +296,7 @@ export function buildIntentionMatchSummary(
         ? candidateKeys.find((key) => getCategoryKeyForIntention(key) === targetCategory)
         : undefined;
     const intentionKey = direct ?? hierarchyMatch ?? sameCategory ?? candidateKeys[0];
+    if (!intentionKey) return undefined;
     const intention = getIntention(intentionKey);
 
     let fallbackLevel: IntentionFallbackLevel = 'none';

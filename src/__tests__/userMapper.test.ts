@@ -99,6 +99,7 @@ describe('mapUserToProfile', () => {
             ],
             skills: [{ id: 'ut-3', label: 'JavaScript', source: null }],
             intentionKeys: ['meet_simple_first_date', 'meet_make_acquaintance'],
+            intentionCategoryKeys: [],
             spokenLanguages: ['fr', 'en'],
             location: {
                 country: 'France',
@@ -204,6 +205,7 @@ describe('mapUserToCandidate', () => {
                 badges: []
             },
             intentionKeys: ['meet_simple_first_date', 'meet_make_acquaintance'],
+            intentionCategoryKeys: [],
             bio: 'Hello world',
             interests: ['Photographie', 'Randonnée'],
             skills: ['JavaScript'],

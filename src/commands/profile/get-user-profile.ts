@@ -11,7 +11,7 @@ import { mapUserToCandidate, candidateInclude } from '@/services/userMapper';
 import { buildIntentionMatchSummary, computeMatchScore } from '@/services/scoring';
 import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
 import { buildTagScoringData } from '@/services/discoveryPipeline';
-import { normalizeActiveIntentionKeys } from '@/services/intentionKeys';
+import { normalizeActiveIntentionCategoryKeys, normalizeActiveIntentionKeys } from '@/services/intentionKeys';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_GetUserProfile>(
@@ -97,6 +97,9 @@ registerCommand<WSRequest_GetUserProfile>(
                 const theirTagData = buildTagScoringData(targetUser.tags);
                 const scoringCandidate: ScoringCandidate = {
                     intentionKeys: normalizeActiveIntentionKeys(targetUser.profile?.intentionKeys ?? []),
+                    intentionCategoryKeys: normalizeActiveIntentionCategoryKeys(
+                        targetUser.profile?.intentionCategoryKeys ?? []
+                    ),
                     interestLabels: theirTagData.interestLabels,
                     skillLabels: theirTagData.skillLabels,
                     domainCounts: theirTagData.domainCounts,

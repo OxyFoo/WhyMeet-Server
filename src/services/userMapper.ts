@@ -8,7 +8,7 @@ import type {
     BadgeKey
 } from '@oxyfoo/whymeet-types';
 import { getHostLevel } from '@oxyfoo/whymeet-types';
-import { normalizeActiveIntentionKeys } from '@/services/intentionKeys';
+import { normalizeActiveIntentionCategoryKeys, normalizeActiveIntentionKeys } from '@/services/intentionKeys';
 
 type DateLike = Date | string | null | undefined;
 
@@ -131,6 +131,7 @@ export function mapUserToProfile(user: {
         statMatches: number;
         statVibes: number;
         intentionKeys: string[];
+        intentionCategoryKeys?: string[];
         spokenLanguages: string[];
         trustScore: number;
         completedHostedCount: number;
@@ -184,6 +185,7 @@ export function mapUserToProfile(user: {
             .filter((t) => t.type === 'skill')
             .map((t) => ({ id: t.id, label: t.label, source: t.source ?? null })),
         intentionKeys: normalizeActiveIntentionKeys(user.profile?.intentionKeys ?? []),
+        intentionCategoryKeys: normalizeActiveIntentionCategoryKeys(user.profile?.intentionCategoryKeys ?? []),
         spokenLanguages: user.profile?.spokenLanguages ?? [],
         preferredDiscoveryView: (user.profile?.preferredDiscoveryView ?? 'swipe') as Profile['preferredDiscoveryView'],
         location: {
@@ -302,6 +304,7 @@ export function mapUserToCandidate(
             badges: mapBadges(user.badges)
         },
         intentionKeys: sorted,
+        intentionCategoryKeys: normalizeActiveIntentionCategoryKeys(user.profile?.intentionCategoryKeys ?? []),
         bio: user.profile?.bio ?? '',
         interests: (user.tags ?? []).filter((t) => t.type === 'interest').map((t) => t.label),
         skills: (user.tags ?? []).filter((t) => t.type === 'skill').map((t) => t.label),

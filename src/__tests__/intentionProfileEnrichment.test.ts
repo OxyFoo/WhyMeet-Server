@@ -1,14 +1,18 @@
-import { expandSelectedIntentionKeys } from '@/services/intentionProfileEnrichment';
+import { normalizeProfileIntentionKeys } from '@/services/intentionProfileEnrichment';
 
-describe('intention profile enrichment', () => {
-    it('adds ancestor contexts for a selected leaf', () => {
-        expect(expandSelectedIntentionKeys(['activity_play_video_games'])).toEqual([
-            'activity_play',
-            'activity_play_video_games'
-        ]);
+describe('normalizeProfileIntentionKeys', () => {
+    it('stores exactly the keys the user picked (no ancestor expansion)', () => {
+        expect(normalizeProfileIntentionKeys(['activity_play_video_games'])).toEqual(['activity_play_video_games']);
     });
 
-    it('ignores deprecated keys instead of normalizing them', () => {
-        expect(expandSelectedIntentionKeys(['simple_first_meet'])).toEqual([]);
+    it('filters out unknown / deprecated keys', () => {
+        expect(normalizeProfileIntentionKeys(['simple_first_meet'])).toEqual([]);
+    });
+
+    it('dedupes input', () => {
+        expect(normalizeProfileIntentionKeys(['go_out_coffee', 'go_out_coffee', 'go_out_walk'])).toEqual([
+            'go_out_coffee',
+            'go_out_walk'
+        ]);
     });
 });

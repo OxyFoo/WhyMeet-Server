@@ -64,6 +64,7 @@ function candidate(id: string): MatchCandidate {
         },
         bio: 'bio',
         intentionKeys: ['meet_simple_first_date'],
+        intentionCategoryKeys: [],
         interests: ['Hiking'],
         skills: [],
         distance: ''

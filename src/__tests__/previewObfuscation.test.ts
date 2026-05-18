@@ -21,6 +21,7 @@ function makeCandidate(): MatchCandidate {
             badges: []
         },
         intentionKeys: ['meet_simple_first_date'],
+        intentionCategoryKeys: [],
         bio: 'Grande bio visible',
         interests: ['Escalade'],
         skills: ['Cuisine'],

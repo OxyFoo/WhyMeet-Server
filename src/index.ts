@@ -70,8 +70,8 @@ async function main(): Promise<void> {
     }
 
     // Start analytics daily aggregation & retention scheduler
-    startAnalyticsScheduler();
-    printService('Analytics', 'ok', 'Started (daily at 03:00 UTC)');
+    const analyticsNextMin = startAnalyticsScheduler();
+    printService('Analytics', 'ok', `Started (daily at 03:00 UTC, next in ${analyticsNextMin} min)`);
 
     // Final ready message
     const commands = getRegisteredCommands();

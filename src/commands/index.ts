@@ -14,6 +14,7 @@ import './search/search';
 import './profile/get-profile';
 import './profile/get-user-profile';
 import './profile/get-profile-popular-tags';
+import './profile/get-refine-popular-tags';
 import './profile/update-profile';
 import './profile/set-discovery-view';
 import './messaging/get-conversations';

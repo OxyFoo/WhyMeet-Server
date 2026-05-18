@@ -5,7 +5,7 @@ import { getDatabase } from '@/services/database';
 import { getRedis, isRedisAvailable } from '@/services/redisService';
 import { logger } from '@/config/logger';
 
-const TOP_LIMIT = 20;
+const TOP_LIMIT = 50;
 const CACHE_KEY = 'profile:popular-tags';
 const CACHE_TTL_S = 3600; // 1 hour
 

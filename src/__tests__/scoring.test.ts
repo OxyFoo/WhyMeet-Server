@@ -21,6 +21,7 @@ function baseCtx(overrides: Partial<ScoringContext> = {}): ScoringContext {
 function baseCandidate(overrides: Partial<ScoringCandidate> = {}): ScoringCandidate {
     return {
         intentionKeys: ['meet_simple_first_date'],
+        intentionCategoryKeys: [],
         interestLabels: new Set(),
         skillLabels: new Set(),
         domainCounts: new Map(),

@@ -14,8 +14,8 @@ import { invalidateActivityCatalogCache, invalidateActivityDiscoveryCache } from
 import { logAudit } from '@/services/auditLogService';
 import { isProfileComplete } from '@/services/profileCompletion';
 import { prepareUserTagSync, replaceUserTags } from '@/services/userTagSync';
-import { expandSelectedIntentionKeys } from '@/services/intentionProfileEnrichment';
-import { normalizeActiveIntentionKeys } from '@/services/intentionKeys';
+import { normalizeProfileIntentionKeys } from '@/services/intentionProfileEnrichment';
+import { normalizeActiveIntentionCategoryKeys, normalizeActiveIntentionKeys } from '@/services/intentionKeys';
 
 class ProfileWouldBecomeIncompleteError extends Error {
     constructor() {
@@ -45,6 +45,16 @@ registerCommand<WSRequest_UpdateProfile>(
             ? data.intentionKeys.filter((key) => typeof key === 'string')
             : undefined;
         const normalizedIntentionKeys = normalizeActiveIntentionKeys(submittedIntentionKeys);
+
+        const submittedCategoryKeys = Array.isArray(data.intentionCategoryKeys)
+            ? data.intentionCategoryKeys.filter((key) => typeof key === 'string')
+            : undefined;
+        const normalizedIntentionCategoryKeys = normalizeActiveIntentionCategoryKeys(submittedCategoryKeys);
+
+        // `intentionKeys` (leaves) and `intentionCategoryKeys` ("globally
+        // interested in the whole category") are independent and may coexist.
+        // The discovery pipeline OR-matches on both.
+
         const normalizedIntentionKeySet = new Set(normalizedIntentionKeys);
         const droppedIntentionKeys = Array.from(
             new Set((submittedIntentionKeys ?? []).filter((key) => !normalizedIntentionKeySet.has(key)))
@@ -165,7 +175,10 @@ registerCommand<WSRequest_UpdateProfile>(
                     profileData.longitude = discretized.longitude;
                 }
                 if (data.intentionKeys !== undefined) {
-                    profileData.intentionKeys = expandSelectedIntentionKeys(normalizedIntentionKeys);
+                    profileData.intentionKeys = normalizeProfileIntentionKeys(normalizedIntentionKeys);
+                }
+                if (data.intentionCategoryKeys !== undefined) {
+                    profileData.intentionCategoryKeys = normalizedIntentionCategoryKeys;
                 }
                 if (data.spokenLanguages !== undefined) profileData.spokenLanguages = data.spokenLanguages;
 

@@ -10,8 +10,6 @@ import type {
 } from '@oxyfoo/whymeet-types';
 import {
     getAllIntentionsForCategory,
-    getAncestorIntentionKeys,
-    getDescendantIntentionKeys,
     getCategoryKeyForIntention,
     getParentKeyForIntention,
     isIntentionKey,
@@ -35,7 +33,7 @@ import { getPipelineSetup, setPipelineSetup } from '@/services/pipelineSetupCach
 import { isFeatureEnabled } from '@/services/featureFlagService';
 import { resolveDomain } from '@/services/tagDomain';
 import { logger } from '@/config/logger';
-import { normalizeActiveIntentionKeys } from '@/services/intentionKeys';
+import { normalizeActiveIntentionCategoryKeys, normalizeActiveIntentionKeys } from '@/services/intentionKeys';
 
 const DEFAULT_MAX_DISTANCE = 50; // km
 const MIN_EXACT_INTENTION_RESULTS = 6;
@@ -88,11 +86,11 @@ export function countQualifiedByIntention(
 ): Record<string, number> {
     const counts = Object.fromEntries(intentionKeys.map((key) => [key, 0])) as Record<string, number>;
     const accepted = new Map<IntentionKey, Set<IntentionKey>>(
-        intentionKeys.map((key) => [key, new Set(expandIntentionKeysForMatching([key]))])
+        intentionKeys.map((key) => [key, new Set(normalizeActiveIntentionKeys([key]))])
     );
 
     for (const candidate of qualified) {
-        const candidateKeys = new Set(expandIntentionKeysForMatching(candidate.intentionKeys));
+        const candidateKeys = new Set(normalizeActiveIntentionKeys(candidate.intentionKeys));
         for (const [requestedKey, matchingKeys] of accepted) {
             for (const k of matchingKeys) {
                 if (candidateKeys.has(k)) {
@@ -119,6 +117,7 @@ export interface PipelineContext {
 /** Pre-computed data shared across multiple pipeline queries for the same user. */
 export interface PipelineSetup {
     myIntentionKeys: IntentionKey[];
+    myIntentionCategoryKeys: IntentionCategoryKey[];
     myInterestLabels: Set<string>;
     mySkillLabels: Set<string>;
     myDomainCounts: Map<InterestCategoryKey, number>;
@@ -164,29 +163,15 @@ type TagRow = {
     tag?: { id: string; label?: string; domainKey?: string | null; embedding?: number[] | null } | null;
 };
 
-function expandIntentionKeysForStorage(keys: readonly IntentionKey[] | undefined): IntentionKey[] | undefined {
+/**
+ * No more ancestor/descendant expansion: profile.intentionKeys now stores
+ * exactly the keys the user picked. Sibling-confusion bug (Culture vs Sport
+ * via shared parent) is eliminated by symmetry. Category filters expand to
+ * the whole category's intentions in `buildPipelineWhere`.
+ */
+function normalizeIntentionKeysForQuery(keys: readonly IntentionKey[] | undefined): IntentionKey[] | undefined {
     const activeKeys = normalizeActiveIntentionKeys(keys);
-    if (activeKeys.length === 0) return undefined;
-
-    const expandedActiveKeys = new Set<IntentionKey>();
-    for (const key of activeKeys) {
-        expandedActiveKeys.add(key);
-        for (const ancestorKey of getAncestorIntentionKeys(key)) expandedActiveKeys.add(ancestorKey);
-        for (const descendantKey of getDescendantIntentionKeys(key)) expandedActiveKeys.add(descendantKey);
-    }
-
-    return [...expandedActiveKeys];
-}
-
-function expandIntentionKeysForMatching(keys: readonly IntentionKey[]): IntentionKey[] {
-    const expanded = new Set<IntentionKey>();
-
-    for (const key of normalizeActiveIntentionKeys(keys)) {
-        expanded.add(key);
-        for (const ancestorKey of getAncestorIntentionKeys(key)) expanded.add(ancestorKey);
-    }
-
-    return [...expanded];
+    return activeKeys.length === 0 ? undefined : activeKeys;
 }
 
 /**
@@ -263,6 +248,9 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
     const mixBots = await isFeatureEnabled('stresstest.bot_user_mixing');
 
     const myIntentionKeys = normalizeActiveIntentionKeys(currentUser?.profile?.intentionKeys ?? []);
+    const myIntentionCategoryKeys = normalizeActiveIntentionCategoryKeys(
+        currentUser?.profile?.intentionCategoryKeys ?? []
+    );
     const {
         interestLabels: myInterestLabels,
         skillLabels: mySkillLabels,
@@ -296,6 +284,7 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
 
     const setup: PipelineSetup = {
         myIntentionKeys,
+        myIntentionCategoryKeys,
         myInterestLabels,
         mySkillLabels,
         myDomainCounts,
@@ -373,16 +362,46 @@ function buildPipelineWhere(
         where.verified = true;
     }
 
+    // ── Intention filter ──
+    // A candidate matches if either:
+    //   - their `intentionKeys` overlap the leaves we're looking for, OR
+    //   - their `intentionCategoryKeys` overlap the categories we're looking for
+    //     (they expressed a category-global interest covering us).
+    // We compute (leafKeysToMatch, categoryKeysToMatch) per branch and inject
+    // an AND-clause with an OR on the two columns. Leaving `intentionKeys` /
+    // `intentionCategoryKeys` defaults (isEmpty: false) in profileWhere is
+    // incompatible with the category-only candidates → we drop the default
+    // when we apply this filter.
+    let leafKeysToMatch: IntentionKey[] | undefined;
+    let categoryKeysToMatch: IntentionCategoryKey[] | undefined;
+
     if (prefIntentionKeys && prefIntentionKeys.length > 0) {
-        profileWhere.intentionKeys = { hasSome: expandIntentionKeysForStorage(prefIntentionKeys) };
+        leafKeysToMatch = normalizeIntentionKeysForQuery(prefIntentionKeys);
+        const cats = new Set<IntentionCategoryKey>();
+        for (const key of prefIntentionKeys) cats.add(getCategoryKeyForIntention(key));
+        categoryKeysToMatch = [...cats];
     } else if (filters?.categoryKey) {
-        profileWhere.intentionKeys = {
-            hasSome: expandIntentionKeysForStorage(
-                getAllIntentionsForCategory(filters.categoryKey).map((intention) => intention.key)
-            )
-        };
-    } else if (setup.myIntentionKeys.length > 0) {
-        profileWhere.intentionKeys = { hasSome: expandIntentionKeysForStorage(setup.myIntentionKeys) };
+        leafKeysToMatch = normalizeIntentionKeysForQuery(
+            getAllIntentionsForCategory(filters.categoryKey).map((intention) => intention.key)
+        );
+        categoryKeysToMatch = [filters.categoryKey];
+    } else if (setup.myIntentionKeys.length > 0 || setup.myIntentionCategoryKeys.length > 0) {
+        leafKeysToMatch = normalizeIntentionKeysForQuery(setup.myIntentionKeys);
+        categoryKeysToMatch = setup.myIntentionCategoryKeys.length > 0 ? [...setup.myIntentionCategoryKeys] : undefined;
+    }
+
+    if ((leafKeysToMatch && leafKeysToMatch.length > 0) || (categoryKeysToMatch && categoryKeysToMatch.length > 0)) {
+        const orBranches: Record<string, unknown>[] = [];
+        if (leafKeysToMatch && leafKeysToMatch.length > 0) {
+            orBranches.push({ intentionKeys: { hasSome: leafKeysToMatch } });
+        }
+        if (categoryKeysToMatch && categoryKeysToMatch.length > 0) {
+            orBranches.push({ intentionCategoryKeys: { hasSome: categoryKeysToMatch } });
+        }
+        // Replace the default `intentionKeys: { isEmpty: false }` baseline by
+        // the OR clause: a profile with only intentionCategoryKeys is valid.
+        delete profileWhere.intentionKeys;
+        profileWhere.OR = orBranches;
     }
 
     if (prefRemote && filters?.languages && filters.languages.length > 0) {
@@ -538,6 +557,7 @@ export async function runPipelineQuery(
 
             const candidate: ScoringCandidate = {
                 intentionKeys: theirIntentionKeys,
+                intentionCategoryKeys: normalizeActiveIntentionCategoryKeys(u.profile?.intentionCategoryKeys ?? []),
                 interestLabels: theirTagData.interestLabels,
                 skillLabels: theirTagData.skillLabels,
                 domainCounts: theirTagData.domainCounts,

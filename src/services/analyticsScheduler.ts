@@ -17,21 +17,23 @@ function msUntilNextRun(): number {
     return next.getTime() - now.getTime();
 }
 
-/** Schedule the next run, then re-schedule after it fires (no drift accumulation). */
-function scheduleNext(): void {
+/** Schedule the next run, then re-schedule after it fires (no drift accumulation). Returns ms delay. */
+function scheduleNext(): number {
     const delay = msUntilNextRun();
-    logger.info(`[AnalyticsScheduler] Next run scheduled in ${Math.round(delay / 60_000)} min`);
+    logger.debug(`[AnalyticsScheduler] Next run in ${Math.round(delay / 60_000)} min`);
     timeoutId = setTimeout(() => {
         runDailyMaintenance().catch((err) => logger.warn('[AnalyticsScheduler] Daily maintenance failed', err));
         scheduleNext();
     }, delay);
+    return delay;
 }
 
-export function startAnalyticsScheduler(): void {
-    if (timeoutId) return;
-    scheduleNext();
+export function startAnalyticsScheduler(): number {
+    if (timeoutId) return 0;
+    const delay = scheduleNext();
     // Also run immediately at startup to catch up any missed day.
     runDailyMaintenance().catch((err) => logger.warn('[AnalyticsScheduler] Startup maintenance failed', err));
+    return Math.round(delay / 60_000);
 }
 
 export function stopAnalyticsScheduler(): void {

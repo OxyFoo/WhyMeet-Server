@@ -1,22 +1,22 @@
 import { logger } from '@/config/logger';
 import { getDatabase } from '@/services/database';
-import { getAncestorIntentionKeys, type SearchFilters, type IntentionKey } from '@oxyfoo/whymeet-types';
+import type { SearchFilters, IntentionKey } from '@oxyfoo/whymeet-types';
 import { normalizeActiveIntentionKeys } from '@/services/intentionKeys';
 
-export function expandSelectedIntentionKeys(keys?: readonly string[] | null): IntentionKey[] {
-    const requested = normalizeActiveIntentionKeys(keys);
-    const enriched = new Set<IntentionKey>();
-
-    for (const key of requested) {
-        for (const ancestorKey of getAncestorIntentionKeys(key)) enriched.add(ancestorKey);
-        enriched.add(key);
-    }
-
-    return [...enriched];
+/**
+ * Profile intentionKeys storage is now strict: we store exactly what the user
+ * selected, with no ancestor/descendant expansion. Expansion only happens on
+ * the query side when matching a category filter against all of its leaves.
+ *
+ * This avoids the symmetric-expansion bug where two siblings of the same
+ * category matched each other through a shared ancestor.
+ */
+export function normalizeProfileIntentionKeys(keys?: readonly string[] | null): IntentionKey[] {
+    return normalizeActiveIntentionKeys(keys);
 }
 
 function getSearchedIntentionKeys(filters?: SearchFilters): IntentionKey[] {
-    return expandSelectedIntentionKeys(
+    return normalizeProfileIntentionKeys(
         filters?.intentionKeys ?? (filters?.intentionKey ? [filters.intentionKey] : undefined)
     );
 }
