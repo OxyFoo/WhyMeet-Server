@@ -11,6 +11,7 @@ import { useSwipeQuota } from '@/services/swipeQuotaService';
 import { addExcluded } from '@/services/excludeCache';
 import { validateIntentionSelection } from '@/config/validation';
 import { normalizeActiveIntentionSelection } from '@/services/intentionKeys';
+import { enrichProfileIntentionFromLike } from '@/services/intentionProfileEnrichment';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise<WSResponse_Like> => {
@@ -58,6 +59,11 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
             update: intentionData,
             create: { senderId: client.userId, receiverId: candidateId, category: 'like', ...intentionData }
         });
+
+        // Auto-add the intention to the liker's profile if they don't have it yet
+        const intentionAdded = selectedIntention
+            ? await enrichProfileIntentionFromLike(client.userId, selectedIntention.key)
+            : false;
 
         // Check for mutual match (did the other person also like us?)
         const reverse = await db.match.findFirst({
@@ -142,7 +148,7 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
             }
 
             logger.info(`[Discovery] Mutual match: ${client.userId} <-> ${candidateId}`);
-            return { command: 'like', payload: { matched: true, conversationId: conversation.id } };
+            return { command: 'like', payload: { matched: true, conversationId: conversation.id, intentionAdded } };
         }
 
         // Increment vibes count for the receiver (they received a like)
@@ -195,7 +201,7 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
         }
 
         logger.debug(`[Discovery] User ${client.userId} liked ${candidateId}`);
-        return { command: 'like', payload: { matched: false } };
+        return { command: 'like', payload: { matched: false, intentionAdded } };
     } catch (error) {
         logger.error('[Discovery] Like error', error);
         return { command: 'like', payload: { error: 'Internal error' } };

@@ -53,3 +53,34 @@ export async function enrichProfileIntentionsFromFilters(userId: string, filters
         logger.warn(`[Profile] Failed to enrich intentions for ${userId}`, error);
     }
 }
+
+/**
+ * Called when a user likes someone in the context of a specific intention.
+ * Adds the intention to the liker's profile if not already present.
+ * Returns true if the intention was newly added, false if it was already there.
+ */
+export async function enrichProfileIntentionFromLike(userId: string, intentionKey: IntentionKey): Promise<boolean> {
+    try {
+        const db = getDatabase();
+        const profile = await db.profile.findUnique({
+            where: { userId },
+            select: { intentionKeys: true }
+        });
+
+        const currentKeys = new Set(normalizeActiveIntentionKeys(profile?.intentionKeys ?? []));
+        if (currentKeys.has(intentionKey)) return false;
+
+        const nextKeys = [...currentKeys, intentionKey];
+        await db.profile.upsert({
+            where: { userId },
+            update: { intentionKeys: nextKeys },
+            create: { userId, intentionKeys: nextKeys }
+        });
+
+        logger.info(`[Profile] Intention "${intentionKey}" added from like for user ${userId}`);
+        return true;
+    } catch (error) {
+        logger.warn(`[Profile] Failed to add intention from like for user ${userId}`, error);
+        return false;
+    }
+}
