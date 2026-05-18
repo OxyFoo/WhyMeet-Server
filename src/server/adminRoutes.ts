@@ -665,7 +665,23 @@ export function createAdminRouter(): Router {
                     const [allParticipants, messages] = await Promise.all([
                         db.conversationParticipant.findMany({
                             where: { conversationId },
-                            select: { userId: true }
+                            select: {
+                                userId: true,
+                                user: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        deleted: true,
+                                        banned: true,
+                                        suspended: true,
+                                        photos: {
+                                            orderBy: { position: 'asc' },
+                                            take: 1,
+                                            select: { key: true, keyBlurred: true }
+                                        }
+                                    }
+                                }
+                            }
                         }),
                         db.message.findMany({
                             where: { conversationId },
@@ -674,9 +690,20 @@ export function createAdminRouter(): Router {
                         })
                     ]);
                     messages.reverse();
+                    const lastMessageAt =
+                        messages.length > 0 ? messages[messages.length - 1].timestamp.toISOString() : null;
                     return {
                         conversationId,
-                        participantIds: allParticipants.map((p) => p.userId),
+                        lastMessageAt,
+                        participants: allParticipants.map((p) => ({
+                            id: p.user.id,
+                            name: p.user.name,
+                            photoKey: p.user.photos[0]?.key ?? null,
+                            photoKeyBlurred: p.user.photos[0]?.keyBlurred ?? null,
+                            deleted: p.user.deleted ?? false,
+                            banned: p.user.banned ?? false,
+                            suspended: p.user.suspended ?? false
+                        })),
                         messages: messages.map((m) => ({
                             id: m.id,
                             senderId: m.senderId,
@@ -687,6 +714,13 @@ export function createAdminRouter(): Router {
                     };
                 })
             );
+
+            // Sort: most recent activity first (fallback to original order).
+            conversations.sort((a, b) => {
+                const at = a.lastMessageAt ? Date.parse(a.lastMessageAt) : 0;
+                const bt = b.lastMessageAt ? Date.parse(b.lastMessageAt) : 0;
+                return bt - at;
+            });
 
             res.json({ conversations });
         } catch (err) {
