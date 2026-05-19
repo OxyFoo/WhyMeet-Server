@@ -870,7 +870,8 @@ export function createAdminRouter(): Router {
     const prepareBotsSchema = z.object({
         count: z.number().int().min(1).max(500),
         completeProfile: z.boolean().default(true),
-        excludeUserIds: z.array(z.string().min(1)).max(500).default([])
+        excludeUserIds: z.array(z.string().min(1)).max(500).default([]),
+        noReuse: z.boolean().default(false)
     });
     const releaseBotsSchema = z.object({
         userIds: z.array(z.string().min(1)).max(500)

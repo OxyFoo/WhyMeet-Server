@@ -252,6 +252,7 @@ export interface SpawnBotOptions {
 export interface PrepareBotsOptions extends SpawnBotOptions {
     count: number;
     excludeUserIds?: string[];
+    noReuse?: boolean;
 }
 
 export interface PreparedBotsResult {
@@ -449,6 +450,7 @@ export async function prepareBots(opts: PrepareBotsOptions): Promise<PreparedBot
     const db = getDatabase();
     const count = Math.max(1, Math.floor(opts.count));
     const reusableBots = await withStressBotSelectionLock(async () => {
+        if (opts.noReuse) return [];
         const connectedUserIds = [...getConnectedClients().values()].map((client) => client.userId);
         const reservedUserIds = getReservedStressBotUserIds();
         const excludeUserIds = [
