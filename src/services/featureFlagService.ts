@@ -13,7 +13,11 @@ const DEFAULTS: Record<string, boolean> = {
     // longer isolated — bots see real users (and vice-versa) across all
     // discovery surfaces (people, activities, search). When OFF (default),
     // the symmetric `bot=viewer.bot` filter applies everywhere.
-    'stresstest.bot_user_mixing': false
+    'stresstest.bot_user_mixing': false,
+    // Emergency kill-switch for Firebase push notifications. When ON,
+    // pushToUser() and broadcastPush() short-circuit before any FCM call.
+    // Does NOT touch in-app notifications (DB rows, WS delivery).
+    'notifications.disabled': false
 };
 
 export type FeatureFlagKey = keyof typeof DEFAULTS;

@@ -19,6 +19,7 @@ import { invalidateAllPipelineSetup } from '@/services/pipelineSetupCache';
 import { getConnectedClients } from '@/server/Server';
 import { getDatabase } from '@/services/database';
 import { broadcastPush } from '@/services/pushService';
+import { processScheduledNotif } from '@/services/activityNotifScheduler';
 import {
     spawnBot,
     prepareBots,
@@ -32,7 +33,7 @@ import { safeDecryptText } from '@/services/messageEncryption';
 import { getStorageStats } from '@/services/storageService';
 import { deleteImagePair } from '@/services/photoStorageService';
 
-const FEATURE_FLAG_KEYS = ['mapbox', 'stresstest.bot_user_mixing'] as const;
+const FEATURE_FLAG_KEYS = ['mapbox', 'stresstest.bot_user_mixing', 'notifications.disabled'] as const;
 const featureFlagKeySchema = z.enum(FEATURE_FLAG_KEYS);
 
 // ─── HMAC verification middleware ────────────────────────────────────
@@ -378,6 +379,301 @@ export function createAdminRouter(): Router {
         } catch (err) {
             logger.error('[AdminAPI] broadcast failed', err);
             res.status(500).json({ error: 'broadcast_failed' });
+        }
+    });
+
+    // ─── Notifications (overview + moderation) ───────────────────────
+    const notificationsListSchema = z.object({
+        status: z.enum(['scheduled', 'sent', 'all']).optional().default('scheduled'),
+        type: z.string().min(1).max(64).optional(),
+        userId: z.string().min(1).optional(),
+        activityId: z.string().min(1).optional(),
+        q: z.string().min(1).max(200).optional(),
+        from: z.string().datetime().optional(),
+        to: z.string().datetime().optional(),
+        page: z.coerce.number().int().min(1).default(1),
+        pageSize: z.coerce.number().int().min(1).max(200).default(50)
+    });
+
+    router.get('/notifications', async (req, res) => {
+        const parsed = notificationsListSchema.safeParse(req.query);
+        if (!parsed.success) {
+            res.status(400).json({ error: 'invalid_query' });
+            return;
+        }
+        const { status, type, userId, activityId, q, from, to, page, pageSize } = parsed.data;
+        const fromDate = from ? new Date(from) : undefined;
+        const toDate = to ? new Date(to) : undefined;
+        const db = getDatabase();
+
+        try {
+            // Build common predicates. `q` is a unified search that matches
+            // title/body/userId/userEmail/userName/activityId — same UX as the users
+            // page so the admin doesn't need separate ID filters.
+            const textWhere = q
+                ? {
+                      OR: [
+                          { title: { contains: q, mode: 'insensitive' as const } },
+                          { body: { contains: q, mode: 'insensitive' as const } },
+                          { userId: { equals: q } },
+                          { activityId: { equals: q } },
+                          { user: { email: { contains: q, mode: 'insensitive' as const } } },
+                          { user: { name: { contains: q, mode: 'insensitive' as const } } }
+                      ]
+                  }
+                : {};
+
+            type Row = {
+                id: string;
+                source: 'scheduled' | 'sent';
+                type: string;
+                title: string;
+                body: string;
+                userId: string | null;
+                userName: string | null;
+                userEmail: string | null;
+                activityId: string | null;
+                activityTitle: string | null;
+                scheduledAt: string | null;
+                sentAt: string | null;
+                createdAt: string;
+                read: boolean | null;
+            };
+
+            const rows: Row[] = [];
+            let total = 0;
+
+            // Scheduled branch
+            if (status === 'scheduled' || status === 'all') {
+                const where: Record<string, unknown> = { sent: false };
+                if (type) where.type = type;
+                if (activityId) where.activityId = activityId;
+                if (fromDate || toDate) {
+                    where.scheduledAt = {
+                        ...(fromDate ? { gte: fromDate } : {}),
+                        ...(toDate ? { lte: toDate } : {})
+                    };
+                }
+                if (userId) {
+                    where.activity = { participants: { some: { userId } } };
+                }
+
+                const [scheduled, scheduledCount] = await Promise.all([
+                    db.activityScheduledNotif.findMany({
+                        where,
+                        orderBy: { scheduledAt: 'asc' },
+                        take: pageSize * 5, // pre-load some for merging when status='all'
+                        include: {
+                            activity: { select: { id: true, title: true } }
+                        }
+                    }),
+                    db.activityScheduledNotif.count({ where })
+                ]);
+
+                total += scheduledCount;
+
+                for (const s of scheduled) {
+                    if (q) {
+                        const ql = q.toLowerCase();
+                        const title = s.activity?.title ?? '';
+                        const matchesTitle = title.toLowerCase().includes(ql);
+                        const matchesActivityId = s.activityId === q;
+                        if (!matchesTitle && !matchesActivityId) continue;
+                    }
+                    rows.push({
+                        id: s.id,
+                        source: 'scheduled',
+                        type: s.type,
+                        title: s.activity?.title ?? '(activité supprimée)',
+                        body: `Rappel ${s.type} pour l'activité`,
+                        userId: null,
+                        userName: null,
+                        userEmail: null,
+                        activityId: s.activityId,
+                        activityTitle: s.activity?.title ?? null,
+                        scheduledAt: s.scheduledAt.toISOString(),
+                        sentAt: s.sentAt ? s.sentAt.toISOString() : null,
+                        createdAt: s.scheduledAt.toISOString(),
+                        read: null
+                    });
+                }
+            }
+
+            // Sent branch (DB notifications already dispatched)
+            if (status === 'sent' || status === 'all') {
+                const where: Record<string, unknown> = { ...textWhere };
+                if (type) where.type = type;
+                if (activityId) where.activityId = activityId;
+                if (userId) where.userId = userId;
+                if (fromDate || toDate) {
+                    where.createdAt = {
+                        ...(fromDate ? { gte: fromDate } : {}),
+                        ...(toDate ? { lte: toDate } : {})
+                    };
+                }
+
+                const [sent, sentCount] = await Promise.all([
+                    db.notification.findMany({
+                        where,
+                        orderBy: { createdAt: 'desc' },
+                        skip: status === 'sent' ? (page - 1) * pageSize : 0,
+                        take: pageSize * 2,
+                        include: {
+                            user: { select: { id: true, name: true, email: true } }
+                        }
+                    }),
+                    db.notification.count({ where })
+                ]);
+
+                total += sentCount;
+
+                for (const n of sent) {
+                    rows.push({
+                        id: n.id,
+                        source: 'sent',
+                        type: n.type,
+                        title: n.title,
+                        body: n.body,
+                        userId: n.userId,
+                        userName: n.user?.name ?? null,
+                        userEmail: n.user?.email ?? null,
+                        activityId: n.activityId,
+                        activityTitle: null,
+                        scheduledAt: null,
+                        sentAt: n.createdAt.toISOString(),
+                        createdAt: n.createdAt.toISOString(),
+                        read: n.read
+                    });
+                }
+            }
+
+            // Sort merged rows by date desc (scheduled first if status='scheduled', else by sent date)
+            rows.sort((a, b) => {
+                const da = a.source === 'scheduled' ? (a.scheduledAt ?? a.createdAt) : (a.sentAt ?? a.createdAt);
+                const dbb = b.source === 'scheduled' ? (b.scheduledAt ?? b.createdAt) : (b.sentAt ?? b.createdAt);
+                // For pending scheduled: ascending (soonest first). For sent/all: descending.
+                if (status === 'scheduled') return da.localeCompare(dbb);
+                return dbb.localeCompare(da);
+            });
+
+            // Paginate merged result
+            const start = (page - 1) * pageSize;
+            const items = rows.slice(start, start + pageSize);
+
+            res.json({ items, total, page, pageSize });
+        } catch (err) {
+            logger.error('[AdminAPI] notifications list failed', err);
+            res.status(500).json({ error: 'notifications_list_failed' });
+        }
+    });
+
+    router.get('/notifications/stats', async (_req, res) => {
+        const db = getDatabase();
+        const now = new Date();
+        const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        const since7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const since30d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+        try {
+            const [
+                scheduledPending,
+                sentTotal,
+                sent24h,
+                sent7d,
+                sent30d,
+                byTypeRaw,
+                distinctSentTypes,
+                distinctScheduledTypes
+            ] = await Promise.all([
+                db.activityScheduledNotif.count({ where: { sent: false } }),
+                db.notification.count(),
+                db.notification.count({ where: { createdAt: { gte: since24h } } }),
+                db.notification.count({ where: { createdAt: { gte: since7d } } }),
+                db.notification.count({ where: { createdAt: { gte: since30d } } }),
+                db.notification.groupBy({
+                    by: ['type'],
+                    _count: { _all: true },
+                    orderBy: { _count: { type: 'desc' } },
+                    take: 20
+                }),
+                db.notification.findMany({
+                    distinct: ['type'],
+                    select: { type: true },
+                    orderBy: { type: 'asc' }
+                }),
+                db.activityScheduledNotif.findMany({
+                    distinct: ['type'],
+                    select: { type: true },
+                    orderBy: { type: 'asc' }
+                })
+            ]);
+
+            const byType: Record<string, number> = {};
+            for (const row of byTypeRaw) byType[row.type] = row._count._all;
+
+            const availableTypes = Array.from(
+                new Set([...distinctSentTypes.map((r) => r.type), ...distinctScheduledTypes.map((r) => r.type)])
+            ).sort();
+
+            const killSwitchEnabled = await isFeatureEnabled('notifications.disabled');
+
+            res.json({
+                scheduledPending,
+                sentTotal,
+                sent24h,
+                sent7d,
+                sent30d,
+                byType,
+                availableTypes,
+                killSwitchEnabled
+            });
+        } catch (err) {
+            logger.error('[AdminAPI] notifications stats failed', err);
+            res.status(500).json({ error: 'notifications_stats_failed' });
+        }
+    });
+
+    router.delete('/notifications/scheduled/:id', async (req, res) => {
+        const id = String(req.params.id ?? '');
+        if (!id) {
+            res.status(400).json({ error: 'invalid_id' });
+            return;
+        }
+        const db = getDatabase();
+        try {
+            const row = await db.activityScheduledNotif.findUnique({ where: { id }, select: { sent: true } });
+            if (!row) {
+                res.status(404).json({ error: 'not_found' });
+                return;
+            }
+            if (row.sent) {
+                res.status(409).json({ error: 'already_sent' });
+                return;
+            }
+            await db.activityScheduledNotif.delete({ where: { id } });
+            res.json({ ok: true });
+        } catch (err) {
+            logger.error('[AdminAPI] notifications scheduled delete failed', err);
+            res.status(500).json({ error: 'delete_failed' });
+        }
+    });
+
+    router.post('/notifications/scheduled/:id/send-now', async (req, res) => {
+        const id = String(req.params.id ?? '');
+        if (!id) {
+            res.status(400).json({ error: 'invalid_id' });
+            return;
+        }
+        try {
+            const outcome = await processScheduledNotif(id);
+            if (outcome === 'not_found') {
+                res.status(404).json({ error: 'not_found' });
+                return;
+            }
+            res.json({ outcome });
+        } catch (err) {
+            logger.error('[AdminAPI] notifications scheduled send-now failed', err);
+            res.status(500).json({ error: 'send_now_failed' });
         }
     });
 

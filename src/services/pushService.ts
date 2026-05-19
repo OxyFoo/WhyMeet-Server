@@ -2,6 +2,7 @@ import admin from 'firebase-admin';
 import { env } from '@/config/env';
 import { logger } from '@/config/logger';
 import { getDatabase } from '@/services/database';
+import { isFeatureEnabled } from '@/services/featureFlagService';
 import { isUserConnected } from '@/server/Server';
 
 let initialized = false;
@@ -44,6 +45,10 @@ const NOTIF_TYPE_TO_SETTING: Record<NotifType, string> = {
  */
 export async function pushToUser(userId: string, payload: PushPayload, notifType?: NotifType): Promise<void> {
     if (isUserConnected(userId)) return;
+    if (await isFeatureEnabled('notifications.disabled')) {
+        logger.info(`[Push] Globally disabled (kill-switch), skipping push to user ${userId}`);
+        return;
+    }
     if (!ensureInitialized()) return;
 
     const db = getDatabase();
@@ -137,6 +142,10 @@ export async function pushToUser(userId: string, payload: PushPayload, notifType
 export async function broadcastPush(
     payload: PushPayload & { userIds?: string[] }
 ): Promise<{ success: number; failure: number; total: number }> {
+    if (await isFeatureEnabled('notifications.disabled')) {
+        logger.info('[Push] Globally disabled (kill-switch), skipping broadcastPush');
+        return { success: 0, failure: 0, total: 0 };
+    }
     if (!ensureInitialized()) return { success: 0, failure: 0, total: 0 };
     const db = getDatabase();
     const targetUserIds = payload.userIds && payload.userIds.length > 0 ? payload.userIds : undefined;
