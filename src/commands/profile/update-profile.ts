@@ -14,7 +14,10 @@ import { invalidateActivityCatalogCache, invalidateActivityDiscoveryCache } from
 import { logAudit } from '@/services/auditLogService';
 import { isProfileComplete } from '@/services/profileCompletion';
 import { prepareUserTagSync, replaceUserTags } from '@/services/userTagSync';
-import { normalizeProfileIntentionKeys } from '@/services/intentionProfileEnrichment';
+import {
+    normalizeProfileIntentionKeys,
+    getParentCategoryKeysForIntentions
+} from '@/services/intentionProfileEnrichment';
 import { normalizeActiveIntentionCategoryKeys, normalizeActiveIntentionKeys } from '@/services/intentionKeys';
 
 class ProfileWouldBecomeIncompleteError extends Error {
@@ -179,6 +182,31 @@ registerCommand<WSRequest_UpdateProfile>(
                 }
                 if (data.intentionCategoryKeys !== undefined) {
                     profileData.intentionCategoryKeys = normalizedIntentionCategoryKeys;
+                }
+
+                // Auto-add parent categories for every intention being saved.
+                // Rule: adding an intention anywhere MUST also add its parent
+                // category so category-level discovery surfaces the user.
+                if (data.intentionKeys !== undefined) {
+                    const parentCategories = getParentCategoryKeysForIntentions(normalizedIntentionKeys);
+                    if (parentCategories.length > 0) {
+                        // Base categories: those being submitted in this same
+                        // request if any, otherwise the current persisted set.
+                        let baseCategories: string[];
+                        if (data.intentionCategoryKeys !== undefined) {
+                            baseCategories = normalizedIntentionCategoryKeys;
+                        } else {
+                            const existing = await tx.profile.findUnique({
+                                where: { userId: client.userId },
+                                select: { intentionCategoryKeys: true }
+                            });
+                            baseCategories = normalizeActiveIntentionCategoryKeys(
+                                existing?.intentionCategoryKeys ?? []
+                            );
+                        }
+                        const merged = Array.from(new Set([...baseCategories, ...parentCategories]));
+                        profileData.intentionCategoryKeys = merged;
+                    }
                 }
                 if (data.spokenLanguages !== undefined) profileData.spokenLanguages = data.spokenLanguages;
 
