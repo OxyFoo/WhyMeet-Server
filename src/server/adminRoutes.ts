@@ -686,12 +686,69 @@ export function createAdminRouter(): Router {
     // its own audit log entry; this endpoint just enforces hard size limits.
     const MAX_CONVERSATIONS = 50;
     const MAX_MESSAGES_PER_CONVERSATION = 200;
+
+    // Shared per-conversation loader: decrypts messages, returns the same shape
+    // both endpoints below produce. Defined as a closure so it shares the
+    // request `db` instance via the outer call site.
+    async function loadConversationView(db: ReturnType<typeof getDatabase>, conversationId: string) {
+        const [allParticipants, messages] = await Promise.all([
+            db.conversationParticipant.findMany({
+                where: { conversationId },
+                select: {
+                    userId: true,
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            deleted: true,
+                            banned: true,
+                            suspended: true,
+                            photos: {
+                                orderBy: { position: 'asc' },
+                                take: 1,
+                                select: { key: true, keyBlurred: true }
+                            }
+                        }
+                    }
+                }
+            }),
+            db.message.findMany({
+                where: { conversationId },
+                orderBy: { timestamp: 'desc' },
+                take: MAX_MESSAGES_PER_CONVERSATION
+            })
+        ]);
+        messages.reverse();
+        const lastMessageAt = messages.length > 0 ? messages[messages.length - 1].timestamp.toISOString() : null;
+        return {
+            conversationId,
+            lastMessageAt,
+            participants: allParticipants.map((p) => ({
+                id: p.user.id,
+                name: p.user.name,
+                photoKey: p.user.photos[0]?.key ?? null,
+                photoKeyBlurred: p.user.photos[0]?.keyBlurred ?? null,
+                deleted: p.user.deleted ?? false,
+                banned: p.user.banned ?? false,
+                suspended: p.user.suspended ?? false
+            })),
+            messages: messages.map((m) => ({
+                id: m.id,
+                senderId: m.senderId,
+                text: m.type === 'text' ? safeDecryptText(m.text) : '',
+                type: m.type,
+                timestamp: m.timestamp.toISOString()
+            }))
+        };
+    }
+
     router.get('/users/:userId/messages', async (req, res) => {
         const userId = String(req.params.userId ?? '');
         if (!userId) {
             res.status(400).json({ error: 'invalid_user_id' });
             return;
         }
+
         const db = getDatabase();
         try {
             const participants = await db.conversationParticipant.findMany({
@@ -699,64 +756,12 @@ export function createAdminRouter(): Router {
                 select: { conversationId: true, conversation: { select: { createdAt: true } } },
                 take: MAX_CONVERSATIONS * 4 // overscan; final order resolved below
             });
+
             // Sort by most recently created conversation first, then cap.
             participants.sort((a, b) => b.conversation.createdAt.getTime() - a.conversation.createdAt.getTime());
             const conversationIds = participants.slice(0, MAX_CONVERSATIONS).map((p) => p.conversationId);
 
-            const conversations = await Promise.all(
-                conversationIds.map(async (conversationId) => {
-                    const [allParticipants, messages] = await Promise.all([
-                        db.conversationParticipant.findMany({
-                            where: { conversationId },
-                            select: {
-                                userId: true,
-                                user: {
-                                    select: {
-                                        id: true,
-                                        name: true,
-                                        deleted: true,
-                                        banned: true,
-                                        suspended: true,
-                                        photos: {
-                                            orderBy: { position: 'asc' },
-                                            take: 1,
-                                            select: { key: true, keyBlurred: true }
-                                        }
-                                    }
-                                }
-                            }
-                        }),
-                        db.message.findMany({
-                            where: { conversationId },
-                            orderBy: { timestamp: 'desc' },
-                            take: MAX_MESSAGES_PER_CONVERSATION
-                        })
-                    ]);
-                    messages.reverse();
-                    const lastMessageAt =
-                        messages.length > 0 ? messages[messages.length - 1].timestamp.toISOString() : null;
-                    return {
-                        conversationId,
-                        lastMessageAt,
-                        participants: allParticipants.map((p) => ({
-                            id: p.user.id,
-                            name: p.user.name,
-                            photoKey: p.user.photos[0]?.key ?? null,
-                            photoKeyBlurred: p.user.photos[0]?.keyBlurred ?? null,
-                            deleted: p.user.deleted ?? false,
-                            banned: p.user.banned ?? false,
-                            suspended: p.user.suspended ?? false
-                        })),
-                        messages: messages.map((m) => ({
-                            id: m.id,
-                            senderId: m.senderId,
-                            text: m.type === 'text' ? safeDecryptText(m.text) : '',
-                            type: m.type,
-                            timestamp: m.timestamp.toISOString()
-                        }))
-                    };
-                })
-            );
+            const conversations = await Promise.all(conversationIds.map((id) => loadConversationView(db, id)));
 
             // Sort: most recent activity first (fallback to original order).
             conversations.sort((a, b) => {
@@ -768,6 +773,41 @@ export function createAdminRouter(): Router {
             res.json({ conversations });
         } catch (err) {
             logger.error('[AdminAPI] user messages fetch failed', err);
+            res.status(500).json({ error: 'fetch_failed' });
+        }
+    });
+
+    // Activity moderation: fetch the group conversation attached to an activity
+    // (if any). Same audit semantics as the user endpoint — the console gates
+    // and writes the audit log.
+    router.get('/activities/:activityId/messages', async (req, res) => {
+        const activityId = String(req.params.activityId ?? '');
+        if (!activityId) {
+            res.status(400).json({ error: 'invalid_activity_id' });
+            return;
+        }
+
+        const db = getDatabase();
+        try {
+            const activity = await db.activity.findUnique({
+                where: { id: activityId },
+                select: { conversationId: true }
+            });
+
+            if (!activity) {
+                res.status(404).json({ error: 'activity_not_found' });
+                return;
+            }
+
+            if (!activity.conversationId) {
+                res.json({ conversation: null });
+                return;
+            }
+
+            const conversation = await loadConversationView(db, activity.conversationId);
+            res.json({ conversation });
+        } catch (err) {
+            logger.error('[AdminAPI] activity messages fetch failed', err);
             res.status(500).json({ error: 'fetch_failed' });
         }
     });
