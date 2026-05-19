@@ -32,6 +32,10 @@ import { runTagPromotionPass } from '@/services/tagPromotion';
 import { safeDecryptText } from '@/services/messageEncryption';
 import { getStorageStats } from '@/services/storageService';
 import { deleteImagePair } from '@/services/photoStorageService';
+import {
+    AdminProfileResetUserNotFoundError,
+    resetUserProfileToInitialState
+} from '@/services/adminProfileResetService';
 
 const FEATURE_FLAG_KEYS = ['mapbox', 'stresstest.bot_user_mixing', 'notifications.disabled'] as const;
 const featureFlagKeySchema = z.enum(FEATURE_FLAG_KEYS);
@@ -684,33 +688,18 @@ export function createAdminRouter(): Router {
             res.status(400).json({ error: 'invalid_payload' });
             return;
         }
-        const db = getDatabase();
         try {
-            await db.$transaction([
-                db.user.update({
-                    where: { id: parsed.data.userId },
-                    data: { name: '', birthDate: null, gender: '', city: '' }
-                }),
-                db.profile.updateMany({
-                    where: { userId: parsed.data.userId },
-                    data: {
-                        bio: '',
-                        country: '',
-                        region: '',
-                        city: '',
-                        latitude: null,
-                        longitude: null,
-                        intentionKeys: []
-                    }
-                }),
-                db.profilePhoto.deleteMany({ where: { userId: parsed.data.userId } })
-            ]);
+            const result = await resetUserProfileToInitialState(parsed.data.userId);
             // Kick all connections for this user to force re-sync
             for (const client of getConnectedClients().values()) {
                 if (client.userId === parsed.data.userId) client.close(4002, 'Profile reset');
             }
-            res.json({ ok: true });
+            res.json(result);
         } catch (err) {
+            if (err instanceof AdminProfileResetUserNotFoundError) {
+                res.status(404).json({ error: 'user_not_found' });
+                return;
+            }
             logger.error('[AdminAPI] reset-profile failed', err);
             res.status(500).json({ error: 'reset_failed' });
         }
