@@ -596,11 +596,21 @@ export async function cleanupBots(): Promise<CleanupResult> {
     // older local-test leftovers may still use stresstest/<userId>/.
     const botPhotos = await db.profilePhoto.findMany({
         where: { userId: { in: botIds } },
-        select: { key: true }
+        select: { key: true, keyBlurred: true }
     });
-    const s3Deletions = botPhotos
-        .filter((p: { key: string }) => !/^https?:\/\//i.test(p.key))
-        .map((p: { key: string }) => deleteFile(p.key));
+
+    // Also collect activity photos for bot-hosted activities before the cascade drops them.
+    const botActivityPhotos = await db.activityPhoto.findMany({
+        where: { activity: { hostId: { in: botIds } } },
+        select: { key: true, keyBlurred: true }
+    });
+
+    const s3Deletions = [
+        ...botPhotos.flatMap((p) => [p.key, p.keyBlurred]),
+        ...botActivityPhotos.flatMap((p) => [p.key, p.keyBlurred])
+    ]
+        .filter((k) => !/^https?:\/\//i.test(k))
+        .map((k) => deleteFile(k));
     await Promise.allSettled(s3Deletions);
 
     // Actual user delete:
