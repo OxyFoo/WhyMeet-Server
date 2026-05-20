@@ -4,6 +4,7 @@ import os from 'os';
 import fs from 'fs';
 import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
+import type { Prisma } from '@prisma/client';
 
 import { env } from '@/config/env';
 import { logger, listLogFiles, readLogFile } from '@/config/logger';
@@ -1095,6 +1096,149 @@ export function createAdminRouter(): Router {
         } catch (err) {
             logger.error('[AdminAPI] activity messages fetch failed', err);
             res.status(500).json({ error: 'fetch_failed' });
+        }
+    });
+
+    // ─── Suspicious activity (bot detection) ──────────────────────
+
+    router.get('/suspicious/count', async (_req, res) => {
+        const db = getDatabase();
+        try {
+            const [open, acknowledged, resolved] = await Promise.all([
+                db.suspiciousActivity.count({
+                    where: { resolvedAt: null, acknowledgedAt: null }
+                }),
+                db.suspiciousActivity.count({
+                    where: { resolvedAt: null, acknowledgedAt: { not: null } }
+                }),
+                db.suspiciousActivity.count({ where: { resolvedAt: { not: null } } })
+            ]);
+            res.json({ open, acknowledged, resolved });
+        } catch (err) {
+            logger.error('[AdminAPI] suspicious count failed', err);
+            res.status(500).json({ error: 'count_failed' });
+        }
+    });
+
+    router.get('/suspicious/list', async (req, res) => {
+        const statusParam = String(req.query.status ?? 'open');
+        const status =
+            statusParam === 'open' ||
+            statusParam === 'acknowledged' ||
+            statusParam === 'resolved' ||
+            statusParam === 'all'
+                ? statusParam
+                : 'open';
+        const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+        const offset = Math.max(0, Number(req.query.offset) || 0);
+
+        let where: Prisma.SuspiciousActivityWhereInput = {};
+        if (status === 'open') where = { resolvedAt: null, acknowledgedAt: null };
+        else if (status === 'acknowledged') where = { resolvedAt: null, acknowledgedAt: { not: null } };
+        else if (status === 'resolved') where = { resolvedAt: { not: null } };
+
+        const db = getDatabase();
+        try {
+            const [rows, total] = await Promise.all([
+                db.suspiciousActivity.findMany({
+                    where,
+                    orderBy: [{ score: 'desc' }, { lastDetectedAt: 'desc' }],
+                    skip: offset,
+                    take: limit,
+                    include: {
+                        user: {
+                            select: {
+                                id: true,
+                                email: true,
+                                name: true,
+                                createdAt: true,
+                                banned: true,
+                                suspended: true
+                            }
+                        }
+                    }
+                }),
+                db.suspiciousActivity.count({ where })
+            ]);
+
+            const records = rows.map((r) => ({
+                id: r.id,
+                userId: r.userId,
+                userEmail: r.user.email,
+                userName: r.user.name,
+                userCreatedAt: r.user.createdAt.toISOString(),
+                userBanned: r.user.banned,
+                userSuspended: r.user.suspended,
+                score: r.score,
+                signals: r.signals,
+                firstDetectedAt: r.firstDetectedAt.toISOString(),
+                lastDetectedAt: r.lastDetectedAt.toISOString(),
+                acknowledgedAt: r.acknowledgedAt ? r.acknowledgedAt.toISOString() : null,
+                acknowledgedByAdminId: r.acknowledgedByAdminId,
+                resolvedAt: r.resolvedAt ? r.resolvedAt.toISOString() : null,
+                resolvedByAdminId: r.resolvedByAdminId,
+                notes: r.notes
+            }));
+            res.json({ records, total });
+        } catch (err) {
+            logger.error('[AdminAPI] suspicious list failed', err);
+            res.status(500).json({ error: 'list_failed' });
+        }
+    });
+
+    router.post('/suspicious/:id/acknowledge', async (req, res) => {
+        const id = String(req.params.id ?? '');
+        const body = getJson<{ adminId?: string; notes?: string }>(req);
+        if (!id || !body.adminId) {
+            res.status(400).json({ error: 'invalid_request' });
+            return;
+        }
+        const db = getDatabase();
+        try {
+            const updated = await db.suspiciousActivity.update({
+                where: { id },
+                data: {
+                    acknowledgedAt: new Date(),
+                    acknowledgedByAdminId: body.adminId,
+                    notes: body.notes ?? undefined
+                }
+            });
+            res.json({ ok: true, id: updated.id });
+        } catch (err) {
+            if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === 'P2025') {
+                res.status(404).json({ error: 'not_found' });
+                return;
+            }
+            logger.error('[AdminAPI] suspicious acknowledge failed', err);
+            res.status(500).json({ error: 'acknowledge_failed' });
+        }
+    });
+
+    router.post('/suspicious/:id/resolve', async (req, res) => {
+        const id = String(req.params.id ?? '');
+        const body = getJson<{ adminId?: string; notes?: string }>(req);
+        if (!id || !body.adminId) {
+            res.status(400).json({ error: 'invalid_request' });
+            return;
+        }
+        const db = getDatabase();
+        try {
+            const updated = await db.suspiciousActivity.update({
+                where: { id },
+                data: {
+                    resolvedAt: new Date(),
+                    resolvedByAdminId: body.adminId,
+                    notes: body.notes ?? undefined
+                }
+            });
+            res.json({ ok: true, id: updated.id });
+        } catch (err) {
+            if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === 'P2025') {
+                res.status(404).json({ error: 'not_found' });
+                return;
+            }
+            logger.error('[AdminAPI] suspicious resolve failed', err);
+            res.status(500).json({ error: 'resolve_failed' });
         }
     });
 

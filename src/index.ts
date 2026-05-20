@@ -8,6 +8,10 @@ import { getRegisteredCommands } from '@/server/Router';
 import { startActivityNotifScheduler, stopActivityNotifScheduler } from '@/services/activityNotifScheduler';
 import { startTagPromotionScheduler, stopTagPromotionScheduler } from '@/services/tagPromotion';
 import { startAnalyticsScheduler, stopAnalyticsScheduler } from '@/services/analyticsScheduler';
+import {
+    startSuspiciousActivityScheduler,
+    stopSuspiciousActivityScheduler
+} from '@/services/suspiciousActivityService';
 import { connectRedis, disconnectRedis } from '@/services/redisService';
 
 // Register all commands
@@ -73,6 +77,10 @@ async function main(): Promise<void> {
     const analyticsNextMin = startAnalyticsScheduler();
     printService('Analytics', 'ok', `Started (daily at 03:00 UTC, next in ${analyticsNextMin} min)`);
 
+    // Start suspicious activity / bot detection scheduler
+    startSuspiciousActivityScheduler();
+    printService('SuspiciousScan', 'ok', 'Started (15min interval, first run in 30s)');
+
     // Final ready message
     const commands = getRegisteredCommands();
     printReady(commands.length);
@@ -88,6 +96,7 @@ async function onExit(): Promise<void> {
     stopActivityNotifScheduler();
     stopTagPromotionScheduler();
     stopAnalyticsScheduler();
+    stopSuspiciousActivityScheduler();
     await stopServer();
     await disconnectRedis();
     await disconnectDatabase();

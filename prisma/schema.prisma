@@ -59,6 +59,7 @@ model User {
     badges                 UserBadge[]
     auditLogs              AuditLog[]
     feedbacks              Feedback[]
+    suspiciousActivity     SuspiciousActivity?
 
     @@index([bot])
     @@map("users")
@@ -417,6 +418,30 @@ model IpLog {
     @@index([ip])
     @@index([userId])
     @@map("ip_logs")
+}
+
+/// Bot / suspicious-activity flagging. One row per flagged user, recomputed
+/// by the periodic suspiciousActivityService scan. `signals` is a JSON map
+/// of triggered signal keys to numeric scores.
+model SuspiciousActivity {
+    id                    String    @id @default(cuid())
+    userId                String    @unique
+    score                 Int // 0..100, weighted sum of triggered signals
+    signals               Json // { [signalKey: string]: number }
+    firstDetectedAt       DateTime  @default(now())
+    lastDetectedAt        DateTime  @default(now())
+    acknowledgedAt        DateTime?
+    acknowledgedByAdminId String? // AdminUser.id (Console scope)
+    resolvedAt            DateTime?
+    resolvedByAdminId     String? // AdminUser.id (Console scope)
+    notes                 String?   @db.VarChar(1000)
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@index([score])
+    @@index([lastDetectedAt])
+    @@index([resolvedAt])
+    @@map("suspicious_activities")
 }
 
 // ─── Audit Logs ───────────────────────────────────────────────────
