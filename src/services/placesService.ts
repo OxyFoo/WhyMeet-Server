@@ -180,7 +180,7 @@ export async function searchPlaces(args: {
     suggestUrl.searchParams.set('q', query);
     suggestUrl.searchParams.set('language', language);
     suggestUrl.searchParams.set('limit', '5');
-    suggestUrl.searchParams.set('types', 'address,poi,place,street,block,locality,neighborhood,postcode');
+    suggestUrl.searchParams.set('types', 'address,poi,street');
     suggestUrl.searchParams.set('session_token', session);
     suggestUrl.searchParams.set('access_token', token);
     if (args.latitude != null && args.longitude != null) {
