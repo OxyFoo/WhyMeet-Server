@@ -8,8 +8,14 @@ registerCommand<WSRequest_GetActivities>(
     'get-activities',
     async (client: Client, payload): Promise<WSResponse_GetActivities> => {
         try {
-            const result = await getActivities(client.userId, payload.filters);
-            return { command: 'get-activities', payload: result };
+            const result = await getActivities(client.userId, payload.filters, {
+                cursor: payload.cursor,
+                limit: payload.limit
+            });
+            return {
+                command: 'get-activities',
+                payload: result
+            };
         } catch (error) {
             logger.error('[Activity] Get activities error', error);
             return { command: 'get-activities', payload: { error: 'Internal error' } };

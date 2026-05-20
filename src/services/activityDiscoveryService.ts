@@ -15,13 +15,13 @@ import { isProfileComplete, loadUserForCompletion } from '@/services/profileComp
 import { obfuscateString } from '@/services/previewObfuscation';
 import { getSwipeQuota } from '@/services/swipeQuotaService';
 import { logger } from '@/config/logger';
+import { decodeCursor, encodeCursor, resolveLimit } from '@/services/cursorPagination';
 
 const ACTIVITY_CACHE_PREFIX = 'activity:discovery:v2:';
 const ACTIVITY_CACHE_REVISION_KEY = `${ACTIVITY_CACHE_PREFIX}revision`;
 const VIEWER_CONTEXT_TTL_MS = 30_000;
 const ACTIVITY_COUNTS_TTL_S = 60;
 const POPULAR_ACTIVITY_TAGS_TTL_S = 600;
-const ACTIVITY_PAGE_SIZE = 50;
 const POPULAR_ACTIVITY_TAG_LIMIT = 20;
 
 const viewerContextCache = new Map<string, { expiresAt: number; value: ViewerContext }>();
@@ -53,7 +53,7 @@ const activitySummaryInclude = {
 
 type ActivitySummaryRow = Prisma.ActivityGetPayload<{ include: typeof activitySummaryInclude }>;
 
-type ActivityIdRow = { id: string; totalCount: number | bigint };
+type ActivityIdRow = { id: string; totalCount: number | bigint; sortKey: Date };
 type ActivityCountRow = { category: string; count: number | bigint };
 type ActivityTagRow = { label: string };
 
@@ -71,6 +71,8 @@ interface ActivityDiscoveryOptions {
      */
     obfuscationMode?: ActivityObfuscationMode;
     discoveryContext?: ActivityDiscoveryContext;
+    cursor?: string;
+    limit?: number;
 }
 
 function activityCountsKey(userId: string, revision: string): string {
@@ -409,25 +411,58 @@ async function shouldObfuscateActivityCards(
 
 // ─── Get Activities ──────────────────────────────────────────────────
 
+const ACTIVITY_NULL_DATE_SENTINEL = '9999-12-31T00:00:00.000Z';
+
 export async function getActivities(
     userId: string,
     filters?: ActivitySearchFilters,
     options: ActivityDiscoveryOptions = {}
-): Promise<{ activities: ActivitySummary[]; totalCount: number }> {
+): Promise<{
+    activities: ActivitySummary[];
+    totalCount: number;
+    nextCursor: string | null;
+}> {
     const db = getDatabase();
     const viewer = await loadViewerContext(userId);
     const where = buildActivityDiscoveryWhere(userId, viewer, filters);
+    const limit = resolveLimit(options.limit);
+    const decoded = decodeCursor(options.cursor);
+
+    // Keyset filter using the same `(COALESCE(dateTime, sentinel), id)` tuple
+    // that drives the ORDER BY below. Anything strictly after the cursor
+    // tuple is part of the next page.
+    const cursorClause = decoded
+        ? Prisma.sql`AND (
+            COALESCE(a."dateTime", ${ACTIVITY_NULL_DATE_SENTINEL}::timestamptz) > ${new Date(decoded.k)}::timestamptz
+            OR (
+                COALESCE(a."dateTime", ${ACTIVITY_NULL_DATE_SENTINEL}::timestamptz) = ${new Date(decoded.k)}::timestamptz
+                AND a.id > ${decoded.i}
+            )
+        )`
+        : Prisma.empty;
 
     const rows = await db.$queryRaw<ActivityIdRow[]>(Prisma.sql`
-        SELECT a.id, COUNT(*) OVER()::integer AS "totalCount"
+        SELECT
+            a.id,
+            COALESCE(a."dateTime", ${ACTIVITY_NULL_DATE_SENTINEL}::timestamptz) AS "sortKey",
+            COUNT(*) OVER()::integer AS "totalCount"
         ${activityDiscoveryFrom()}
         ${where}
-        ORDER BY a."dateTime" ASC NULLS LAST, a."createdAt" DESC, a.id ASC
-        LIMIT ${ACTIVITY_PAGE_SIZE}
+        ${cursorClause}
+        ORDER BY COALESCE(a."dateTime", ${ACTIVITY_NULL_DATE_SENTINEL}::timestamptz) ASC, a.id ASC
+        LIMIT ${limit + 1}
     `);
 
-    const ids = rows.map((row) => row.id);
-    if (ids.length === 0) return { activities: [], totalCount: 0 };
+    const totalCount = Number(rows[0]?.totalCount ?? 0);
+    if (rows.length === 0) {
+        return { activities: [], totalCount, nextCursor: null };
+    }
+
+    const hasMore = rows.length > limit;
+    const sliced = hasMore ? rows.slice(0, limit) : rows;
+    const last = sliced[sliced.length - 1];
+    const nextCursor = hasMore && last ? encodeCursor(last.sortKey, last.id) : null;
+    const ids = sliced.map((row) => row.id);
 
     const activityRecords = await db.activity.findMany({
         where: { id: { in: ids } },
@@ -446,7 +481,7 @@ export async function getActivities(
 
     const activities = shouldObfuscate ? summaries.map(obfuscateActivitySummary) : summaries;
 
-    return { activities, totalCount: Number(rows[0]?.totalCount ?? summaries.length) };
+    return { activities, totalCount, nextCursor };
 }
 
 // ─── Get Activity Counts ────────────────────────────────────────────
@@ -485,7 +520,7 @@ export async function searchActivities(
     userId: string,
     filters: ActivitySearchFilters,
     options?: ActivityDiscoveryOptions
-): Promise<{ activities: ActivitySummary[]; totalCount: number }> {
+): Promise<{ activities: ActivitySummary[]; totalCount: number; nextCursor: string | null }> {
     // Search reuses getActivities with the filters
     return getActivities(userId, filters, options);
 }
@@ -520,8 +555,19 @@ async function computePopularActivityTags(userId: string, category: InterestCate
 
 // ─── Get My Activities ──────────────────────────────────────────────
 
-export async function getMyActivities(userId: string, role: 'host' | 'participant'): Promise<ActivitySummary[]> {
+export interface GetMyActivitiesResult {
+    activities: ActivitySummary[];
+    nextCursor: string | null;
+}
+
+export async function getMyActivities(
+    userId: string,
+    role: 'host' | 'participant',
+    options: { cursor?: string; limit?: number } = {}
+): Promise<GetMyActivitiesResult> {
     const db = getDatabase();
+    const limit = resolveLimit(options.limit);
+    const decoded = decodeCursor(options.cursor);
 
     const viewerProfile = await db.profile.findUnique({
         where: { userId },
@@ -531,17 +577,31 @@ export async function getMyActivities(userId: string, role: 'host' | 'participan
     const where: Prisma.ActivityWhereInput = {
         isCancelled: false,
         isArchived: false,
-        ...(role === 'host' ? { hostId: userId } : { participants: { some: { userId } } })
+        ...(role === 'host' ? { hostId: userId } : { participants: { some: { userId } }, hostId: { not: userId } }),
+        ...(decoded && {
+            OR: [
+                { createdAt: { lt: new Date(decoded.k) } },
+                { AND: [{ createdAt: new Date(decoded.k) }, { id: { lt: decoded.i } }] }
+            ]
+        })
     };
 
-    const activities = await db.activity.findMany({
+    const rows = await db.activity.findMany({
         where,
         include: activitySummaryInclude,
-        orderBy: [{ dateTime: 'asc' }, { createdAt: 'desc' }],
-        take: ACTIVITY_PAGE_SIZE
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: limit + 1
     });
 
-    return activities.map((activity) =>
-        mapActivitySummary(activity, viewerProfile?.latitude, viewerProfile?.longitude)
-    );
+    const hasMore = rows.length > limit;
+    const sliced = hasMore ? rows.slice(0, limit) : rows;
+    const last = sliced[sliced.length - 1];
+    const nextCursor = hasMore && last ? encodeCursor(last.createdAt, last.id) : null;
+
+    return {
+        activities: sliced.map((activity) =>
+            mapActivitySummary(activity, viewerProfile?.latitude, viewerProfile?.longitude)
+        ),
+        nextCursor
+    };
 }

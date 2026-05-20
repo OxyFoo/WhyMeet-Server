@@ -6,7 +6,9 @@ import { getMyActivities } from '@/services/activityDiscoveryService';
 import { logger } from '@/config/logger';
 
 const payloadSchema = z.object({
-    role: z.enum(['host', 'participant'])
+    role: z.enum(['host', 'participant']),
+    cursor: z.string().optional(),
+    limit: z.number().int().positive().optional()
 });
 
 registerCommand<WSRequest_GetMyActivities>(
@@ -18,8 +20,11 @@ registerCommand<WSRequest_GetMyActivities>(
                 return { command: 'get-my-activities', payload: { error: 'Invalid role parameter' } };
             }
 
-            const activities = await getMyActivities(client.userId, parsed.data.role);
-            return { command: 'get-my-activities', payload: { activities } };
+            const result = await getMyActivities(client.userId, parsed.data.role, {
+                cursor: parsed.data.cursor,
+                limit: parsed.data.limit
+            });
+            return { command: 'get-my-activities', payload: result };
         } catch (error) {
             logger.error('[Activity] Get my activities error', error);
             return { command: 'get-my-activities', payload: { error: 'Internal error' } };

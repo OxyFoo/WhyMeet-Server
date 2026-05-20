@@ -12,37 +12,73 @@ import type {
 import { getDatabase } from '@/services/database';
 import { computeAge } from '@/services/userMapper';
 import { isPremium } from '@/services/subscriptionService';
+import { decodeCursor, encodeCursor, resolveLimit } from '@/services/cursorPagination';
 import { logger } from '@/config/logger';
 
-registerCommand<WSRequest_GetRequests>('get-requests', async (client: Client): Promise<WSResponse_GetRequests> => {
-    const db = getDatabase();
+registerCommand<WSRequest_GetRequests>(
+    'get-requests',
+    async (client: Client, payload): Promise<WSResponse_GetRequests> => {
+        const db = getDatabase();
 
-    try {
-        // Get likes received that are NOT mutual (i.e. pending requests)
-        const receivedMatches = await db.match.findMany({
-            where: {
-                receiverId: client.userId,
-                category: 'like',
-                mutual: false
-            },
-            include: {
-                sender: {
-                    include: { profile: true, photos: { orderBy: { position: 'asc' } } }
-                }
-            },
-            orderBy: { matchedAt: 'desc' }
-        });
+        try {
+            const limit = resolveLimit(payload?.limit);
+            const decoded = decodeCursor(payload?.cursor);
 
-        const [actedOnRaw, userIsPremium] = await Promise.all([
-            db.match.findMany({ where: { senderId: client.userId }, select: { receiverId: true } }),
-            isPremium(client.userId)
-        ]);
-        const actedOnIds = new Set(actedOnRaw.map((m) => m.receiverId));
+            // Pre-filter: exclude senders the user has already acted on (sent a
+            // match toward). This is the only post-fetch filter we cannot
+            // express trivially in SQL, but it's bounded by the user's own
+            // outgoing matches count, which is cheap.
+            const actedOnRaw = await db.match.findMany({
+                where: { senderId: client.userId },
+                select: { receiverId: true }
+            });
+            const actedOnIds = actedOnRaw.map((m) => m.receiverId);
 
-        const requests = receivedMatches
-            .filter((m) => !actedOnIds.has(m.senderId))
-            .filter((m) => !m.sender.banned && !m.sender.suspended && !m.sender.deleted)
-            .map((m) => ({
+            const cursorFilter = decoded
+                ? {
+                      OR: [
+                          { matchedAt: { lt: new Date(decoded.k) } },
+                          {
+                              AND: [{ matchedAt: new Date(decoded.k) }, { id: { lt: decoded.i } }]
+                          }
+                      ]
+                  }
+                : undefined;
+
+            const [receivedMatches, userIsPremium] = await Promise.all([
+                db.match.findMany({
+                    where: {
+                        receiverId: client.userId,
+                        category: 'like',
+                        mutual: false,
+                        sender: {
+                            banned: false,
+                            suspended: false,
+                            deleted: false
+                        },
+                        ...(actedOnIds.length > 0 ? { senderId: { notIn: actedOnIds } } : {}),
+                        ...(cursorFilter ?? {})
+                    },
+                    include: {
+                        sender: {
+                            include: {
+                                profile: true,
+                                photos: { orderBy: { position: 'asc' } }
+                            }
+                        }
+                    },
+                    orderBy: [{ matchedAt: 'desc' }, { id: 'desc' }],
+                    take: limit + 1
+                }),
+                isPremium(client.userId)
+            ]);
+
+            const hasMore = receivedMatches.length > limit;
+            const sliced = hasMore ? receivedMatches.slice(0, limit) : receivedMatches;
+            const last = sliced[sliced.length - 1];
+            const nextCursor = hasMore && last ? encodeCursor(last.matchedAt, last.id) : null;
+
+            const requests = sliced.map((m) => ({
                 id: m.id,
                 sender: {
                     id: m.sender.id,
@@ -72,10 +108,11 @@ registerCommand<WSRequest_GetRequests>('get-requests', async (client: Client): P
                 sentAt: m.matchedAt.toISOString()
             }));
 
-        logger.debug(`[Discovery] ${requests.length} requests for user: ${client.userId}`);
-        return { command: 'get-requests', payload: { requests } };
-    } catch (error) {
-        logger.error('[Discovery] Get requests error', error);
-        return { command: 'get-requests', payload: { error: 'Internal error' } };
+            logger.debug(`[Discovery] ${requests.length} requests for user: ${client.userId}`);
+            return { command: 'get-requests', payload: { requests, nextCursor } };
+        } catch (error) {
+            logger.error('[Discovery] Get requests error', error);
+            return { command: 'get-requests', payload: { error: 'Internal error' } };
+        }
     }
-});
+);

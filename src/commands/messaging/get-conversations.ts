@@ -14,6 +14,7 @@ import type { Prisma } from '@prisma/client';
 import { computeAge } from '@/services/userMapper';
 import { logger } from '@/config/logger';
 import { safeDecryptText } from '@/services/messageEncryption';
+import { decodeCursor, paginateCursor, resolveLimit } from '@/services/cursorPagination';
 
 type UserWithPhotos = Prisma.UserGetPayload<{ include: { photos: true } }>;
 
@@ -60,40 +61,64 @@ const UNKNOWN_USER = {
 
 registerCommand<WSRequest_GetConversations>(
     'get-conversations',
-    async (client: Client): Promise<WSResponse_GetConversations> => {
+    async (client: Client, payload): Promise<WSResponse_GetConversations> => {
         const db = getDatabase();
+        const limit = resolveLimit(payload?.limit);
+        const decoded = decodeCursor(payload?.cursor);
 
         try {
-            const participations = await db.conversationParticipant.findMany({
-                where: { userId: client.userId },
+            // Keyset pagination on `(lastMessageAt, id) DESC`. When no cursor
+            // is given we simply take the newest `limit + 1` rows.
+            const cursorFilter: Prisma.ConversationWhereInput | undefined = decoded
+                ? {
+                      OR: [
+                          { lastMessageAt: { lt: new Date(decoded.k) } },
+                          {
+                              AND: [{ lastMessageAt: new Date(decoded.k) }, { id: { lt: decoded.i } }]
+                          }
+                      ]
+                  }
+                : undefined;
+
+            const rows = await db.conversation.findMany({
+                where: {
+                    participants: { some: { userId: client.userId } },
+                    ...(cursorFilter ?? {})
+                },
                 include: {
-                    conversation: {
-                        include: {
-                            participants: {
-                                include: { user: { include: { photos: { orderBy: { position: 'asc' } } } } }
-                            },
-                            messages: {
-                                orderBy: { timestamp: 'desc' },
-                                take: 1
-                            },
-                            activity: {
-                                select: { id: true, title: true, isCancelled: true }
-                            }
-                        }
+                    participants: {
+                        include: { user: { include: { photos: { orderBy: { position: 'asc' } } } } }
+                    },
+                    messages: {
+                        orderBy: { timestamp: 'desc' },
+                        take: 1
+                    },
+                    activity: {
+                        select: { id: true, title: true, isCancelled: true }
                     }
-                }
+                },
+                orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }],
+                take: limit + 1
             });
 
-            const conversations: Conversation[] = participations
-                .filter((p) => {
-                    if (p.conversation.isGroup) return true;
-                    const other = p.conversation.participants.find((pp) => pp.userId !== client.userId)?.user;
-                    return !other || (!other.banned && !other.suspended && !other.deleted);
-                })
-                .map((p) => {
-                    const conv = p.conversation;
+            // Drop conversations whose only other participant is unavailable
+            // (banned/suspended/deleted). Group conversations always pass.
+            const visible = rows.filter((conv) => {
+                if (conv.isGroup) return true;
+                const other = conv.participants.find((pp) => pp.userId !== client.userId)?.user;
+                return !other || (!other.banned && !other.suspended && !other.deleted);
+            });
+
+            const page = paginateCursor(
+                visible,
+                limit,
+                (conv) => conv.lastMessageAt,
+                (conv) => conv.id,
+                (conv): Conversation => {
                     const lastMsg = conv.messages[0];
                     const isGroup = conv.isGroup;
+
+                    const myParticipation = conv.participants.find((pp) => pp.userId === client.userId);
 
                     const base = {
                         id: conv.id,
@@ -101,7 +126,7 @@ registerCommand<WSRequest_GetConversations>(
                         lastMessageTime: lastMsg?.timestamp.toISOString(),
                         lastMessageType: lastMsg ? ((lastMsg.type ?? 'text') as MessageType) : undefined,
                         lastMessageSenderId: lastMsg?.senderId,
-                        unreadCount: p.unreadCount,
+                        unreadCount: myParticipation?.unreadCount ?? 0,
                         isGroup
                     };
 
@@ -124,15 +149,13 @@ registerCommand<WSRequest_GetConversations>(
                         ...base,
                         participant: other ? mapUser(other) : UNKNOWN_USER
                     };
-                });
+                }
+            );
 
-            conversations.sort((a, b) => {
-                const dateA = a.lastMessageTime ? new Date(a.lastMessageTime).getTime() : 0;
-                const dateB = b.lastMessageTime ? new Date(b.lastMessageTime).getTime() : 0;
-                return dateB - dateA;
-            });
-
-            return { command: 'get-conversations', payload: { conversations } };
+            return {
+                command: 'get-conversations',
+                payload: { conversations: page.items, nextCursor: page.nextCursor }
+            };
         } catch (error) {
             logger.error('[Messaging] Get conversations error', error);
             return { command: 'get-conversations', payload: { error: 'Internal error' } };

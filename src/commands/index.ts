@@ -17,6 +17,7 @@ import './profile/get-profile-popular-tags';
 import './profile/get-refine-popular-tags';
 import './profile/update-profile';
 import './profile/set-discovery-view';
+import './profile/get-counters';
 import './messaging/get-conversations';
 import './messaging/get-messages';
 import './messaging/send-message';

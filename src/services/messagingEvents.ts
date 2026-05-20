@@ -38,6 +38,12 @@ export async function emitGroupSystemMessage(
             data: { unreadCount: { increment: 1 } }
         });
 
+        // Bump conversation activity timestamp for ordering.
+        await db.conversation.update({
+            where: { id: conversationId },
+            data: { lastMessageAt: message.timestamp }
+        });
+
         const messagePayload: Message = {
             id: message.id,
             text: message.text,

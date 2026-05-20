@@ -56,6 +56,13 @@ registerCommand<WSRequest_SendMessage>(
                 data: { unreadCount: { increment: 1 } }
             });
 
+            // Bump the conversation activity timestamp so cursor-pagination by
+            // `lastMessageAt DESC` reflects the new ordering.
+            await db.conversation.update({
+                where: { id: conversationId },
+                data: { lastMessageAt: message.timestamp }
+            });
+
             const messagePayload = {
                 id: message.id,
                 text,

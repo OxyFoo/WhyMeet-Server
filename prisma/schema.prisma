@@ -304,14 +304,16 @@ model IntentionCatalog {
 // ─── Conversations & Messages ───────────────────────────────────────
 
 model Conversation {
-    id        String   @id @default(cuid())
-    isGroup   Boolean  @default(false)
-    createdAt DateTime @default(now())
+    id            String   @id @default(cuid())
+    isGroup       Boolean  @default(false)
+    createdAt     DateTime @default(now())
+    lastMessageAt DateTime @default(now())
 
     participants ConversationParticipant[]
     messages     Message[]
     activity     Activity?
 
+    @@index([lastMessageAt(sort: Desc), id(sort: Desc)])
     @@map("conversations")
 }
 
