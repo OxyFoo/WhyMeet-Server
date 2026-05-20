@@ -3,6 +3,7 @@ import type { Client } from '@/server/Client';
 import type { WSRequest_DeclineRequest, WSResponse_DeclineRequest } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { addExcluded } from '@/services/excludeCache';
+import { pushCountersToUser } from '@/services/userCounters';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_DeclineRequest>(
@@ -22,6 +23,8 @@ registerCommand<WSRequest_DeclineRequest>(
                 update: {},
                 create: { senderId: client.userId, receiverId: senderId, category: 'skip' }
             });
+
+            await pushCountersToUser(client.userId);
 
             logger.debug(`[Discovery] Request declined: ${client.userId} declined ${senderId}`);
             return { command: 'decline-request', payload: { success: true } };

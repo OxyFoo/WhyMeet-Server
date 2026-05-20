@@ -1,6 +1,7 @@
 import type { MessageType, Message } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { getClientsForUser } from '@/server/Server';
+import { pushCountersToUser } from './userCounters';
 import { logger } from '@/config/logger';
 
 /**
@@ -68,6 +69,8 @@ export async function emitGroupSystemMessage(
                 });
             }
         }
+
+        await Promise.all(otherParticipants.map((participant) => pushCountersToUser(participant.userId)));
     } catch (error) {
         logger.error('[Messaging] Emit system message failed', error);
     }

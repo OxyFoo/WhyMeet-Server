@@ -2,6 +2,7 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_MarkNotificationRead, WSResponse_MarkNotificationRead } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
+import { pushCountersToUser } from '@/services/userCounters';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_MarkNotificationRead>(
@@ -24,6 +25,8 @@ registerCommand<WSRequest_MarkNotificationRead>(
                 where: { id: notificationId },
                 data: { read: true }
             });
+
+            await pushCountersToUser(client.userId);
 
             return { command: 'mark-notification-read', payload: { success: true } };
         } catch (error) {

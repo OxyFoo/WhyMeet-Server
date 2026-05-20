@@ -7,6 +7,7 @@ import { pushToUser } from '@/services/pushService';
 import { t, getUserLanguage } from '@/services/notifI18n';
 import { mapUserToProfile, profileInclude } from '@/services/userMapper';
 import { addExcluded } from '@/services/excludeCache';
+import { pushCountersToUser } from '@/services/userCounters';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_AcceptRequest>(
@@ -116,6 +117,8 @@ registerCommand<WSRequest_AcceptRequest>(
                     );
                 }
             }
+
+            await Promise.all([pushCountersToUser(client.userId), pushCountersToUser(senderId)]);
 
             logger.info(`[Discovery] Request accepted: ${client.userId} accepted ${senderId}`);
             return { command: 'accept-request', payload: { conversationId: conversation.id } };

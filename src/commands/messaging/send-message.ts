@@ -7,6 +7,7 @@ import { pushToUser } from '@/services/pushService';
 import { logger } from '@/config/logger';
 import { sendMessageSchema } from '@/config/validation';
 import { encryptText } from '@/services/messageEncryption';
+import { pushCountersToUser } from '@/services/userCounters';
 
 registerCommand<WSRequest_SendMessage>(
     'send-message',
@@ -100,6 +101,8 @@ registerCommand<WSRequest_SendMessage>(
                     );
                 }
             }
+
+            await Promise.all(otherParticipants.map((participant) => pushCountersToUser(participant.userId)));
 
             return { command: 'send-message', payload: { message: messagePayload } };
         } catch (error) {

@@ -52,6 +52,7 @@ model User {
     searchQuota            SearchQuota?
     swipeQuota             SwipeQuota?
     activityQuota          ActivityQuota?
+    activityOpens          ActivityOpen[]
     hostedActivities       Activity[]                @relation("ActivityHost")
     activityParticipations ActivityParticipant[]
     activityReports        ActivityReport[]
@@ -598,6 +599,23 @@ model ActivityQuota {
     @@map("activity_quotas")
 }
 
+// Tracks the first daily open of an activity per user to make the
+// activity-quota debit idempotent across refetches of the same activity.
+model ActivityOpen {
+    id         String   @id @default(cuid())
+    userId     String
+    activityId String
+    day        DateTime @db.Date
+    createdAt  DateTime @default(now())
+
+    user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+    activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+    @@unique([userId, activityId, day])
+    @@index([userId, day])
+    @@map("activity_opens")
+}
+
 // ─── Activities ─────────────────────────────────────────────────────
 
 model Activity {
@@ -629,6 +647,7 @@ model Activity {
     photos          ActivityPhoto[]
     reports         ActivityReport[]
     scheduledNotifs ActivityScheduledNotif[]
+    opens           ActivityOpen[]
     auditLogs       AuditLog[]
 
     @@index([hostId])

@@ -12,6 +12,7 @@ import { addExcluded } from '@/services/excludeCache';
 import { validateIntentionSelection } from '@/config/validation';
 import { normalizeActiveIntentionSelection } from '@/services/intentionKeys';
 import { enrichProfileIntentionFromLike } from '@/services/intentionProfileEnrichment';
+import { pushCountersToUser } from '@/services/userCounters';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise<WSResponse_Like> => {
@@ -147,6 +148,8 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
                 }
             }
 
+            await Promise.all([pushCountersToUser(client.userId), pushCountersToUser(candidateId)]);
+
             logger.info(`[Discovery] Mutual match: ${client.userId} <-> ${candidateId}`);
             return { command: 'like', payload: { matched: true, conversationId: conversation.id, intentionAdded } };
         }
@@ -199,6 +202,8 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
                 'like'
             );
         }
+
+        await pushCountersToUser(candidateId);
 
         logger.debug(`[Discovery] User ${client.userId} liked ${candidateId}`);
         return { command: 'like', payload: { matched: false, intentionAdded } };

@@ -13,6 +13,7 @@ import { getDatabase } from '@/services/database';
 import { computeAge } from '@/services/userMapper';
 import { isPremium } from '@/services/subscriptionService';
 import { decodeCursor, encodeCursor, resolveLimit } from '@/services/cursorPagination';
+import { getHiddenIncomingRequestSenderIds, incomingRequestVisibilityFilter } from '@/services/matchRequestVisibility';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_GetRequests>(
@@ -24,15 +25,7 @@ registerCommand<WSRequest_GetRequests>(
             const limit = resolveLimit(payload?.limit);
             const decoded = decodeCursor(payload?.cursor);
 
-            // Pre-filter: exclude senders the user has already acted on (sent a
-            // match toward). This is the only post-fetch filter we cannot
-            // express trivially in SQL, but it's bounded by the user's own
-            // outgoing matches count, which is cheap.
-            const actedOnRaw = await db.match.findMany({
-                where: { senderId: client.userId },
-                select: { receiverId: true }
-            });
-            const actedOnIds = actedOnRaw.map((m) => m.receiverId);
+            const hiddenRequestSenderIds = await getHiddenIncomingRequestSenderIds(client.userId);
 
             const cursorFilter = decoded
                 ? {
@@ -56,7 +49,7 @@ registerCommand<WSRequest_GetRequests>(
                             suspended: false,
                             deleted: false
                         },
-                        ...(actedOnIds.length > 0 ? { senderId: { notIn: actedOnIds } } : {}),
+                        ...incomingRequestVisibilityFilter(hiddenRequestSenderIds),
                         ...(cursorFilter ?? {})
                     },
                     include: {

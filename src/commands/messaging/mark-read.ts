@@ -3,6 +3,7 @@ import type { Client } from '@/server/Client';
 import type { WSRequest_MarkRead, WSResponse_MarkRead } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { getClientsForUser } from '@/server/Server';
+import { pushCountersToUser } from '@/services/userCounters';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_MarkRead>('mark-read', async (client: Client, payload): Promise<WSResponse_MarkRead> => {
@@ -49,6 +50,8 @@ registerCommand<WSRequest_MarkRead>('mark-read', async (client: Client, payload)
                 });
             }
         }
+
+        await pushCountersToUser(client.userId);
 
         return { command: 'mark-read', payload: { success: true } };
     } catch (error) {

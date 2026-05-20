@@ -417,21 +417,35 @@ export async function joinActivity(
         data: { activityId, userId }
     });
 
-    // Add to group conversation
-    if (activity.conversationId) {
-        await db.conversationParticipant.upsert({
-            where: {
-                conversationId_userId: { conversationId: activity.conversationId, userId }
-            },
-            create: { conversationId: activity.conversationId, userId },
-            update: {}
+    // Every group activity is expected to have a conversation; backfill it
+    // here for any legacy/anomalous row created outside `createActivity`, so
+    // the join flow always returns a usable conversationId.
+    let conversationId = activity.conversationId;
+    if (!conversationId) {
+        logger.warn(`[Activity] joining activity ${activityId} without a conversation; creating one now`);
+        const conv = await db.conversation.create({
+            data: {
+                isGroup: true,
+                participants: { create: { userId: activity.hostId } }
+            }
         });
-
-        // Emit "user joined" system message (activityParticipant.create above
-        // would have thrown on duplicate, so reaching this point means a real
-        // new join).
-        await emitGroupSystemMessage(activity.conversationId, userId, 'user_joined');
+        await db.activity.update({
+            where: { id: activityId },
+            data: { conversationId: conv.id }
+        });
+        conversationId = conv.id;
     }
+
+    await db.conversationParticipant.upsert({
+        where: { conversationId_userId: { conversationId, userId } },
+        create: { conversationId, userId },
+        update: {}
+    });
+
+    // Emit "user joined" system message — activityParticipant.create above
+    // would have thrown on duplicate, so reaching this point means a real
+    // new join.
+    await emitGroupSystemMessage(conversationId, userId, 'user_joined');
 
     // Fetch full activity
     const fullActivity = await db.activity.findUnique({
@@ -449,7 +463,7 @@ export async function joinActivity(
 
     return {
         activity: mapToActivity(fullActivity!, userId, viewerProfile?.latitude, viewerProfile?.longitude),
-        conversationId: activity.conversationId!
+        conversationId
     };
 }
 

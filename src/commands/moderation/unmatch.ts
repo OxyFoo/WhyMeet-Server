@@ -2,6 +2,7 @@ import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_Unmatch, WSResponse_Unmatch } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
+import { pushCountersToUser } from '@/services/userCounters';
 import { logger } from '@/config/logger';
 
 registerCommand<WSRequest_Unmatch>('unmatch', async (client: Client, payload): Promise<WSResponse_Unmatch> => {
@@ -40,6 +41,8 @@ registerCommand<WSRequest_Unmatch>('unmatch', async (client: Client, payload): P
                 where: { id: { in: sharedParticipations.map((p) => p.conversationId) } }
             });
         }
+
+        await Promise.all([pushCountersToUser(client.userId), pushCountersToUser(targetId)]);
 
         logger.info(`[Moderation] User ${client.userId} unmatched ${targetId}`);
         return { command: 'unmatch', payload: { success: true } };

@@ -69,3 +69,30 @@ export async function useActivityQuota(userId: string): Promise<ActivityQuotaInf
         dailyLimit: quota.dailyLimit
     };
 }
+
+function today(): Date {
+    const d = new Date();
+    d.setUTCHours(0, 0, 0, 0);
+    return d;
+}
+
+// Debits the activity quota only the FIRST time a user opens a given activity
+// in a day. Subsequent reads of the same activity (e.g. refetches after a
+// React-Query invalidation) return the current quota without re-debiting.
+export async function useActivityQuotaOnFirstOpen(userId: string, activityId: string): Promise<ActivityQuotaInfo> {
+    const db = getDatabase();
+
+    try {
+        await db.activityOpen.create({
+            data: { userId, activityId, day: today() }
+        });
+    } catch (err) {
+        // Unique constraint (userId, activityId, day) → already opened today.
+        if (err instanceof Error && /Unique constraint|P2002/i.test(err.message)) {
+            return getActivityQuota(userId);
+        }
+        throw err;
+    }
+
+    return useActivityQuota(userId);
+}
