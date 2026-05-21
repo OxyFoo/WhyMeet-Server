@@ -22,9 +22,15 @@ registerCommand<WSRequest_AcceptRequest>(
             // Verify sender is still active
             const senderUser = await db.user.findUnique({
                 where: { id: senderId },
-                select: { banned: true, suspended: true, deleted: true }
+                select: { banned: true, suspended: true, deleted: true, underageDeclared: true }
             });
-            if (!senderUser || senderUser.banned || senderUser.suspended || senderUser.deleted) {
+            if (
+                !senderUser ||
+                senderUser.banned ||
+                senderUser.suspended ||
+                senderUser.deleted ||
+                senderUser.underageDeclared
+            ) {
                 return { command: 'accept-request', payload: { error: 'User not found' } };
             }
 

@@ -51,7 +51,7 @@ registerCommand<WSRequest_GetUserProfile>(
                 return { command: 'get-user-profile', payload: { error: 'User not found' } };
             }
 
-            if (targetUser.banned || targetUser.suspended || targetUser.deleted) {
+            if (targetUser.banned || targetUser.suspended || targetUser.deleted || targetUser.underageDeclared) {
                 return { command: 'get-user-profile', payload: { error: 'User not found' } };
             }
 

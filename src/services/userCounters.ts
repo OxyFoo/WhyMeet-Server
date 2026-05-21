@@ -23,7 +23,7 @@ export async function getUserCounters(userId: string): Promise<UserCounters> {
             receiverId: userId,
             category: 'like',
             mutual: false,
-            sender: { banned: false, suspended: false, deleted: false },
+            sender: { banned: false, suspended: false, deleted: false, underageDeclared: false },
             ...incomingRequestVisibilityFilter(hiddenRequestSenderIds)
         }
     });

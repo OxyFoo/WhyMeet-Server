@@ -356,6 +356,7 @@ function buildPipelineWhere(
         banned: false,
         suspended: false,
         deleted: false,
+        underageDeclared: false,
         // Synthetic stresstest accounts only see other synthetic accounts;
         // real accounts never see bots. Bypassed when `stresstest.bot_user_mixing`
         // is enabled (driven by the global feature flag).

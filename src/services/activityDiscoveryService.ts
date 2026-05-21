@@ -237,6 +237,7 @@ function buildActivityDiscoveryWhere(
         Prisma.sql`host.banned = false`,
         Prisma.sql`host.suspended = false`,
         Prisma.sql`host.deleted = false`,
+        Prisma.sql`host."underageDeclared" = false`,
         Prisma.sql`NOT EXISTS (
             SELECT 1
             FROM activity_reports ar

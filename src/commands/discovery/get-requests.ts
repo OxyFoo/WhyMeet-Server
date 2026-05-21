@@ -53,7 +53,8 @@ registerCommand<WSRequest_GetRequests>(
                         sender: {
                             banned: false,
                             suspended: false,
-                            deleted: false
+                            deleted: false,
+                            underageDeclared: false
                         },
                         ...incomingRequestVisibilityFilter(hiddenRequestSenderIds),
                         ...(cursorFilter ?? {})

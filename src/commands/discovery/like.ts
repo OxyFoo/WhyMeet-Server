@@ -46,9 +46,9 @@ registerCommand<WSRequest_Like>('like', async (client: Client, payload): Promise
         // Verify candidate is still active
         const candidate = await db.user.findUnique({
             where: { id: candidateId },
-            select: { banned: true, suspended: true, deleted: true }
+            select: { banned: true, suspended: true, deleted: true, underageDeclared: true }
         });
-        if (!candidate || candidate.banned || candidate.suspended || candidate.deleted) {
+        if (!candidate || candidate.banned || candidate.suspended || candidate.deleted || candidate.underageDeclared) {
             return { command: 'like', payload: { error: 'User not found' } };
         }
 
