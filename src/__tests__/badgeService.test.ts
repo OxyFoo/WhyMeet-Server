@@ -1,10 +1,15 @@
 jest.mock('@/services/database', () => ({ getDatabase: jest.fn() }));
+jest.mock('@/services/redisService', () => ({
+    getRedis: jest.fn(),
+    isRedisAvailable: jest.fn().mockReturnValue(false)
+}));
+jest.mock('@/server/connectedClients', () => ({ sendToUser: jest.fn() }));
 jest.mock('@/config/logger', () => ({
     logger: { error: jest.fn(), warn: jest.fn(), debug: jest.fn(), info: jest.fn() }
 }));
 
 import { getDatabase } from '@/services/database';
-import { checkAndAwardBadges, invalidateBadgeDefinitionsCache } from '@/services/badgeService';
+import { checkAndAwardBadges } from '@/services/badgeService';
 
 const mockedGetDatabase = getDatabase as jest.MockedFunction<typeof getDatabase>;
 
@@ -45,7 +50,6 @@ function makeBadgeDb() {
 describe('badgeService', () => {
     beforeEach(() => {
         jest.clearAllMocks();
-        invalidateBadgeDefinitionsCache();
     });
 
     it('upserts badge progress instead of creating duplicate-prone rows', async () => {
@@ -71,7 +75,7 @@ describe('badgeService', () => {
                 })
             })
         );
-        expect(db.$transaction).toHaveBeenCalledWith(['badge-upsert']);
+        expect(db.$transaction).toHaveBeenCalledTimes(1);
     });
 
     it('propagates persistence failures to callers that need fresh badges', async () => {

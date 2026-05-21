@@ -14,7 +14,7 @@ import { getDistanceKm } from '@/services/userMapper';
 import { computeAge } from '@/services/userMapper';
 import { logAudit, diffObjects } from '@/services/auditLogService';
 import { logger } from '@/config/logger';
-import { checkAndAwardBadges } from '@/services/badgeService';
+import { triggerBadgeRecheck } from '@/services/badgeService';
 import { emitGroupSystemMessage } from '@/services/messagingEvents';
 import { ActivityWouldBecomeIncompleteError, isActivityComplete } from '@/services/activityCompletion';
 import { sendTrackedMail } from '@/services/emailService';
@@ -459,7 +459,7 @@ export async function joinActivity(
     });
 
     // Check badge progress after joining
-    checkAndAwardBadges(userId).catch((e) => logger.error('[Badges] post-join check failed', e));
+    triggerBadgeRecheck(userId, 'join-activity');
 
     return {
         activity: mapToActivity(fullActivity!, userId, viewerProfile?.latitude, viewerProfile?.longitude),

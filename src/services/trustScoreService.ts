@@ -1,6 +1,6 @@
 import { getHostLevel, type HostLevel } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
-import { checkAndAwardBadges } from '@/services/badgeService';
+import { triggerBadgeRecheck } from '@/services/badgeService';
 import { logger } from '@/config/logger';
 
 const CONFIRMATION_WINDOW_DAYS = 7;
@@ -238,14 +238,10 @@ export async function checkActivityCompletion(activityId: string): Promise<void>
         await recalculateTrustScore(activity.hostId);
 
         // Award badges for host and participants
-        await checkAndAwardBadges(activity.hostId).catch((e) =>
-            logger.error('[Badges] post-completion host check failed', e)
-        );
+        triggerBadgeRecheck(activity.hostId, 'activity-completed-host');
         for (const p of activity.participants) {
             if (p.userId !== activity.hostId) {
-                await checkAndAwardBadges(p.userId).catch((e) =>
-                    logger.error('[Badges] post-completion participant check failed', e)
-                );
+                triggerBadgeRecheck(p.userId, 'activity-completed-participant');
             }
         }
 

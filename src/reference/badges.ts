@@ -1,4 +1,4 @@
-import type { BadgeDefinition } from '@prisma/client';
+import type { BadgeDefinition } from '@oxyfoo/whymeet-types';
 
 export const BADGE_DEFINITIONS: readonly BadgeDefinition[] = [
     {

@@ -1,44 +1,42 @@
 import type { BadgeDefinition, BadgeKey, UserBadge } from '@oxyfoo/whymeet-types';
-import type { Prisma } from '@prisma/client';
+import type { Prisma, UserBadge as UserBadgeRow } from '@prisma/client';
 import { getDatabase } from '@/services/database';
+import { getRedis, isRedisAvailable } from '@/services/redisService';
+import { sendToUser } from '@/server/connectedClients';
+import { BADGE_DEFINITIONS } from '@/reference/badges';
 import { logger } from '@/config/logger';
 
 const ONE_YEAR_MS = 365.25 * 24 * 60 * 60 * 1000;
-const USER_BADGE_CHECK_TTL_MS = 60 * 1000;
+const USER_BADGE_CHECK_TTL_S = 60;
+const REDIS_BADGE_TTL_KEY = (userId: string) => `badge:check:${userId}`;
 
-// ─── In-memory cache for badge definitions ──────────────────────────
+// ─── Catalog ────────────────────────────────────────────────────────
+// `reference/badges.ts` is the source of truth (re-seeded at boot). The
+// console is read-only on the catalog, so the in-memory list is always
+// authoritative for the lifetime of the process.
 
-let _defsCache: BadgeDefinition[] | null = null;
-let _defsCacheExpiry = 0;
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-const userBadgeCheckExpiry = new Map<string, number>();
-const userBadgeCheckInFlight = new Map<string, Promise<void>>();
+const BADGE_DEFINITIONS_BY_KEY = new Map<BadgeKey, BadgeDefinition>(BADGE_DEFINITIONS.map((d) => [d.key, d]));
 
-export async function getBadgeDefinitions(): Promise<BadgeDefinition[]> {
-    if (_defsCache && Date.now() < _defsCacheExpiry) return _defsCache;
+const BADGE_KEYS = new Set<BadgeKey>(BADGE_DEFINITIONS.map((d) => d.key));
 
-    const db = getDatabase();
-    const rows = await db.badgeDefinition.findMany({ orderBy: { displayOrder: 'asc' } });
-
-    _defsCache = rows.map((r) => ({
-        key: r.key as BadgeKey,
-        emoji: r.emoji,
-        category: r.category as BadgeDefinition['category'],
-        threshold: r.threshold,
-        displayOrder: r.displayOrder,
-        rewardType: r.rewardType,
-        rewardOfferIdApple: r.rewardOfferIdApple,
-        rewardOfferIdGoogle: r.rewardOfferIdGoogle,
-        rewardDescription: r.rewardDescription
-    }));
-    _defsCacheExpiry = Date.now() + CACHE_TTL_MS;
-    return _defsCache;
+export async function getBadgeDefinitions(): Promise<readonly BadgeDefinition[]> {
+    return BADGE_DEFINITIONS;
 }
 
-export function invalidateBadgeDefinitionsCache(): void {
-    _defsCache = null;
-    _defsCacheExpiry = 0;
+/**
+ * Sort `UserBadge[]` by earned-first then displayOrder, slice to `limit`.
+ * Shared between full list and "top N" callers.
+ */
+export function selectTopBadges(badges: UserBadge[], limit: number): UserBadge[] {
+    return [...badges]
+        .sort((a, b) => {
+            if (a.earned !== b.earned) return a.earned ? -1 : 1;
+            return a.displayOrder - b.displayOrder;
+        })
+        .slice(0, limit);
 }
+
+// ─── Context evaluation ─────────────────────────────────────────────
 
 interface BadgeContext {
     userId: string;
@@ -61,7 +59,10 @@ async function buildContext(userId: string): Promise<BadgeContext> {
             select: { completedHostedCount: true }
         }),
         db.activityParticipant.count({
-            where: { userId, activity: { hostId: { not: userId } } }
+            where: {
+                userId,
+                activity: { hostId: { not: userId }, isCompleted: true }
+            }
         })
     ]);
 
@@ -111,62 +112,69 @@ function evaluateBadge(key: BadgeKey, ctx: BadgeContext): { progress: number; ea
         case 'participant_50':
             return { progress: Math.min(ctx.participationCount, 50), earned: ctx.participationCount >= 50 };
 
-        default:
+        default: {
+            logger.warn(`[BadgeService] Unknown BadgeKey "${key}" — skipped`);
             return { progress: 0, earned: false };
+        }
     }
 }
 
+// ─── Mapping ────────────────────────────────────────────────────────
+
+function rowToUserBadge(row: UserBadgeRow, def: BadgeDefinition): UserBadge {
+    return {
+        key: def.key,
+        emoji: def.emoji,
+        category: def.category,
+        displayOrder: def.displayOrder,
+        earned: row.earned,
+        earnedAt: row.earnedAt?.toISOString() ?? null,
+        progress: row.progress,
+        threshold: def.threshold,
+        rewardType: def.rewardType,
+        rewardDescription: def.rewardDescription,
+        rewardClaimedAt: row.rewardClaimedAt?.toISOString() ?? null,
+        rewardPendingAt: row.rewardPendingAt?.toISOString() ?? null
+    };
+}
+
+// ─── Persist ────────────────────────────────────────────────────────
+
 /**
  * Check all badge conditions for a user and upsert their progress in DB.
+ * Emits `badge-unlocked` WS events for badges newly earned during this pass.
  */
 export async function checkAndAwardBadges(userId: string): Promise<void> {
-    try {
-        await persistBadgeProgress(userId);
-        userBadgeCheckExpiry.set(userId, Date.now() + USER_BADGE_CHECK_TTL_MS);
-    } catch (error) {
-        logger.error(`[BadgeService] Error checking badges for user ${userId}`, error);
-        throw error;
-    }
+    await persistBadgeProgress(userId);
 }
 
 async function persistBadgeProgress(userId: string): Promise<void> {
     const db = getDatabase();
     const ctx = await buildContext(userId);
-    const defs = await getBadgeDefinitions();
     const existingRows = await db.userBadge.findMany({ where: { userId } });
     const existingByKey = new Map(existingRows.map((badge) => [badge.badgeKey, badge]));
     const writes: Prisma.PrismaPromise<unknown>[] = [];
+    const newlyUnlocked: BadgeKey[] = [];
 
-    for (const def of defs) {
+    for (const def of BADGE_DEFINITIONS) {
         const { progress, earned } = evaluateBadge(def.key, ctx);
         const existing = existingByKey.get(def.key);
+        // Never demote an already-earned badge.
         if (existing?.earned && !earned) continue;
 
         const earnedAt = earned ? (existing?.earnedAt ?? new Date()) : null;
-        if (
-            existing &&
-            existing.progress === progress &&
-            existing.earned === earned &&
-            existing.earnedAt === earnedAt
-        ) {
+        const sameEarnedAt = (existing?.earnedAt?.getTime() ?? null) === (earnedAt?.getTime() ?? null);
+        if (existing && existing.progress === progress && existing.earned === earned && sameEarnedAt) {
             continue;
         }
+
+        if (earned && !existing?.earned) newlyUnlocked.push(def.key);
 
         writes.push(
             db.userBadge.upsert({
                 where: { userId_badgeKey: { userId, badgeKey: def.key } },
-                create: {
-                    userId,
-                    badgeKey: def.key,
-                    progress,
-                    earned,
-                    earnedAt
-                },
-                update: {
-                    progress,
-                    earned,
-                    earnedAt
-                }
+                create: { userId, badgeKey: def.key, progress, earned, earnedAt },
+                update: { progress, earned, earnedAt }
             })
         );
     }
@@ -174,59 +182,109 @@ async function persistBadgeProgress(userId: string): Promise<void> {
     if (writes.length > 0) {
         await db.$transaction(writes);
     }
+
+    if (newlyUnlocked.length > 0) {
+        await emitBadgeUnlocked(userId, newlyUnlocked);
+    }
+}
+
+async function emitBadgeUnlocked(userId: string, keys: BadgeKey[]): Promise<void> {
+    try {
+        const rows = await getDatabase().userBadge.findMany({
+            where: { userId, badgeKey: { in: keys } }
+        });
+        for (const row of rows) {
+            const def = BADGE_DEFINITIONS_BY_KEY.get(row.badgeKey as BadgeKey);
+            if (!def) continue;
+            sendToUser(userId, {
+                event: 'badge-unlocked',
+                payload: { badge: rowToUserBadge(row, def) }
+            });
+        }
+    } catch (error) {
+        logger.warn('[BadgeService] Failed to emit badge-unlocked', error);
+    }
+}
+
+// ─── TTL gating (Redis) ─────────────────────────────────────────────
+
+async function shouldRunCheck(userId: string): Promise<boolean> {
+    if (!isRedisAvailable()) return true;
+    try {
+        // SET with NX EX = atomic "claim slot for next N seconds".
+        const result = await getRedis().set(REDIS_BADGE_TTL_KEY(userId), '1', 'EX', USER_BADGE_CHECK_TTL_S, 'NX');
+        return result === 'OK';
+    } catch (error) {
+        logger.warn('[BadgeService] Redis TTL check failed, running anyway', error);
+        return true;
+    }
+}
+
+async function clearCheckTtl(userId: string): Promise<void> {
+    if (!isRedisAvailable()) return;
+    try {
+        await getRedis().del(REDIS_BADGE_TTL_KEY(userId));
+    } catch {
+        // best effort
+    }
 }
 
 export async function checkAndAwardBadgesIfStale(userId: string): Promise<void> {
-    const expiry = userBadgeCheckExpiry.get(userId) ?? 0;
-    if (Date.now() < expiry) return;
+    if (!(await shouldRunCheck(userId))) return;
+    try {
+        await checkAndAwardBadges(userId);
+    } catch (error) {
+        // Release TTL so the next caller retries instead of silently waiting 60s.
+        await clearCheckTtl(userId);
+        logger.error(`[BadgeService] Error checking badges for user ${userId}`, error);
+        throw error;
+    }
+}
 
-    const pending = userBadgeCheckInFlight.get(userId);
-    if (pending) return pending;
+/**
+ * Fire-and-forget badge recheck. Use from caller paths that should not block
+ * on (or be broken by) badge evaluation (e.g. join activity, activity completed).
+ */
+export function triggerBadgeRecheck(userId: string, reason: string): void {
+    checkAndAwardBadges(userId).catch((error) =>
+        logger.warn(`[BadgeService] background recheck failed (${reason}) for ${userId}`, error)
+    );
+}
 
-    const promise = checkAndAwardBadges(userId).finally(() => {
-        userBadgeCheckInFlight.delete(userId);
-    });
-    userBadgeCheckInFlight.set(userId, promise);
-    return promise;
+// ─── Read APIs ──────────────────────────────────────────────────────
+
+function isKnownBadgeKey(key: string): key is BadgeKey {
+    return BADGE_KEYS.has(key as BadgeKey);
 }
 
 /**
  * Get all badges for a user, merging DB state with definitions.
- * Returns all badges (earned and not-earned) sorted by displayOrder.
+ * Returns all badges (earned and not) sorted by earned-first then displayOrder.
  */
 export async function getUserBadges(userId: string): Promise<UserBadge[]> {
     const db = getDatabase();
-    const defs = await getBadgeDefinitions();
-    const defsByKey = new Map(defs.map((def) => [def.key, def]));
+    const dbBadges = await db.userBadge.findMany({ where: { userId } });
+    const badgeRowByKey = new Map(dbBadges.map((b) => [b.badgeKey, b]));
 
-    const dbBadges = await db.userBadge.findMany({
-        where: { userId }
+    const result: UserBadge[] = BADGE_DEFINITIONS.map((def) => {
+        const row = badgeRowByKey.get(def.key);
+        return {
+            key: def.key,
+            emoji: def.emoji,
+            category: def.category,
+            displayOrder: def.displayOrder,
+            earned: row?.earned ?? false,
+            earnedAt: row?.earnedAt?.toISOString() ?? null,
+            progress: row?.progress ?? 0,
+            threshold: def.threshold,
+            rewardType: def.rewardType,
+            rewardDescription: def.rewardDescription,
+            rewardClaimedAt: row?.rewardClaimedAt?.toISOString() ?? null,
+            rewardPendingAt: row?.rewardPendingAt?.toISOString() ?? null
+        };
     });
 
-    const badgeMap = new Map(dbBadges.map((b) => [b.badgeKey, b]));
-
-    return defs
-        .map((def) => {
-            const ub = badgeMap.get(def.key);
-            return {
-                key: def.key,
-                emoji: def.emoji,
-                earned: ub?.earned ?? false,
-                earnedAt: ub?.earnedAt?.toISOString() ?? null,
-                progress: ub?.progress ?? 0,
-                threshold: def.threshold,
-                rewardType: def.rewardType,
-                rewardDescription: def.rewardDescription,
-                rewardClaimedAt: ub?.rewardClaimedAt?.toISOString() ?? null
-            };
-        })
-        .sort((a, b) => {
-            const defA = defsByKey.get(a.key)!;
-            const defB = defsByKey.get(b.key)!;
-            // Earned first, then by displayOrder
-            if (a.earned !== b.earned) return a.earned ? -1 : 1;
-            return defA.displayOrder - defB.displayOrder;
-        });
+    return selectTopBadges(result, result.length); // earned first + displayOrder
 }
 
 /**
@@ -234,31 +292,16 @@ export async function getUserBadges(userId: string): Promise<UserBadge[]> {
  */
 export async function getTopBadges(userId: string, limit: number = 3): Promise<UserBadge[]> {
     const db = getDatabase();
-    const defs = await getBadgeDefinitions();
-    const defsByKey = new Map(defs.map((def) => [def.key, def]));
-
     const dbBadges = await db.userBadge.findMany({
         where: { userId, earned: true }
     });
 
-    // Sort by displayOrder ascending (most important first)
-    const sorted = dbBadges
+    const merged: UserBadge[] = dbBadges
+        .filter((b) => isKnownBadgeKey(b.badgeKey))
         .map((b) => {
-            const def = defsByKey.get(b.badgeKey as BadgeKey);
-            return { badge: b, def, order: def?.displayOrder ?? 999 };
-        })
-        .sort((a, b) => a.order - b.order)
-        .slice(0, limit);
+            const def = BADGE_DEFINITIONS_BY_KEY.get(b.badgeKey as BadgeKey)!;
+            return rowToUserBadge(b, def);
+        });
 
-    return sorted.map(({ badge, def }) => ({
-        key: badge.badgeKey as BadgeKey,
-        emoji: def?.emoji ?? '🏅',
-        earned: true,
-        earnedAt: badge.earnedAt?.toISOString() ?? null,
-        progress: badge.progress,
-        threshold: def?.threshold ?? null,
-        rewardType: def?.rewardType ?? null,
-        rewardDescription: def?.rewardDescription ?? null,
-        rewardClaimedAt: badge.rewardClaimedAt?.toISOString() ?? null
-    }));
+    return selectTopBadges(merged, limit);
 }

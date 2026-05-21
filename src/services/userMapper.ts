@@ -9,6 +9,7 @@ import type {
 } from '@oxyfoo/whymeet-types';
 import { getHostLevel } from '@oxyfoo/whymeet-types';
 import { normalizeActiveIntentionCategoryKeys, normalizeActiveIntentionKeys } from '@/services/intentionKeys';
+import { selectTopBadges } from '@/services/badgeService';
 
 type DateLike = Date | string | null | undefined;
 
@@ -152,8 +153,10 @@ export function mapUserToProfile(
             earnedAt: DateLike;
             progress: number;
             rewardClaimedAt: DateLike;
+            rewardPendingAt: DateLike;
             definition: {
                 emoji: string;
+                category: string;
                 displayOrder: number;
                 threshold: number | null;
                 rewardType: string | null;
@@ -214,8 +217,10 @@ function mapBadges(
         earnedAt: DateLike;
         progress: number;
         rewardClaimedAt: DateLike;
+        rewardPendingAt: DateLike;
         definition: {
             emoji: string;
+            category: string;
             displayOrder: number;
             threshold: number | null;
             rewardType: string | null;
@@ -224,21 +229,23 @@ function mapBadges(
     }[]
 ): UserBadge[] {
     if (!badges) return [];
-    return badges
+    const mapped: UserBadge[] = badges
         .filter((b) => b.earned)
-        .sort((a, b) => (a.definition.displayOrder ?? 99) - (b.definition.displayOrder ?? 99))
-        .slice(0, 3)
         .map((b) => ({
             key: b.badgeKey as BadgeKey,
             emoji: b.definition.emoji,
+            category: b.definition.category as UserBadge['category'],
+            displayOrder: b.definition.displayOrder,
             earned: b.earned,
             earnedAt: toIsoString(b.earnedAt),
             progress: b.progress,
             threshold: b.definition.threshold,
-            rewardType: b.definition.rewardType,
+            rewardType: b.definition.rewardType as UserBadge['rewardType'],
             rewardDescription: b.definition.rewardDescription,
-            rewardClaimedAt: toIsoString(b.rewardClaimedAt)
+            rewardClaimedAt: toIsoString(b.rewardClaimedAt),
+            rewardPendingAt: toIsoString(b.rewardPendingAt)
         }));
+    return selectTopBadges(mapped, 3);
 }
 
 /** Prisma include clause to fetch everything needed for mapUserToProfile */

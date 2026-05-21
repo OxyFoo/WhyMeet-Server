@@ -770,6 +770,7 @@ model UserBadge {
     progress        Int       @default(0)
     earned          Boolean   @default(false)
     earnedAt        DateTime?
+    rewardPendingAt DateTime?
     rewardClaimedAt DateTime?
 
     user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -6,8 +6,6 @@ import { invalidatePipelineSetup } from '@/services/pipelineSetupCache';
 import { invalidateDiscoveryCounts } from '@/services/discoveryCountsCache';
 import { invalidateActivityCatalogCache, invalidateActivityDiscoveryCache } from '@/services/activityDiscoveryService';
 
-const VERIFIED_PROFILE_BADGE_KEY = 'verified_profile';
-
 export class AdminProfileResetUserNotFoundError extends Error {
     constructor(userId: string) {
         super(`User not found: ${userId}`);
@@ -19,7 +17,7 @@ export type AdminProfileResetResult = {
     ok: true;
     deletedPhotoCount: number;
     deletedTagCount: number;
-    clearedVerifiedBadge: boolean;
+    deletedBadgeCount: number;
 };
 
 function isPrismaNotFoundError(error: unknown): boolean {
@@ -87,17 +85,17 @@ export async function resetUserProfileToInitialState(userId: string): Promise<Ad
                 }
             });
 
-            const [deletedPhotos, deletedTags, deletedVerifiedBadges] = await Promise.all([
+            const [deletedPhotos, deletedTags, deletedBadges] = await Promise.all([
                 tx.profilePhoto.deleteMany({ where: { userId } }),
                 tx.userTag.deleteMany({ where: { userId } }),
-                tx.userBadge.deleteMany({ where: { userId, badgeKey: VERIFIED_PROFILE_BADGE_KEY } })
+                tx.userBadge.deleteMany({ where: { userId } })
             ]);
 
             return {
                 ok: true as const,
                 deletedPhotoCount: deletedPhotos.count,
                 deletedTagCount: deletedTags.count,
-                clearedVerifiedBadge: deletedVerifiedBadges.count > 0
+                deletedBadgeCount: deletedBadges.count
             };
         });
 

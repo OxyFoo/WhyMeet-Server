@@ -74,7 +74,7 @@ describe('resetUserProfileToInitialState', () => {
             ok: true,
             deletedPhotoCount: 2,
             deletedTagCount: 10,
-            clearedVerifiedBadge: true
+            deletedBadgeCount: 1
         });
 
         expect(tx.user.update).toHaveBeenCalledWith({
@@ -129,7 +129,7 @@ describe('resetUserProfileToInitialState', () => {
         expect(tx.profilePhoto.deleteMany).toHaveBeenCalledWith({ where: { userId: 'user-1' } });
         expect(tx.userTag.deleteMany).toHaveBeenCalledWith({ where: { userId: 'user-1' } });
         expect(tx.userBadge.deleteMany).toHaveBeenCalledWith({
-            where: { userId: 'user-1', badgeKey: 'verified_profile' }
+            where: { userId: 'user-1' }
         });
     });
 

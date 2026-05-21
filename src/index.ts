@@ -7,6 +7,7 @@ import { startServer, stopServer } from '@/server/Server';
 import { getRegisteredCommands } from '@/server/Router';
 import { startActivityNotifScheduler, stopActivityNotifScheduler } from '@/services/activityNotifScheduler';
 import { startTagPromotionScheduler, stopTagPromotionScheduler } from '@/services/tagPromotion';
+import { startBadgeScheduler, stopBadgeScheduler } from '@/services/badgeScheduler';
 import { startAnalyticsScheduler, stopAnalyticsScheduler } from '@/services/analyticsScheduler';
 import {
     startSuspiciousActivityScheduler,
@@ -93,6 +94,19 @@ async function main(): Promise<void> {
     const analyticsNextMin = startAnalyticsScheduler();
     printService('Analytics', 'ok', `Started (daily at 03:00 UTC, next in ${analyticsNextMin} min)`);
 
+    // Start badge scheduler (daily re-evaluation of time-based badges)
+    const badgeSchedulerNext = startBadgeScheduler();
+    if (badgeSchedulerNext) {
+        const nextAt = badgeSchedulerNext.toLocaleTimeString('fr-FR', {
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'UTC'
+        });
+        printService('BadgeScheduler', 'ok', `Started (24h interval, next at ${nextAt} UTC)`);
+    } else {
+        printService('BadgeScheduler', 'warn', 'Disabled (BADGE_SCHEDULER_ENABLED=false)');
+    }
+
     // Start suspicious activity / bot detection scheduler
     startSuspiciousActivityScheduler();
     printService('SuspiciousScan', 'ok', 'Started (15min interval, first run in 30s)');
@@ -111,6 +125,7 @@ async function onExit(): Promise<void> {
     logger.info('[Main] Shutting down...');
     stopActivityNotifScheduler();
     stopTagPromotionScheduler();
+    stopBadgeScheduler();
     stopAnalyticsScheduler();
     stopSuspiciousActivityScheduler();
     await stopServer();

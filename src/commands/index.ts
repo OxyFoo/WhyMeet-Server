@@ -66,4 +66,5 @@ import './activity/confirm-participation';
 import './badges/get-badges';
 import './badges/get-user-badges';
 import './badges/claim-badge-reward';
+import './badges/confirm-badge-reward';
 import './analytics/ingest';

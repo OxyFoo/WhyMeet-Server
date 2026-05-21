@@ -4,6 +4,7 @@ import type { WSRequest_ClaimBadgeReward, WSResponse_ClaimBadgeReward } from '@o
 import { PRODUCT_IDS } from '@oxyfoo/whymeet-types';
 import { getBadgeDefinitions } from '@/services/badgeService';
 import { signAppleOffer } from '@/services/offerSigningService';
+import { isPremium } from '@/services/subscriptionService';
 import { getDatabase } from '@/services/database';
 import { logger } from '@/config/logger';
 
@@ -24,38 +25,46 @@ registerCommand<WSRequest_ClaimBadgeReward>(
                 return { command: 'claim-badge-reward', payload: { error: 'Invalid platform' } };
             }
 
-            // Check badge is earned
-            const userBadge = await db.userBadge.findUnique({
-                where: { userId_badgeKey: { userId: client.userId, badgeKey } }
-            });
-
-            if (!userBadge || !userBadge.earned) {
-                return { command: 'claim-badge-reward', payload: { error: 'Badge not earned' } };
+            // Reject if user already has an active subscription — the promo offer would be wasted.
+            if (await isPremium(client.userId)) {
+                return { command: 'claim-badge-reward', payload: { error: 'ALREADY_PREMIUM' } };
             }
 
-            // Check badge has a reward
+            // Catalog lookup
             const defs = await getBadgeDefinitions();
             const def = defs.find((d) => d.key === badgeKey);
-
-            if (!def || !def.rewardType) {
+            if (!def || def.rewardType !== 'promotional_offer') {
                 return { command: 'claim-badge-reward', payload: { error: 'No reward for this badge' } };
             }
 
-            // Check not already claimed
-            if (userBadge.rewardClaimedAt) {
-                return { command: 'claim-badge-reward', payload: { error: 'Reward already claimed' } };
-            }
-
-            // Mark as claimed
-            await db.userBadge.update({
-                where: { userId_badgeKey: { userId: client.userId, badgeKey } },
-                data: { rewardClaimedAt: new Date() }
+            // Verify ownership of the badge
+            const userBadge = await db.userBadge.findUnique({
+                where: { userId_badgeKey: { userId: client.userId, badgeKey } }
             });
+            if (!userBadge || !userBadge.earned) {
+                return { command: 'claim-badge-reward', payload: { error: 'Badge not earned' } };
+            }
+            if (userBadge.rewardClaimedAt) {
+                return { command: 'claim-badge-reward', payload: { error: 'ALREADY_CLAIMED' } };
+            }
 
             if (platform === 'ios') {
                 const offerId = def.rewardOfferIdApple;
                 if (!offerId) {
                     return { command: 'claim-badge-reward', payload: { error: 'Apple offer not configured' } };
+                }
+
+                // Atomic slot reservation — succeeds only if not already claimed.
+                const reserved = await db.userBadge.updateMany({
+                    where: {
+                        userId: client.userId,
+                        badgeKey,
+                        rewardClaimedAt: null
+                    },
+                    data: { rewardClaimedAt: new Date(), rewardPendingAt: null }
+                });
+                if (reserved.count === 0) {
+                    return { command: 'claim-badge-reward', payload: { error: 'ALREADY_CLAIMED' } };
                 }
 
                 try {
@@ -72,7 +81,7 @@ registerCommand<WSRequest_ClaimBadgeReward>(
                         }
                     };
                 } catch (err) {
-                    // Rollback claim on signing failure
+                    // Rollback claim on signing failure.
                     await db.userBadge.update({
                         where: { userId_badgeKey: { userId: client.userId, badgeKey } },
                         data: { rewardClaimedAt: null }
@@ -80,18 +89,31 @@ registerCommand<WSRequest_ClaimBadgeReward>(
                     logger.error('[ClaimBadgeReward] Apple signing failed', err);
                     return { command: 'claim-badge-reward', payload: { error: 'Signing failed' } };
                 }
-            } else {
-                // Android: return the offer ID, client resolves offerToken from fetched products
-                const offerId = def.rewardOfferIdGoogle;
-                if (!offerId) {
-                    return { command: 'claim-badge-reward', payload: { error: 'Google offer not configured' } };
-                }
-
-                return {
-                    command: 'claim-badge-reward',
-                    payload: { offerId, platform: 'android' }
-                };
             }
+
+            // ── Android: mark as pending. Client must confirm via `confirm-badge-reward`. ──
+            const offerId = def.rewardOfferIdGoogle;
+            if (!offerId) {
+                return { command: 'claim-badge-reward', payload: { error: 'Google offer not configured' } };
+            }
+
+            // Atomic pending slot — reuse same row if already pending (idempotent).
+            const reservedPending = await db.userBadge.updateMany({
+                where: {
+                    userId: client.userId,
+                    badgeKey,
+                    rewardClaimedAt: null
+                },
+                data: { rewardPendingAt: new Date() }
+            });
+            if (reservedPending.count === 0) {
+                return { command: 'claim-badge-reward', payload: { error: 'ALREADY_CLAIMED' } };
+            }
+
+            return {
+                command: 'claim-badge-reward',
+                payload: { offerId, platform: 'android' }
+            };
         } catch (error) {
             logger.error('[ClaimBadgeReward] Error', error);
             return { command: 'claim-badge-reward', payload: { error: 'Failed to claim reward' } };

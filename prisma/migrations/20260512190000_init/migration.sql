@@ -61,6 +61,7 @@ CREATE TABLE "profiles" (
     "statMatches" INTEGER NOT NULL DEFAULT 0,
     "statVibes" INTEGER NOT NULL DEFAULT 0,
     "intentionKeys" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "intentionCategoryKeys" TEXT[] DEFAULT ARRAY[]::TEXT[],
     "spokenLanguages" TEXT[] DEFAULT ARRAY['fr']::TEXT[],
     "trustScore" INTEGER NOT NULL DEFAULT 0,
     "completedHostedCount" INTEGER NOT NULL DEFAULT 0,
@@ -110,6 +111,7 @@ CREATE TABLE "profile_photos" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
     "key" TEXT NOT NULL,
+    "keyBlurred" TEXT NOT NULL,
     "description" TEXT NOT NULL DEFAULT '',
     "position" INTEGER NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -189,6 +191,7 @@ CREATE TABLE "conversations" (
     "id" TEXT NOT NULL,
     "isGroup" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "lastMessageAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "conversations_pkey" PRIMARY KEY ("id")
 );
@@ -265,6 +268,23 @@ CREATE TABLE "ip_logs" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "ip_logs_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "suspicious_activities" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "score" INTEGER NOT NULL,
+    "signals" JSONB NOT NULL,
+    "firstDetectedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "lastDetectedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "acknowledgedAt" TIMESTAMP(3),
+    "acknowledgedByAdminId" TEXT,
+    "resolvedAt" TIMESTAMP(3),
+    "resolvedByAdminId" TEXT,
+    "notes" VARCHAR(1000),
+
+    CONSTRAINT "suspicious_activities_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -350,6 +370,7 @@ CREATE TABLE "subscriptions" (
     "productId" TEXT NOT NULL,
     "originalTransactionId" TEXT NOT NULL DEFAULT '',
     "expiresAt" TIMESTAMP(3) NOT NULL,
+    "cancelledAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -412,6 +433,17 @@ CREATE TABLE "activity_quotas" (
 );
 
 -- CreateTable
+CREATE TABLE "activity_opens" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "activityId" TEXT NOT NULL,
+    "day" DATE NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "activity_opens_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "activities" (
     "id" TEXT NOT NULL,
     "hostId" TEXT NOT NULL,
@@ -454,6 +486,7 @@ CREATE TABLE "activity_photos" (
     "id" TEXT NOT NULL,
     "activityId" TEXT NOT NULL,
     "key" TEXT NOT NULL,
+    "keyBlurred" TEXT NOT NULL,
     "position" INTEGER NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -501,8 +534,6 @@ CREATE TABLE "badge_definitions" (
     CONSTRAINT "badge_definitions_pkey" PRIMARY KEY ("key")
 );
 
-COMMENT ON TABLE "badge_definitions" IS 'Code-owned badge catalog. src/reference/badges.ts is the source of truth and may overwrite existing rows.';
-
 -- CreateTable
 CREATE TABLE "user_badges" (
     "id" TEXT NOT NULL,
@@ -511,6 +542,7 @@ CREATE TABLE "user_badges" (
     "progress" INTEGER NOT NULL DEFAULT 0,
     "earned" BOOLEAN NOT NULL DEFAULT false,
     "earnedAt" TIMESTAMP(3),
+    "rewardPendingAt" TIMESTAMP(3),
     "rewardClaimedAt" TIMESTAMP(3),
 
     CONSTRAINT "user_badges_pkey" PRIMARY KEY ("id")
@@ -525,6 +557,33 @@ CREATE TABLE "feedbacks" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "feedbacks_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "analytics_events" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "deviceId" TEXT NOT NULL,
+    "ts" TIMESTAMP(3) NOT NULL,
+    "platform" TEXT NOT NULL,
+    "appVersion" TEXT NOT NULL,
+    "props" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "analytics_events_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "analytics_daily_metrics" (
+    "id" TEXT NOT NULL,
+    "date" DATE NOT NULL,
+    "name" TEXT NOT NULL,
+    "dimension" TEXT NOT NULL DEFAULT '',
+    "count" INTEGER NOT NULL DEFAULT 0,
+    "uniqueDevices" INTEGER NOT NULL DEFAULT 0,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "analytics_daily_metrics_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -588,6 +647,9 @@ CREATE UNIQUE INDEX "matches_senderId_receiverId_category_key" ON "matches"("sen
 CREATE INDEX "intentions_categoryKey_idx" ON "intentions"("categoryKey");
 
 -- CreateIndex
+CREATE INDEX "conversations_lastMessageAt_id_idx" ON "conversations"("lastMessageAt" DESC, "id" DESC);
+
+-- CreateIndex
 CREATE INDEX "conversation_participants_userId_idx" ON "conversation_participants"("userId");
 
 -- CreateIndex
@@ -622,6 +684,18 @@ CREATE INDEX "ip_logs_ip_idx" ON "ip_logs"("ip");
 
 -- CreateIndex
 CREATE INDEX "ip_logs_userId_idx" ON "ip_logs"("userId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "suspicious_activities_userId_key" ON "suspicious_activities"("userId");
+
+-- CreateIndex
+CREATE INDEX "suspicious_activities_score_idx" ON "suspicious_activities"("score");
+
+-- CreateIndex
+CREATE INDEX "suspicious_activities_lastDetectedAt_idx" ON "suspicious_activities"("lastDetectedAt");
+
+-- CreateIndex
+CREATE INDEX "suspicious_activities_resolvedAt_idx" ON "suspicious_activities"("resolvedAt");
 
 -- CreateIndex
 CREATE INDEX "audit_logs_userId_action_idx" ON "audit_logs"("userId", "action");
@@ -675,6 +749,12 @@ CREATE UNIQUE INDEX "swipe_quotas_userId_key" ON "swipe_quotas"("userId");
 CREATE UNIQUE INDEX "activity_quotas_userId_key" ON "activity_quotas"("userId");
 
 -- CreateIndex
+CREATE INDEX "activity_opens_userId_day_idx" ON "activity_opens"("userId", "day");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "activity_opens_userId_activityId_day_key" ON "activity_opens"("userId", "activityId", "day");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "activities_conversationId_key" ON "activities"("conversationId");
 
 -- CreateIndex
@@ -718,6 +798,21 @@ CREATE INDEX "feedbacks_userId_idx" ON "feedbacks"("userId");
 
 -- CreateIndex
 CREATE INDEX "feedbacks_type_idx" ON "feedbacks"("type");
+
+-- CreateIndex
+CREATE INDEX "analytics_events_name_ts_idx" ON "analytics_events"("name", "ts");
+
+-- CreateIndex
+CREATE INDEX "analytics_events_ts_idx" ON "analytics_events"("ts");
+
+-- CreateIndex
+CREATE INDEX "analytics_events_deviceId_ts_idx" ON "analytics_events"("deviceId", "ts");
+
+-- CreateIndex
+CREATE INDEX "analytics_daily_metrics_name_date_idx" ON "analytics_daily_metrics"("name", "date");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "analytics_daily_metrics_date_name_dimension_key" ON "analytics_daily_metrics"("date", "name", "dimension");
 
 -- AddForeignKey
 ALTER TABLE "devices" ADD CONSTRAINT "devices_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -789,6 +884,9 @@ ALTER TABLE "ip_logs" ADD CONSTRAINT "ip_logs_userId_fkey" FOREIGN KEY ("userId"
 ALTER TABLE "ip_logs" ADD CONSTRAINT "ip_logs_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "devices"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "suspicious_activities" ADD CONSTRAINT "suspicious_activities_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -811,6 +909,12 @@ ALTER TABLE "swipe_quotas" ADD CONSTRAINT "swipe_quotas_userId_fkey" FOREIGN KEY
 
 -- AddForeignKey
 ALTER TABLE "activity_quotas" ADD CONSTRAINT "activity_quotas_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "activity_opens" ADD CONSTRAINT "activity_opens_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "activity_opens" ADD CONSTRAINT "activity_opens_activityId_fkey" FOREIGN KEY ("activityId") REFERENCES "activities"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "activities" ADD CONSTRAINT "activities_hostId_fkey" FOREIGN KEY ("hostId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;

@@ -29,6 +29,10 @@ const envSchema = z.object({
         .positive()
         .default(24 * 60 * 60 * 1000), // 24 hours
 
+    // Badge re-evaluation (time-based badges, primarily `veteran`)
+    BADGE_SCHEDULER_ENABLED: z.preprocess((v) => v === 'true' || v === '1' || v === true, z.boolean()).default(true),
+    BADGE_SCHEDULER_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(3), // 03:00 UTC
+
     CRYPT_KEY_MAIL: z.string().min(16),
     // AES-256-GCM key for encrypting message bodies at rest (64 hex chars / 32 bytes).
     CRYPT_KEY_MESSAGES: z.string().length(64, 'CRYPT_KEY_MESSAGES must be 64 hex chars (32 bytes)'),
