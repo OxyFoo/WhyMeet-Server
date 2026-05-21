@@ -88,7 +88,7 @@ describe('mapUserToProfile', () => {
             suspended: false,
             banned: false,
             preferredPeriod: 'any',
-            preferredDiscoveryView: 'swipe',
+            preferredDiscoveryView: 'advanced',
             isPremium: false,
             isBoosted: false,
             bio: 'Hello world',

@@ -193,7 +193,8 @@ export function mapUserToProfile(
         intentionKeys: normalizeActiveIntentionKeys(user.profile?.intentionKeys ?? []),
         intentionCategoryKeys: normalizeActiveIntentionCategoryKeys(user.profile?.intentionCategoryKeys ?? []),
         spokenLanguages: user.profile?.spokenLanguages ?? [],
-        preferredDiscoveryView: (user.profile?.preferredDiscoveryView ?? 'swipe') as Profile['preferredDiscoveryView'],
+        preferredDiscoveryView: (user.profile?.preferredDiscoveryView ??
+            'advanced') as Profile['preferredDiscoveryView'],
         location: {
             country: user.profile?.country ?? '',
             region: user.profile?.region ?? '',
