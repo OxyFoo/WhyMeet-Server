@@ -1,10 +1,31 @@
 import { getDatabase } from '@/services/database';
-import type { UserSubscription, SubscriptionPlatform, SubscriptionPlan } from '@oxyfoo/whymeet-types';
+import { getUsageLimitConfig } from '@/services/usageLimitsService';
+import type {
+    UserSubscription,
+    SubscriptionPlatform,
+    SubscriptionPlan,
+    PurchaseErrorCode
+} from '@oxyfoo/whymeet-types';
 import { grantSubscriptionBoost } from '@/services/boostService';
 import { logger } from '@/config/logger';
+import { validatePurchaseReceipt } from '@/services/receiptValidationService';
+
+async function getGracePeriodDays(): Promise<number> {
+    try {
+        const config = await getUsageLimitConfig();
+        return config.subscriptionGracePeriodDays;
+    } catch {
+        return 7;
+    }
+}
+
+export type ValidateReceiptOutcome =
+    | { ok: true; subscription: UserSubscription }
+    | { ok: false; code: PurchaseErrorCode; reason?: string };
 
 /**
  * Check if a user currently has an active premium subscription.
+ * Premium override (admin) wins over the real subscription status.
  */
 export async function isPremium(userId: string): Promise<boolean> {
     const db = getDatabase();
@@ -24,54 +45,105 @@ export async function isPremium(userId: string): Promise<boolean> {
 }
 
 /**
- * Get the user's subscription info (or null if none).
+ * Bulk premium lookup. Returns the set of userIds that resolve to premium right now.
+ */
+export async function getPremiumUserIds(userIds: string[]): Promise<Set<string>> {
+    if (userIds.length === 0) return new Set();
+    const db = getDatabase();
+    const now = new Date();
+
+    const [overrides, subs] = await Promise.all([
+        db.premiumOverride.findMany({
+            where: { userId: { in: userIds }, expiresAt: { gt: now } },
+            select: { userId: true, forcedPremium: true }
+        }),
+        db.subscription.findMany({
+            where: { userId: { in: userIds }, status: 'active', expiresAt: { gt: now } },
+            select: { userId: true }
+        })
+    ]);
+
+    const result = new Set<string>();
+    const overrideById = new Map(overrides.map((o) => [o.userId, o.forcedPremium]));
+
+    for (const sub of subs) {
+        const override = overrideById.get(sub.userId);
+        if (override === false) continue;
+        result.add(sub.userId);
+    }
+    for (const [userId, forcedPremium] of overrideById.entries()) {
+        if (forcedPremium) result.add(userId);
+    }
+    return result;
+}
+
+/**
+ * Get the user's subscription info (or null if none). Handles auto-transition from
+ * `active` → `grace_period` → `expired` based on `expiresAt`.
  */
 export async function getSubscription(userId: string): Promise<UserSubscription | null> {
     const db = getDatabase();
-    const sub = await db.subscription.findUnique({ where: { userId } });
+    const [sub, gracePeriodDays] = await Promise.all([
+        db.subscription.findUnique({ where: { userId } }),
+        getGracePeriodDays()
+    ]);
     if (!sub) return null;
 
-    // Auto-expire if past date
-    if (sub.status === 'active' && sub.expiresAt <= new Date()) {
-        await db.subscription.update({
-            where: { userId },
-            data: { status: 'expired' }
-        });
-        return {
-            plan: sub.plan as SubscriptionPlan,
-            status: 'expired',
-            expiresAt: sub.expiresAt.toISOString(),
-            platform: sub.platform as SubscriptionPlatform
-        };
+    const now = new Date();
+    let status = sub.status as UserSubscription['status'];
+
+    if (sub.status === 'active' && sub.expiresAt <= now) {
+        const gracePeriodEnd = new Date(sub.expiresAt.getTime() + gracePeriodDays * 24 * 60 * 60 * 1000);
+        const nextStatus: UserSubscription['status'] = now < gracePeriodEnd ? 'grace_period' : 'expired';
+        await db.subscription.update({ where: { userId }, data: { status: nextStatus } });
+        status = nextStatus;
+    } else if (sub.status === 'grace_period') {
+        const gracePeriodEnd = new Date(sub.expiresAt.getTime() + gracePeriodDays * 24 * 60 * 60 * 1000);
+        if (now >= gracePeriodEnd) {
+            await db.subscription.update({ where: { userId }, data: { status: 'expired' } });
+            status = 'expired';
+        }
     }
 
     return {
         plan: sub.plan as SubscriptionPlan,
-        status: sub.status as UserSubscription['status'],
+        status,
         expiresAt: sub.expiresAt.toISOString(),
-        platform: sub.platform as SubscriptionPlatform
+        platform: sub.platform as SubscriptionPlatform,
+        cancelledAt: sub.cancelledAt ? sub.cancelledAt.toISOString() : null
     };
 }
 
 /**
  * Validate a receipt from the store and create/update the subscription.
- * For now, this is a stub that trusts the receipt (real validation with Apple/Google APIs to be added).
- * Returns the updated subscription.
+ * Returns a structured outcome (never throws on rejected receipts).
  */
 export async function validateReceipt(
     userId: string,
     receipt: string,
     platform: SubscriptionPlatform,
     productId: string
-): Promise<UserSubscription> {
+): Promise<ValidateReceiptOutcome> {
+    const validation = await validatePurchaseReceipt({
+        userId,
+        receipt,
+        platform,
+        productId,
+        kind: 'subscription'
+    });
+
+    if (!validation.ok) {
+        logger.warn(
+            `[Subscription] Receipt rejected: user=${userId} code=${validation.code} reason=${validation.reason ?? '-'}`
+        );
+        return { ok: false, code: validation.code, reason: validation.reason };
+    }
+
     const db = getDatabase();
-
-    // TODO: Validate receipt with Apple App Store Server API v2 or Google Play Developer API
-    // For now, we trust the receipt and create/update the subscription
-    // In production, this MUST validate the receipt server-side before granting access
-
     const plan = productIdToPlan(productId);
-    const expiresAt = computeExpiryDate(plan);
+    const expiresAt = validation.expiresAtMs
+        ? new Date(validation.expiresAtMs)
+        : computeExpiryDate(plan, new Date(validation.purchaseDateMs));
 
     const sub = await db.subscription.upsert({
         where: { userId },
@@ -81,7 +153,8 @@ export async function validateReceipt(
             platform,
             productId,
             expiresAt,
-            originalTransactionId: receipt.slice(0, 64) // store a ref
+            originalTransactionId: validation.transactionId,
+            cancelledAt: null
         },
         create: {
             userId,
@@ -90,42 +163,85 @@ export async function validateReceipt(
             platform,
             productId,
             expiresAt,
-            originalTransactionId: receipt.slice(0, 64)
+            originalTransactionId: validation.transactionId
         }
     });
 
-    // Grant 10-day subscription boost on new subscription or renewal
     try {
         await grantSubscriptionBoost(userId);
-    } catch {
-        // Boost already active — that's fine
-        logger.debug(`[Subscription] Boost already active for user ${userId}, skipping grant`);
+    } catch (error) {
+        if (error instanceof Error && error.message === 'already_boosted') {
+            logger.debug(`[Subscription] Boost already active for user ${userId}, skipping grant`);
+        } else {
+            logger.error('[Subscription] Failed to grant subscription boost', error);
+        }
     }
 
     logger.info(`[Subscription] Receipt validated: user=${userId}, plan=${plan}, expires=${expiresAt.toISOString()}`);
 
     return {
-        plan: sub.plan as SubscriptionPlan,
-        status: sub.status as UserSubscription['status'],
-        expiresAt: sub.expiresAt.toISOString(),
-        platform: sub.platform as SubscriptionPlatform
+        ok: true,
+        subscription: {
+            plan: sub.plan as SubscriptionPlan,
+            status: sub.status as UserSubscription['status'],
+            expiresAt: sub.expiresAt.toISOString(),
+            platform: sub.platform as SubscriptionPlatform,
+            cancelledAt: sub.cancelledAt ? sub.cancelledAt.toISOString() : null
+        }
     };
 }
 
-function productIdToPlan(productId: string): SubscriptionPlan {
-    if (productId.includes('annual')) return 'annual';
-    if (productId.includes('semi_annual')) return 'semi_annual';
+/**
+ * Mark a subscription as cancelled (auto-renew off). The user keeps premium until `expiresAt`.
+ * Idempotent.
+ */
+export async function markSubscriptionCancelled(userId: string): Promise<UserSubscription | null> {
+    const db = getDatabase();
+    const sub = await db.subscription.findUnique({ where: { userId } });
+    if (!sub) return null;
+
+    const cancelledAt = sub.cancelledAt ?? new Date();
+    const updated = await db.subscription.update({
+        where: { userId },
+        data: { cancelledAt }
+    });
+
+    return {
+        plan: updated.plan as SubscriptionPlan,
+        status: updated.status as UserSubscription['status'],
+        expiresAt: updated.expiresAt.toISOString(),
+        platform: updated.platform as SubscriptionPlatform,
+        cancelledAt: updated.cancelledAt ? updated.cancelledAt.toISOString() : null
+    };
+}
+
+export function productIdToPlan(productId: string): SubscriptionPlan {
+    if (productId.includes('annual') && !productId.includes('semi')) return 'annual';
+    if (productId.includes('semi_annual') || productId.includes('semi-annual')) return 'semi_annual';
     return 'monthly';
 }
 
-function computeExpiryDate(plan: SubscriptionPlan): Date {
-    const now = new Date();
-    switch (plan) {
-        case 'monthly':
-            return new Date(now.getFullYear(), now.getMonth() + 1, now.getDate());
-        case 'semi_annual':
-            return new Date(now.getFullYear(), now.getMonth() + 6, now.getDate());
-        case 'annual':
-            return new Date(now.getFullYear() + 1, now.getMonth(), now.getDate());
+/**
+ * Compute the expiry date for a plan starting from `from`. Handles month-end overflow:
+ * e.g. Jan 31 + 1 month must yield Feb 28/29, not Mar 3.
+ */
+export function computeExpiryDate(plan: SubscriptionPlan, from: Date = new Date()): Date {
+    const monthDelta = plan === 'monthly' ? 1 : plan === 'semi_annual' ? 6 : 12;
+    return addMonthsClamped(from, monthDelta);
+}
+
+function addMonthsClamped(date: Date, months: number): Date {
+    const year = date.getFullYear();
+    const month = date.getMonth() + months;
+    const day = date.getDate();
+    const h = date.getHours();
+    const m = date.getMinutes();
+    const s = date.getSeconds();
+    const ms = date.getMilliseconds();
+    // Build a candidate; if the day rolled over (e.g. Feb 30 → Mar 2), clamp to the last day of the target month.
+    const candidate = new Date(year, month, day, h, m, s, ms);
+    if (candidate.getDate() !== day) {
+        return new Date(candidate.getFullYear(), candidate.getMonth(), 0, h, m, s, ms);
     }
+    return candidate;
 }

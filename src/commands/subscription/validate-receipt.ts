@@ -11,16 +11,22 @@ registerCommand<WSRequest_ValidateReceipt>(
         const { receipt, platform, productId } = payload;
 
         try {
-            const subscription = await validateReceipt(client.userId, receipt, platform, productId);
+            const outcome = await validateReceipt(client.userId, receipt, platform, productId);
+            if (!outcome.ok) {
+                return {
+                    command: 'validate-receipt',
+                    payload: { error: outcome.reason ?? outcome.code, code: outcome.code }
+                };
+            }
             const [premium, boost] = await Promise.all([isPremium(client.userId), getBoostStatus(client.userId)]);
 
             return {
                 command: 'validate-receipt',
-                payload: { subscription, isPremium: premium, boost }
+                payload: { subscription: outcome.subscription, isPremium: premium, boost }
             };
         } catch (error) {
             logger.error('[Subscription] Validate receipt error', error);
-            return { command: 'validate-receipt', payload: { error: 'Internal error' } };
+            return { command: 'validate-receipt', payload: { error: 'Internal error', code: 'unknown' } };
         }
     }
 );

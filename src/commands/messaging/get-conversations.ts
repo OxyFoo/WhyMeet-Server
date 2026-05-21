@@ -12,13 +12,15 @@ import type {
 import { getDatabase } from '@/services/database';
 import type { Prisma } from '@prisma/client';
 import { computeAge } from '@/services/userMapper';
+import { getPremiumUserIds } from '@/services/subscriptionService';
+import { getBoostedUserIds } from '@/services/boostService';
 import { logger } from '@/config/logger';
 import { safeDecryptText } from '@/services/messageEncryption';
 import { decodeCursor, paginateCursor, resolveLimit } from '@/services/cursorPagination';
 
 type UserWithPhotos = Prisma.UserGetPayload<{ include: { photos: true } }>;
 
-function mapUser(u: UserWithPhotos) {
+function mapUser(u: UserWithPhotos, flags?: { isPremium?: boolean; isBoosted?: boolean }) {
     return {
         id: u.id,
         name: u.name,
@@ -36,8 +38,8 @@ function mapUser(u: UserWithPhotos) {
         suspended: u.suspended ?? false,
         banned: u.banned ?? false,
         preferredPeriod: (u.preferredPeriod ?? 'any') as PreferredPeriod,
-        isPremium: false,
-        isBoosted: false,
+        isPremium: flags?.isPremium ?? false,
+        isBoosted: flags?.isBoosted ?? false,
         badges: []
     };
 }
@@ -109,6 +111,15 @@ registerCommand<WSRequest_GetConversations>(
                 return !other || (!other.banned && !other.suspended && !other.deleted);
             });
 
+            const otherIds = visible.flatMap((conv) =>
+                conv.participants.filter((pp) => pp.userId !== client.userId).map((pp) => pp.userId)
+            );
+            const [premiumIds, boostedIds] = await Promise.all([getPremiumUserIds(otherIds), getBoostedUserIds()]);
+            const flagsFor = (userId: string) => ({
+                isPremium: premiumIds.has(userId),
+                isBoosted: boostedIds.has(userId)
+            });
+
             const page = paginateCursor(
                 visible,
                 limit,
@@ -133,7 +144,7 @@ registerCommand<WSRequest_GetConversations>(
                     if (isGroup) {
                         const others = conv.participants
                             .filter((pp) => pp.userId !== client.userId)
-                            .map((pp) => mapUser(pp.user));
+                            .map((pp) => mapUser(pp.user, flagsFor(pp.userId)));
                         return {
                             ...base,
                             participant: others[0] ?? UNKNOWN_USER,
@@ -147,7 +158,7 @@ registerCommand<WSRequest_GetConversations>(
                     const other = conv.participants.find((pp) => pp.userId !== client.userId)?.user;
                     return {
                         ...base,
-                        participant: other ? mapUser(other) : UNKNOWN_USER
+                        participant: other ? mapUser(other, flagsFor(other.id)) : UNKNOWN_USER
                     };
                 }
             );

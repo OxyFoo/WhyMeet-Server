@@ -52,6 +52,22 @@ async function main(): Promise<void> {
     );
     printService('OpenAI', env.OPENAI_API_KEY ? 'ok' : 'warn', env.OPENAI_API_KEY ? 'Configured' : 'Not configured');
 
+    // Payments (Apple/Google receipt validation)
+    const appleConfigured = !!(
+        process.env.APPLE_APPSTORE_KEY_ID &&
+        process.env.APPLE_APPSTORE_ISSUER_ID &&
+        process.env.APPLE_APPSTORE_PRIVATE_KEY
+    );
+    const googleConfigured = !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+    const trustClient = process.env.IAP_TRUST_CLIENT_RECEIPT === '1' || process.env.NODE_ENV !== 'production';
+    if (appleConfigured && googleConfigured) {
+        printService('Payments (IAP)', 'ok', 'Apple + Google validation configured');
+    } else if (trustClient) {
+        printService('Payments (IAP)', 'warn', 'Dev trust mode — client receipts accepted (see PAYMENTS-SETUP.md)');
+    } else {
+        printService('Payments (IAP)', 'fail', 'NOT configured — purchases will be rejected');
+    }
+
     // Start WebSocket server
     await startServer(env.LISTEN_PORT_WS);
     printService('WebSocket', 'ok', `Listening on: ${env.LISTEN_PORT_WS}`);

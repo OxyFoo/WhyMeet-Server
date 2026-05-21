@@ -7,6 +7,7 @@ export type UsageLimitConfig = {
     activityOpenDailyPremium: number;
     initialSearchTokens: number;
     subscriptionBoostDays: number;
+    subscriptionGracePeriodDays: number;
 };
 
 export const APP_CONFIG_KEYS = {
@@ -17,7 +18,8 @@ export const APP_CONFIG_KEYS = {
     activityOpenDailyFree: 'counter.activity_open.daily.free',
     activityOpenDailyPremium: 'counter.activity_open.daily.premium',
     initialSearchTokens: 'counter.search.initial',
-    subscriptionBoostDays: 'subscription.boost.days'
+    subscriptionBoostDays: 'subscription.boost.days',
+    subscriptionGracePeriodDays: 'subscription.grace_period.days'
 } as const;
 
 export const DEFAULT_USAGE_LIMITS: UsageLimitConfig = {
@@ -28,7 +30,8 @@ export const DEFAULT_USAGE_LIMITS: UsageLimitConfig = {
     activityOpenDailyFree: 3,
     activityOpenDailyPremium: 25,
     initialSearchTokens: 5,
-    subscriptionBoostDays: 10
+    subscriptionBoostDays: 10,
+    subscriptionGracePeriodDays: 7
 };
 
 export const APP_CONFIG_DEFAULT_ROWS = [
@@ -39,5 +42,6 @@ export const APP_CONFIG_DEFAULT_ROWS = [
     { key: APP_CONFIG_KEYS.activityOpenDailyFree, valueInt: DEFAULT_USAGE_LIMITS.activityOpenDailyFree },
     { key: APP_CONFIG_KEYS.activityOpenDailyPremium, valueInt: DEFAULT_USAGE_LIMITS.activityOpenDailyPremium },
     { key: APP_CONFIG_KEYS.initialSearchTokens, valueInt: DEFAULT_USAGE_LIMITS.initialSearchTokens },
-    { key: APP_CONFIG_KEYS.subscriptionBoostDays, valueInt: DEFAULT_USAGE_LIMITS.subscriptionBoostDays }
+    { key: APP_CONFIG_KEYS.subscriptionBoostDays, valueInt: DEFAULT_USAGE_LIMITS.subscriptionBoostDays },
+    { key: APP_CONFIG_KEYS.subscriptionGracePeriodDays, valueInt: DEFAULT_USAGE_LIMITS.subscriptionGracePeriodDays }
 ] as const;

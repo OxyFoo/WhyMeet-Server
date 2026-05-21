@@ -85,7 +85,8 @@ export async function getUsageLimitConfig(): Promise<UsageLimitConfig> {
         activityOpenDailyFree: getConfigValue(byKey, APP_CONFIG_KEYS.activityOpenDailyFree),
         activityOpenDailyPremium: getConfigValue(byKey, APP_CONFIG_KEYS.activityOpenDailyPremium),
         initialSearchTokens: getConfigValue(byKey, APP_CONFIG_KEYS.initialSearchTokens),
-        subscriptionBoostDays: getConfigValue(byKey, APP_CONFIG_KEYS.subscriptionBoostDays)
+        subscriptionBoostDays: getConfigValue(byKey, APP_CONFIG_KEYS.subscriptionBoostDays),
+        subscriptionGracePeriodDays: getConfigValue(byKey, APP_CONFIG_KEYS.subscriptionGracePeriodDays)
     };
 
     cache = { values, expiresAt: now + CACHE_TTL_MS };

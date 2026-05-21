@@ -5,6 +5,7 @@ import { runDiscoveryPipeline } from '@/services/discoveryPipeline';
 import { mapUserToCandidate } from '@/services/userMapper';
 import { getSearchQuota } from '@/services/searchQuotaService';
 import { getBoostedUserIds } from '@/services/boostService';
+import { getPremiumUserIds } from '@/services/subscriptionService';
 import { interleaveByBoost } from '@/services/interleaveResults';
 import { validateSearchFilters } from '@/config/validation';
 import { logger } from '@/config/logger';
@@ -28,14 +29,18 @@ registerCommand<WSRequest_Search>('search', async (client: Client, payload): Pro
 
         const { qualified, ctx } = await runDiscoveryPipeline(client, filters, 1000);
         await enrichProfileIntentionsFromFilters(client.userId, filters);
+        const candidateIds = qualified.map((s) => s.user.id);
+        const [boostedIds, premiumIds] = await Promise.all([getBoostedUserIds(), getPremiumUserIds(candidateIds)]);
         const results = qualified.map((candidateScore) => {
-            const candidate = mapUserToCandidate(candidateScore.user, ctx.prefIntentionKeys, ctx.myLatLng);
+            const candidate = mapUserToCandidate(candidateScore.user, ctx.prefIntentionKeys, ctx.myLatLng, {
+                isPremium: premiumIds.has(candidateScore.user.id),
+                isBoosted: boostedIds.has(candidateScore.user.id)
+            });
             candidate.score = candidateScore.score;
             candidate.intentionMatch = candidateScore.intentionMatch;
             return candidate;
         });
 
-        const boostedIds = await getBoostedUserIds();
         const interleaved = interleaveByBoost(results, boostedIds);
         const totalCount = interleaved.length;
         const shuffled = addRandomness(interleaved).slice(0, MAX_RESULTS);

@@ -6,6 +6,7 @@ import { runDiscoveryPipeline, DISCOVERY_FETCH_LIMIT } from '@/services/discover
 import { obfuscateCandidatePreview } from '@/services/previewObfuscation';
 import { getSearchQuota, useSearchQuota } from '@/services/searchQuotaService';
 import { getBoostedUserIds } from '@/services/boostService';
+import { getPremiumUserIds } from '@/services/subscriptionService';
 import { interleaveByBoost } from '@/services/interleaveResults';
 import { validateSearchFilters } from '@/config/validation';
 import { logger } from '@/config/logger';
@@ -38,18 +39,21 @@ registerCommand<WSRequest_SearchWithToken>(
             const { qualified, ctx } = await runDiscoveryPipeline(client, filters, DISCOVERY_FETCH_LIMIT);
             const totalCount = qualified.length;
 
+            const candidateIds = qualified.map((s) => s.user.id);
+            const [boostedIds, premiumIds] = await Promise.all([getBoostedUserIds(), getPremiumUserIds(candidateIds)]);
+
             const allCandidates = qualified.map((s) => {
                 const shouldPreview = !ctx.myProfileComplete;
                 const candidate = mapUserToCandidate(s.user, ctx.prefIntentionKeys, ctx.myLatLng, {
-                    photoKeyMode: shouldPreview ? 'blurred' : 'clear'
+                    photoKeyMode: shouldPreview ? 'blurred' : 'clear',
+                    isPremium: premiumIds.has(s.user.id),
+                    isBoosted: boostedIds.has(s.user.id)
                 });
                 candidate.score = s.score;
                 candidate.intentionMatch = s.intentionMatch;
                 return shouldPreview ? obfuscateCandidatePreview(candidate) : candidate;
             });
 
-            // Apply 60/40 boost interleave
-            const boostedIds = await getBoostedUserIds();
             const interleaved = interleaveByBoost(allCandidates, boostedIds);
 
             // Add slight randomness and limit to MAX_RESULTS

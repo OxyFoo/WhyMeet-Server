@@ -13,6 +13,11 @@ jest.mock('@/services/boostService', () => ({
     getBoostedUserIds: () => mockGetBoostedUserIds()
 }));
 
+const mockGetPremiumUserIds = jest.fn().mockResolvedValue(new Set<string>());
+jest.mock('@/services/subscriptionService', () => ({
+    getPremiumUserIds: (ids: string[]) => mockGetPremiumUserIds(ids)
+}));
+
 const mockInterleaveByBoost = jest.fn().mockImplementation((candidates: unknown[]) => candidates);
 jest.mock('@/services/interleaveResults', () => ({
     interleaveByBoost: (candidates: unknown[], boostedIds: Set<string>) => mockInterleaveByBoost(candidates, boostedIds)
@@ -146,10 +151,12 @@ describe('search command', () => {
         );
         expect(payload.totalCount).toBe(1);
         expect(payload.remaining).toBe(5);
-        expect(mockMapUserToCandidate).toHaveBeenCalledWith({ id: 'u1' }, ['meet_simple_first_date'], {
-            lat: 48.85,
-            lng: 2.35
-        });
+        expect(mockMapUserToCandidate).toHaveBeenCalledWith(
+            { id: 'u1' },
+            ['meet_simple_first_date'],
+            { lat: 48.85, lng: 2.35 },
+            { isPremium: false, isBoosted: false }
+        );
     });
 
     it('interleaves boosted users before applying the result limit', async () => {

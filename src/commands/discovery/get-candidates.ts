@@ -4,6 +4,7 @@ import type { WSRequest_GetCandidates, WSResponse_GetCandidates } from '@oxyfoo/
 import { mapUserToCandidate } from '@/services/userMapper';
 import { getSwipeQuota } from '@/services/swipeQuotaService';
 import { getBoostedUserIds } from '@/services/boostService';
+import { getPremiumUserIds } from '@/services/subscriptionService';
 import { interleaveByBoost } from '@/services/interleaveResults';
 import { runDiscoveryPipeline, DISCOVERY_FETCH_LIMIT } from '@/services/discoveryPipeline';
 import { obfuscateCandidatePreview } from '@/services/previewObfuscation';
@@ -27,18 +28,21 @@ registerCommand<WSRequest_GetCandidates>(
             const quotaExhausted = quota.dailyLimit !== -1 && quota.remaining <= 0;
             const shouldPreview = !ctx.myProfileComplete || quotaExhausted;
 
-            // Take top 20 and map to client-facing candidates
-            const scoredCandidates = qualified.slice(0, 20).map((s) => {
+            const top = qualified.slice(0, 20);
+            const candidateIds = top.map((s) => s.user.id);
+            const [boostedIds, premiumIds] = await Promise.all([getBoostedUserIds(), getPremiumUserIds(candidateIds)]);
+
+            const scoredCandidates = top.map((s) => {
                 const candidate = mapUserToCandidate(s.user, ctx.prefIntentionKeys, ctx.myLatLng, {
-                    photoKeyMode: shouldPreview ? 'blurred' : 'clear'
+                    photoKeyMode: shouldPreview ? 'blurred' : 'clear',
+                    isPremium: premiumIds.has(s.user.id),
+                    isBoosted: boostedIds.has(s.user.id)
                 });
                 candidate.score = s.score;
                 candidate.intentionMatch = s.intentionMatch;
                 return shouldPreview ? obfuscateCandidatePreview(candidate) : candidate;
             });
 
-            // Apply 60/40 boost interleave
-            const boostedIds = await getBoostedUserIds();
             const candidates = interleaveByBoost(scoredCandidates, boostedIds);
 
             logger.debug(

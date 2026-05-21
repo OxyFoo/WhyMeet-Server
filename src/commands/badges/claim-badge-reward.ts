@@ -1,13 +1,13 @@
 import { registerCommand } from '@/server/Router';
 import type { Client } from '@/server/Client';
 import type { WSRequest_ClaimBadgeReward, WSResponse_ClaimBadgeReward } from '@oxyfoo/whymeet-types';
+import { PRODUCT_IDS } from '@oxyfoo/whymeet-types';
 import { getBadgeDefinitions } from '@/services/badgeService';
 import { signAppleOffer } from '@/services/offerSigningService';
 import { getDatabase } from '@/services/database';
 import { logger } from '@/config/logger';
 
-// TODO: Define product IDs
-const SUBSCRIPTION_PRODUCT_ID = 'com.whymeet.sub.monthly';
+const SUBSCRIPTION_PRODUCT_ID = PRODUCT_IDS.subscriptions.monthly;
 
 registerCommand<WSRequest_ClaimBadgeReward>(
     'claim-badge-reward',

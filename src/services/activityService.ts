@@ -28,7 +28,7 @@ type UserWithPhotos = Prisma.UserGetPayload<{ include: { photos: true } }>;
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-function mapPrismaUserToUser(u: UserWithPhotos): User {
+function mapPrismaUserToUser(u: UserWithPhotos, flags?: { isPremium?: boolean; isBoosted?: boolean }): User {
     return {
         id: u.id,
         name: u.name,
@@ -46,8 +46,8 @@ function mapPrismaUserToUser(u: UserWithPhotos): User {
         suspended: u.suspended ?? false,
         banned: u.banned ?? false,
         preferredPeriod: (u.preferredPeriod ?? 'any') as PreferredPeriod,
-        isPremium: false,
-        isBoosted: false,
+        isPremium: flags?.isPremium ?? false,
+        isBoosted: flags?.isBoosted ?? false,
         badges: []
     };
 }

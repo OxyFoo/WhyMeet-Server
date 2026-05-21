@@ -107,59 +107,62 @@ function formatDistance(
 /**
  * Maps a Prisma User (with profile/tags) to the shared Profile type.
  */
-export function mapUserToProfile(user: {
-    id: string;
-    name: string;
-    birthDate: DateLike;
-    birthDateLastChangedAt?: DateLike;
-    gender: string;
-    city: string;
-    verified: boolean;
-    suspended?: boolean;
-    banned?: boolean;
-    preferredPeriod?: string;
-    photos?: { id: string; key: string; keyBlurred: string; description: string; position: number }[];
-    profile?: {
-        bio: string;
-        socialVibe: string;
-        country: string;
-        region: string;
-        city: string;
-        latitude: number | null;
-        longitude: number | null;
-        statConnections: number;
-        statMatches: number;
-        statVibes: number;
-        intentionKeys: string[];
-        intentionCategoryKeys?: string[];
-        spokenLanguages: string[];
-        trustScore: number;
-        completedHostedCount: number;
-        preferredDiscoveryView?: string;
-    } | null;
-    tags?: {
+export function mapUserToProfile(
+    user: {
         id: string;
-        type: string;
-        source?: string | null;
-        label: string;
-        labelLower: string;
-        tag: { id: string; label: string; domainKey?: string | null } | null;
-    }[];
-    badges?: {
-        badgeKey: string;
-        earned: boolean;
-        earnedAt: DateLike;
-        progress: number;
-        rewardClaimedAt: DateLike;
-        definition: {
-            emoji: string;
-            displayOrder: number;
-            threshold: number | null;
-            rewardType: string | null;
-            rewardDescription: string | null;
-        };
-    }[];
-}): Profile {
+        name: string;
+        birthDate: DateLike;
+        birthDateLastChangedAt?: DateLike;
+        gender: string;
+        city: string;
+        verified: boolean;
+        suspended?: boolean;
+        banned?: boolean;
+        preferredPeriod?: string;
+        photos?: { id: string; key: string; keyBlurred: string; description: string; position: number }[];
+        profile?: {
+            bio: string;
+            socialVibe: string;
+            country: string;
+            region: string;
+            city: string;
+            latitude: number | null;
+            longitude: number | null;
+            statConnections: number;
+            statMatches: number;
+            statVibes: number;
+            intentionKeys: string[];
+            intentionCategoryKeys?: string[];
+            spokenLanguages: string[];
+            trustScore: number;
+            completedHostedCount: number;
+            preferredDiscoveryView?: string;
+        } | null;
+        tags?: {
+            id: string;
+            type: string;
+            source?: string | null;
+            label: string;
+            labelLower: string;
+            tag: { id: string; label: string; domainKey?: string | null } | null;
+        }[];
+        badges?: {
+            badgeKey: string;
+            earned: boolean;
+            earnedAt: DateLike;
+            progress: number;
+            rewardClaimedAt: DateLike;
+            definition: {
+                emoji: string;
+                displayOrder: number;
+                threshold: number | null;
+                rewardType: string | null;
+                rewardDescription: string | null;
+            };
+        }[];
+    },
+    flags?: { isPremium?: boolean; isBoosted?: boolean }
+): Profile {
     return {
         id: user.id,
         name: user.name,
@@ -172,8 +175,8 @@ export function mapUserToProfile(user: {
         suspended: user.suspended ?? false,
         banned: user.banned ?? false,
         preferredPeriod: (user.preferredPeriod ?? 'any') as PreferredPeriod,
-        isPremium: false,
-        isBoosted: false,
+        isPremium: flags?.isPremium ?? false,
+        isBoosted: flags?.isBoosted ?? false,
         badges: mapBadges(user.badges),
         bio: user.profile?.bio ?? '',
         birthDateLastChangedAt: toIsoString(user.birthDateLastChangedAt),

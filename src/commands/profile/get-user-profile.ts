@@ -8,6 +8,8 @@ import type {
 } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { mapUserToCandidate, candidateInclude } from '@/services/userMapper';
+import { isPremium } from '@/services/subscriptionService';
+import { hasActiveBoost } from '@/services/boostService';
 import { buildIntentionMatchSummary, computeMatchScore } from '@/services/scoring';
 import type { ScoringCandidate, ScoringContext } from '@/services/scoring';
 import { buildTagScoringData } from '@/services/discoveryPipeline';
@@ -76,7 +78,11 @@ registerCommand<WSRequest_GetUserProfile>(
                 ? { latitude: currentUser.profile.latitude, longitude: currentUser.profile.longitude }
                 : undefined;
 
-            const candidate = mapUserToCandidate(targetUser, undefined, refLatLng);
+            const [targetPremium, targetBoosted] = await Promise.all([isPremium(userId), hasActiveBoost(userId)]);
+            const candidate = mapUserToCandidate(targetUser, undefined, refLatLng, {
+                isPremium: targetPremium,
+                isBoosted: targetBoosted
+            });
 
             // Compute affinity score
             if (currentUser?.profile) {
@@ -124,6 +130,22 @@ registerCommand<WSRequest_GetUserProfile>(
             }
             if (mutualMatch) {
                 candidate.alreadyMatched = true;
+
+                // Find the direct (non-group) conversation between the two users so the
+                // client can deep-link to it from the profile screen.
+                const directConv = await db.conversation.findFirst({
+                    where: {
+                        isGroup: false,
+                        AND: [
+                            { participants: { some: { userId: client.userId } } },
+                            { participants: { some: { userId } } }
+                        ]
+                    },
+                    select: { id: true }
+                });
+                if (directConv) {
+                    candidate.conversationId = directConv.id;
+                }
             }
 
             return { command: 'get-user-profile', payload: { candidate } };

@@ -3,6 +3,9 @@ import type { UserBoost, BoostSource } from '@oxyfoo/whymeet-types';
 import { logger } from '@/config/logger';
 import { getUsageLimitConfig } from '@/services/usageLimitsService';
 
+const BOOSTED_IDS_CACHE_TTL_MS = 5_000;
+let boostedIdsCache: { ids: Set<string>; expiresAt: number } | null = null;
+
 /**
  * Check if user has an active boost (not expired).
  */
@@ -62,6 +65,7 @@ export async function purchaseBoost(userId: string, durationDays: number): Promi
         data: { userId, expiresAt, source: 'purchase' }
     });
 
+    boostedIdsCache = null; // invalidate so next discovery reflects the new boost immediately
     logger.info(`[Boost] Purchased: user=${userId}, days=${durationDays}, expires=${expiresAt.toISOString()}`);
 
     return {
@@ -94,6 +98,7 @@ export async function grantSubscriptionBoost(userId: string): Promise<UserBoost>
         data: { userId, expiresAt, source: 'subscription' }
     });
 
+    boostedIdsCache = null; // invalidate so discovery reflects the boost immediately
     logger.info(`[Boost] Subscription grant: user=${userId}, expires=${expiresAt.toISOString()}`);
 
     return {
@@ -105,12 +110,18 @@ export async function grantSubscriptionBoost(userId: string): Promise<UserBoost>
 
 /**
  * Get a Set of all currently boosted user IDs. Used by discovery/search for 60/40 interleave.
+ * Result is cached for 5 s to avoid a full-table scan on every swipe/conversation load.
  */
 export async function getBoostedUserIds(): Promise<Set<string>> {
+    const now = Date.now();
+    if (boostedIdsCache && boostedIdsCache.expiresAt > now) return boostedIdsCache.ids;
+
     const db = getDatabase();
     const boosts = await db.activeBoost.findMany({
         where: { expiresAt: { gt: new Date() } },
         select: { userId: true }
     });
-    return new Set(boosts.map((b) => b.userId));
+    const ids = new Set(boosts.map((b) => b.userId));
+    boostedIdsCache = { ids, expiresAt: now + BOOSTED_IDS_CACHE_TTL_MS };
+    return ids;
 }

@@ -44,7 +44,9 @@ export function obfuscateCandidatePreview(candidate: MatchCandidate): MatchCandi
             ...candidate.user,
             name: obfuscateString(candidate.user.name),
             age: obfuscateAge(candidate.user.age),
-            city: candidate.user.city ? obfuscateString(candidate.user.city) : candidate.user.city
+            city: candidate.user.city ? obfuscateString(candidate.user.city) : candidate.user.city,
+            isPremium: false,
+            isBoosted: false
         },
         bio: obfuscateString(candidate.bio),
         interests: candidate.interests.map(obfuscateString),

@@ -14,6 +14,11 @@ jest.mock('@/services/boostService', () => ({
     getBoostedUserIds: jest.fn().mockResolvedValue(new Set<string>())
 }));
 
+jest.mock('@/services/subscriptionService', () => ({
+    getPremiumUserIds: jest.fn().mockResolvedValue(new Set<string>()),
+    isPremium: jest.fn().mockResolvedValue(false)
+}));
+
 jest.mock('@/services/interleaveResults', () => ({
     interleaveByBoost: jest.fn().mockImplementation((candidates: unknown[]) => candidates)
 }));
