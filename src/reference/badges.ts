@@ -52,7 +52,7 @@ export const BADGE_DEFINITIONS: readonly BadgeDefinition[] = [
         threshold: 5,
         displayOrder: 40,
         rewardType: 'promotional_offer',
-        rewardOfferIdApple: 'com.whymeet.offer.host5',
+        rewardOfferIdApple: 'com.oxyfoo.whymeet.offer.host5',
         rewardOfferIdGoogle: 'host5-reward',
         rewardDescription: '1 month free subscription'
     },

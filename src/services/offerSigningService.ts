@@ -15,7 +15,7 @@ interface AppleOfferSignature {
  * Sign an Apple Promotional Offer for StoreKit.
  * Uses ECDSA P-256 with the App Store Connect subscription key (.p8).
  *
- * @param productId - The subscription product ID (e.g. "com.whymeet.sub.monthly")
+ * @param productId - The subscription product ID (e.g. "com.oxyfoo.whymeet.sub.monthly")
  * @param offerId - The promotional offer ID configured in App Store Connect
  * @param appAccountToken - The user's app account token (can be empty string)
  */
