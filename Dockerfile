@@ -21,7 +21,7 @@ RUN apk add --no-cache fontconfig \
  && addgroup -g 1002 whymeet \
  && adduser node whymeet
 
-COPY --from=builder /app ./
+COPY --from=builder --chown=node:node /app ./
 
 RUN mkdir -p /app/logs && chown node:node /app/logs
 

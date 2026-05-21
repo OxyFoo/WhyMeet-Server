@@ -58,6 +58,12 @@ const WS_RATE_DISCONNECT_THRESHOLD = 180;
 const WS_INVALID_MESSAGE_DISCONNECT_THRESHOLD = 5;
 const WS_MAX_PAYLOAD_BYTES = 256 * 1024; // 256 KB
 
+// WS heartbeat: server sends a PING every 25s. If the client doesn't answer
+// a PONG within HEARTBEAT_INTERVAL_MS × 2 (= 50s), the socket is killed and
+// onclose fires — the client then reconnects via its own backoff. This both
+// detects half-open connections and prevents carrier/NAT idle drops on mobile.
+const HEARTBEAT_INTERVAL_MS = 25_000;
+
 function createHttpServer(): http.Server | https.Server {
     const app = express();
     app.use(helmet());
@@ -148,6 +154,26 @@ function onConnection(ws: WebSocket, req: http.IncomingMessage): void {
     const client = new Client(id, ws, ip, userId, deviceId);
     registerConnectedClient(client);
 
+    // Heartbeat: mark socket alive on every PONG. The wss-level interval below
+    // terminates sockets that haven't responded to the previous PING.
+    let isAlive = true;
+    ws.on('pong', () => {
+        isAlive = true;
+    });
+    const heartbeat = setInterval(() => {
+        if (!isAlive) {
+            logger.warn(`[Server] Client ${id} failed heartbeat — terminating`);
+            ws.terminate();
+            return;
+        }
+        isAlive = false;
+        try {
+            ws.ping();
+        } catch (err) {
+            logger.warn(`[Server] ping failed for ${id}`, err);
+        }
+    }, HEARTBEAT_INTERVAL_MS);
+
     // Log IP asynchronously (non-blocking)
     const db = getDatabase();
     db.ipLog.create({ data: { ip, userId, deviceId } }).catch((err) => logger.warn('[Server] Failed to log IP', err));
@@ -210,11 +236,13 @@ function onConnection(ws: WebSocket, req: http.IncomingMessage): void {
     });
 
     ws.on('close', () => {
+        clearInterval(heartbeat);
         unregisterConnectedClient(client);
         logger.info(`[Server] Client disconnected: ${id} — Total: ${getConnectedClientsRegistry().size}`);
     });
 
     ws.on('error', (error) => {
+        clearInterval(heartbeat);
         logger.error(`[Server] Client error: ${id}`, error);
         unregisterConnectedClient(client);
     });
