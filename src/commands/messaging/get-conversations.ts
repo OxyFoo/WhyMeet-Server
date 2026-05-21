@@ -133,7 +133,10 @@ registerCommand<WSRequest_GetConversations>(
 
                     const base = {
                         id: conv.id,
-                        lastMessage: lastMsg?.type === 'text' ? safeDecryptText(lastMsg.text) : lastMsg?.text,
+                        lastMessage:
+                            lastMsg?.type === 'text' || lastMsg?.type === 'shared_activity'
+                                ? safeDecryptText(lastMsg.text)
+                                : lastMsg?.text,
                         lastMessageTime: lastMsg?.timestamp.toISOString(),
                         lastMessageType: lastMsg ? ((lastMsg.type ?? 'text') as MessageType) : undefined,
                         lastMessageSenderId: lastMsg?.senderId,

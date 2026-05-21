@@ -338,15 +338,18 @@ model Message {
     conversationId String
     senderId       String
     text           String
-    type           String   @default("text") // text | user_joined | user_left
+    type           String   @default("text") // text | user_joined | user_left | shared_activity
     read           Boolean  @default(false)
     timestamp      DateTime @default(now())
+    activityId     String?
 
-    conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-    sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+    conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+    sender         User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+    sharedActivity Activity?    @relation("MessageSharedActivity", fields: [activityId], references: [id], onDelete: SetNull)
 
     @@index([conversationId, timestamp])
     @@index([senderId])
+    @@index([activityId])
     @@map("messages")
 }
 
@@ -667,14 +670,15 @@ model Activity {
     createdAt             DateTime  @default(now())
     updatedAt             DateTime  @updatedAt
 
-    host            User                     @relation("ActivityHost", fields: [hostId], references: [id], onDelete: Cascade)
-    conversation    Conversation?            @relation(fields: [conversationId], references: [id])
-    participants    ActivityParticipant[]
-    photos          ActivityPhoto[]
-    reports         ActivityReport[]
-    scheduledNotifs ActivityScheduledNotif[]
-    opens           ActivityOpen[]
-    auditLogs       AuditLog[]
+    host             User                     @relation("ActivityHost", fields: [hostId], references: [id], onDelete: Cascade)
+    conversation     Conversation?            @relation(fields: [conversationId], references: [id])
+    participants     ActivityParticipant[]
+    photos           ActivityPhoto[]
+    reports          ActivityReport[]
+    scheduledNotifs  ActivityScheduledNotif[]
+    opens            ActivityOpen[]
+    auditLogs        AuditLog[]
+    sharedInMessages Message[]                @relation("MessageSharedActivity")
 
     @@index([hostId])
     @@index([category])

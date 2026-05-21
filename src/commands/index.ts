@@ -21,6 +21,7 @@ import './profile/get-counters';
 import './messaging/get-conversations';
 import './messaging/get-messages';
 import './messaging/send-message';
+import './messaging/share-activity';
 import './messaging/mark-read';
 import './notifications/get-notifications';
 import './notifications/mark-notification-read';

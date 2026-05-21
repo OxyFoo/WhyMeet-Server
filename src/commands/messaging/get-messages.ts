@@ -44,7 +44,8 @@ registerCommand<WSRequest_GetMessages>(
                         senderId: m.senderId,
                         timestamp: m.timestamp.toISOString(),
                         read: m.read,
-                        type: (m.type ?? 'text') as MessageType
+                        type: (m.type ?? 'text') as MessageType,
+                        activityId: m.activityId ?? null
                     })),
                     hasMore
                 }

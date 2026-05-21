@@ -215,6 +215,7 @@ CREATE TABLE "messages" (
     "type" TEXT NOT NULL DEFAULT 'text',
     "read" BOOLEAN NOT NULL DEFAULT false,
     "timestamp" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "activityId" TEXT,
 
     CONSTRAINT "messages_pkey" PRIMARY KEY ("id")
 );
@@ -662,6 +663,9 @@ CREATE INDEX "messages_conversationId_timestamp_idx" ON "messages"("conversation
 CREATE INDEX "messages_senderId_idx" ON "messages"("senderId");
 
 -- CreateIndex
+CREATE INDEX "messages_activityId_idx" ON "messages"("activityId");
+
+-- CreateIndex
 CREATE INDEX "notifications_userId_read_idx" ON "notifications"("userId", "read");
 
 -- CreateIndex
@@ -861,6 +865,9 @@ ALTER TABLE "messages" ADD CONSTRAINT "messages_conversationId_fkey" FOREIGN KEY
 
 -- AddForeignKey
 ALTER TABLE "messages" ADD CONSTRAINT "messages_senderId_fkey" FOREIGN KEY ("senderId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "messages" ADD CONSTRAINT "messages_activityId_fkey" FOREIGN KEY ("activityId") REFERENCES "activities"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "notifications" ADD CONSTRAINT "notifications_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
