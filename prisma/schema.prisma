@@ -14,6 +14,7 @@ model User {
     name                   String    @default("")
     birthDate              DateTime?
     birthDateLastChangedAt DateTime?
+    underageDeclared       Boolean   @default(false)
     gender                 String    @default("")
     city                   String    @default("")
     verified               Boolean   @default(false)
@@ -62,6 +63,7 @@ model User {
     suspiciousActivity     SuspiciousActivity?
 
     @@index([bot])
+    @@index([underageDeclared])
     @@map("users")
 }
 

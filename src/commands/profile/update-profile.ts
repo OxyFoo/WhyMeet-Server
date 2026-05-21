@@ -135,8 +135,12 @@ registerCommand<WSRequest_UpdateProfile>(
                         userData.birthDate = null;
                     } else {
                         const parsed = new Date(data.birthDate);
-                        if (!isNaN(parsed.getTime()) && computeAge(parsed) >= 18) {
+                        if (!isNaN(parsed.getTime())) {
+                            const parsedAge = computeAge(parsed);
                             userData.birthDate = parsed;
+                            if (parsedAge < 18) {
+                                userData.underageDeclared = true;
+                            }
                             // Only count as "modification" when a previous birthDate existed
                             // AND the new date is actually different. The first definition and
                             // no-op saves must not consume the yearly quota.

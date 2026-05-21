@@ -19,6 +19,7 @@ CREATE TABLE "users" (
     "appealMessage" VARCHAR(500),
     "appealRequestedAt" TIMESTAMP(3),
     "preferredPeriod" TEXT NOT NULL DEFAULT 'any',
+    "underageDeclared" BOOLEAN NOT NULL DEFAULT false,
     "bot" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -592,6 +593,9 @@ CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
 
 -- CreateIndex
 CREATE INDEX "users_bot_idx" ON "users"("bot");
+
+-- CreateIndex
+CREATE INDEX "users_underageDeclared_idx" ON "users"("underageDeclared");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "devices_uuid_key" ON "devices"("uuid");
