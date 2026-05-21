@@ -118,8 +118,6 @@ services:
     volumes:
       - ./logs:/app/logs
       - ./cache:/app/cache
-      - /etc/ssl/whymeet-certs/fullchain.pem:/etc/ssl/whymeet-certs/fullchain.pem:ro
-      - /etc/ssl/whymeet-certs/privkey.pem:/etc/ssl/whymeet-certs/privkey.pem:ro
     deploy:
       restart_policy:
         condition: on-failure
