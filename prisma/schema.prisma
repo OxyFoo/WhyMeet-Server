@@ -23,6 +23,9 @@ model User {
     suspendedAt            DateTime?
     deleted                Boolean   @default(false)
     deletedAt              DateTime?
+    /// Set to the timestamp of the latest in-place account recreation
+    /// (same id + email reused after self-deletion). Null on first signup.
+    recreatedAt            DateTime?
     appealMessage          String?   @db.VarChar(500)
     appealRequestedAt      DateTime?
     preferredPeriod        String    @default("any")

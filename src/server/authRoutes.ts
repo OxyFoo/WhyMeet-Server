@@ -24,6 +24,7 @@ import { logger } from '@/config/logger';
 import { env } from '@/config/env';
 import { isDisposableEmail, normalizeEmail } from '@/services/emailValidator';
 import { getUsageLimitConfig } from '@/services/usageLimitsService';
+import { findUserByEmail, recreateUser } from '@/services/authAccountService';
 import {
     generateChallenge,
     consumeChallenge,
@@ -116,6 +117,18 @@ const signOutSchema = z.object({
 });
 
 // ─── Helpers ─────────────────────────────────────────────────────────
+
+type Database = ReturnType<typeof getDatabase>;
+
+async function isDeviceLinkedToDeletedUser(db: Database, userId: string | null): Promise<boolean> {
+    if (!userId) return false;
+
+    const owner = await db.user.findUnique({
+        where: { id: userId },
+        select: { deleted: true }
+    });
+    return owner?.deleted ?? false;
+}
 
 async function linkDeviceAndSendMail(
     userId: string,
@@ -264,13 +277,15 @@ authRouter.post('/enter', enterLimiter, async (req, res) => {
             return;
         }
 
-        const existingUser = await db.user.findUnique({
-            where: { email },
-            include: profileInclude
-        });
+        if (await isDeviceLinkedToDeletedUser(db, device.userId)) {
+            res.status(409).json({ error: 'device_archived' });
+            return;
+        }
 
-        // ── Account exists ───────────────────────────────────────────
-        if (existingUser) {
+        const existingUser = await findUserByEmail(db, email);
+
+        // ── Active account exists ────────────────────────────────────
+        if (existingUser && !existingUser.deleted) {
             // If username was provided but account exists, ignore username (account already created)
             const existingDevice = await db.device.findFirst({
                 where: { userId: existingUser.id, uuid: deviceUUID }
@@ -322,14 +337,52 @@ authRouter.post('/enter', enterLimiter, async (req, res) => {
             return;
         }
 
-        // ── No account ──────────────────────────────────────────────
+        // ── No active account ───────────────────────────────────────
         if (!username) {
             const response: HTTPResponse_Enter = { status: 'no-account' };
             res.json(response);
             return;
         }
 
-        // ── Create account ──────────────────────────────────────────
+        // ── Recreate previously soft-deleted account in-place ───────
+        if (existingUser && existingUser.deleted) {
+            await recreateUser(db, existingUser.id, username);
+            logger.info(`[Auth] Account recreated in-place: user=${existingUser.id}, email=${email}`);
+
+            const recreatedUser = await db.user.findUnique({
+                where: { id: existingUser.id },
+                include: profileInclude
+            });
+
+            const emailSkippedRecreate = await linkDeviceAndSendMail(existingUser.id, device.id, email, language);
+
+            if (emailSkippedRecreate) {
+                const newSessionToken = await tokenManager.session.cycle(device.id);
+                const wsToken = tokenManager.ws.generate(existingUser.id, device.id);
+                logger.info(
+                    `[Auth] Enter recreate authenticated (email skipped): user=${existingUser.id}, device=${device.id}`
+                );
+                const response: HTTPResponse_Enter = {
+                    status: 'authenticated',
+                    wsToken,
+                    newSessionToken,
+                    user: mapUserToProfile(recreatedUser!),
+                    email
+                };
+                res.json(response);
+                return;
+            }
+
+            logger.info(`[Auth] Enter recreate wait-mail: user=${existingUser.id}, device=${device.id}`);
+            const response: HTTPResponse_Enter = {
+                status: 'wait-mail',
+                message: 'Check your email to confirm your account'
+            };
+            res.json(response);
+            return;
+        }
+
+        // ── Create fresh account ────────────────────────────────────
         const newUser = await db.user.create({
             data: {
                 email,
@@ -437,13 +490,18 @@ authRouter.post('/google-signin', oauthLimiter, async (req, res) => {
             return;
         }
 
-        const user = await db.user.findUnique({
-            where: { email: payload.email },
-            include: profileInclude
-        });
+        if (await isDeviceLinkedToDeletedUser(db, device.userId)) {
+            res.status(409).json({ error: 'device_archived' });
+            return;
+        }
 
-        if (!user) {
-            const response: HTTPResponse_GoogleSignIn = { status: 'no-account', email: payload.email };
+        const email = normalizeEmail(payload.email);
+        const user = await findUserByEmail(db, email);
+
+        if (!user || user.deleted) {
+            // Deleted accounts must go through /auth/enter with a username
+            // so the in-place recreate flow can run.
+            const response: HTTPResponse_GoogleSignIn = { status: 'no-account', email };
             res.json(response);
             return;
         }
@@ -507,13 +565,18 @@ authRouter.post('/apple-signin', oauthLimiter, async (req, res) => {
             return;
         }
 
-        const user = await db.user.findUnique({
-            where: { email: applePayload.email },
-            include: profileInclude
-        });
+        if (await isDeviceLinkedToDeletedUser(db, device.userId)) {
+            res.status(409).json({ error: 'device_archived' });
+            return;
+        }
 
-        if (!user) {
-            const response: HTTPResponse_AppleSignIn = { status: 'no-account', email: applePayload.email };
+        const email = normalizeEmail(applePayload.email);
+        const user = await findUserByEmail(db, email);
+
+        if (!user || user.deleted) {
+            // Deleted accounts must go through /auth/enter with a username
+            // so the in-place recreate flow can run.
+            const response: HTTPResponse_AppleSignIn = { status: 'no-account', email };
             res.json(response);
             return;
         }
