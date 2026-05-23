@@ -510,6 +510,18 @@ model AppConfig {
     @@map("app_config")
 }
 
+/// Emails allowed to activate any device without the normal login checks.
+/// Intended for store reviewers, QA testers and synthetic/bot accounts only.
+model LoginBypassEmail {
+    id               String   @id @default(cuid())
+    email            String   @unique
+    createdByAdminId String?
+    createdAt        DateTime @default(now())
+
+    @@index([createdAt])
+    @@map("login_bypass_emails")
+}
+
 // ─── Email tracking ───────────────────────────────────────────────
 
 /// Every email dispatched by the system (Server or Console) is logged here.

@@ -25,6 +25,7 @@ import { env } from '@/config/env';
 import { isDisposableEmail, normalizeEmail } from '@/services/emailValidator';
 import { getUsageLimitConfig } from '@/services/usageLimitsService';
 import { findUserByEmail, recreateUser } from '@/services/authAccountService';
+import { isLoginBypassEmail } from '@/services/loginBypassService';
 import {
     generateChallenge,
     consumeChallenge,
@@ -119,6 +120,7 @@ const signOutSchema = z.object({
 // ─── Helpers ─────────────────────────────────────────────────────────
 
 type Database = ReturnType<typeof getDatabase>;
+type EnterUser = Parameters<typeof mapUserToProfile>[0] & { id: string };
 
 async function isDeviceLinkedToDeletedUser(db: Database, userId: string | null): Promise<boolean> {
     if (!userId) return false;
@@ -163,6 +165,31 @@ async function linkDeviceAndSendMail(
         await sendConfirmationEmail(email, mailToken, lang, userId);
     }
     return false; // emailSkipped = false
+}
+
+async function activateDeviceAndCreateEnterResponse(
+    db: Database,
+    user: EnterUser,
+    deviceId: string,
+    email: string,
+    reason: string
+): Promise<HTTPResponse_Enter> {
+    await db.device.update({
+        where: { id: deviceId },
+        data: { userId: user.id, status: 'active', mailTokenHash: null }
+    });
+
+    const newSessionToken = await tokenManager.session.cycle(deviceId);
+    const wsToken = tokenManager.ws.generate(user.id, deviceId);
+
+    logger.info(`[Auth] Enter authenticated (${reason}): user=${user.id}, device=${deviceId}`);
+    return {
+        status: 'authenticated',
+        wsToken,
+        newSessionToken,
+        user: mapUserToProfile(user),
+        email
+    };
 }
 
 // ─── POST /auth/device ──────────────────────────────────────────────
@@ -293,17 +320,25 @@ authRouter.post('/enter', enterLimiter, async (req, res) => {
 
             if (existingDevice && existingDevice.status === 'active') {
                 // Device already active → authenticate directly
-                const newSessionToken = await tokenManager.session.cycle(existingDevice.id);
-                const wsToken = tokenManager.ws.generate(existingUser.id, existingDevice.id);
+                const response = await activateDeviceAndCreateEnterResponse(
+                    db,
+                    existingUser,
+                    existingDevice.id,
+                    existingUser.email,
+                    'known device'
+                );
+                res.json(response);
+                return;
+            }
 
-                logger.info(`[Auth] Enter authenticated: user=${existingUser.id}, device=${existingDevice.id}`);
-                const response: HTTPResponse_Enter = {
-                    status: 'authenticated',
-                    wsToken,
-                    newSessionToken,
-                    user: mapUserToProfile(existingUser),
-                    email: existingUser.email
-                };
+            if (await isLoginBypassEmail(db, existingUser.email)) {
+                const response = await activateDeviceAndCreateEnterResponse(
+                    db,
+                    existingUser,
+                    device.id,
+                    existingUser.email,
+                    'login bypass'
+                );
                 res.json(response);
                 return;
             }
@@ -313,17 +348,13 @@ authRouter.post('/enter', enterLimiter, async (req, res) => {
 
             if (emailSkipped) {
                 // SMTP not configured → authenticate directly
-                const newSessionToken = await tokenManager.session.cycle(device.id);
-                const wsToken = tokenManager.ws.generate(existingUser.id, device.id);
-
-                logger.info(`[Auth] Enter authenticated (email skipped): user=${existingUser.id}, device=${device.id}`);
-                const response: HTTPResponse_Enter = {
-                    status: 'authenticated',
-                    wsToken,
-                    newSessionToken,
-                    user: mapUserToProfile(existingUser),
-                    email: existingUser.email
-                };
+                const response = await activateDeviceAndCreateEnterResponse(
+                    db,
+                    existingUser,
+                    device.id,
+                    existingUser.email,
+                    'email skipped'
+                );
                 res.json(response);
                 return;
             }
@@ -354,21 +385,28 @@ authRouter.post('/enter', enterLimiter, async (req, res) => {
                 include: profileInclude
             });
 
+            if (recreatedUser && (await isLoginBypassEmail(db, email))) {
+                const response = await activateDeviceAndCreateEnterResponse(
+                    db,
+                    recreatedUser,
+                    device.id,
+                    email,
+                    'login bypass recreate'
+                );
+                res.json(response);
+                return;
+            }
+
             const emailSkippedRecreate = await linkDeviceAndSendMail(existingUser.id, device.id, email, language);
 
             if (emailSkippedRecreate) {
-                const newSessionToken = await tokenManager.session.cycle(device.id);
-                const wsToken = tokenManager.ws.generate(existingUser.id, device.id);
-                logger.info(
-                    `[Auth] Enter recreate authenticated (email skipped): user=${existingUser.id}, device=${device.id}`
+                const response = await activateDeviceAndCreateEnterResponse(
+                    db,
+                    recreatedUser!,
+                    device.id,
+                    email,
+                    'email skipped recreate'
                 );
-                const response: HTTPResponse_Enter = {
-                    status: 'authenticated',
-                    wsToken,
-                    newSessionToken,
-                    user: mapUserToProfile(recreatedUser!),
-                    email
-                };
                 res.json(response);
                 return;
             }
@@ -424,17 +462,13 @@ authRouter.post('/enter', enterLimiter, async (req, res) => {
                 where: { id: newUser.id },
                 include: profileInclude
             });
-            const newSessionToken = await tokenManager.session.cycle(device.id);
-            const wsToken = tokenManager.ws.generate(newUser.id, device.id);
-
-            logger.info(`[Auth] Enter sign-up authenticated (email skipped): user=${newUser.id}, device=${device.id}`);
-            const response: HTTPResponse_Enter = {
-                status: 'authenticated',
-                wsToken,
-                newSessionToken,
-                user: mapUserToProfile(newUserFull!),
-                email
-            };
+            const response = await activateDeviceAndCreateEnterResponse(
+                db,
+                newUserFull!,
+                device.id,
+                email,
+                'email skipped sign-up'
+            );
             res.json(response);
             return;
         }
@@ -725,8 +759,11 @@ authRouter.post('/refresh-ws-token', refreshLimiter, async (req, res) => {
 
         // Require device integrity verification if enabled
         if (isIntegrityCheckEnabled() && !device.integrityVerifiedAt) {
-            res.status(403).json({ error: 'integrity_required' });
-            return;
+            const loginBypass = await isLoginBypassEmail(db, user.email);
+            if (!loginBypass) {
+                res.status(403).json({ error: 'integrity_required' });
+                return;
+            }
         }
 
         const newSessionToken = await tokenManager.session.cycle(device.id);

@@ -64,7 +64,11 @@ async function main(): Promise<void> {
     if (appleConfigured && googleConfigured) {
         printService('Payments (IAP)', 'ok', 'Apple + Google validation configured');
     } else if (trustClient) {
-        printService('Payments (IAP)', 'warn', 'Dev trust mode — client receipts accepted (see PAYMENTS-SETUP.md)');
+        printService(
+            'Payments (IAP)',
+            'warn',
+            'Client receipt validation enabled (IAP_TRUST_CLIENT_RECEIPT=1 or non-production environment) — this is INSECURE and should not be used in production'
+        );
     } else {
         printService('Payments (IAP)', 'fail', 'NOT configured — purchases will be rejected');
     }
