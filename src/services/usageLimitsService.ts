@@ -75,7 +75,10 @@ export async function getUsageLimitConfig(): Promise<UsageLimitConfig> {
     const db = getDatabase();
     const keys = Object.values(APP_CONFIG_KEYS) as string[];
     const rows = await db.appConfig.findMany({ where: { key: { in: keys } } });
-    const byKey = new Map(rows.map((row) => [row.key, row.valueInt]));
+    const byKey = new Map<string, number>();
+    for (const row of rows) {
+        if (row.valueInt !== null && row.valueInt !== undefined) byKey.set(row.key, row.valueInt);
+    }
 
     const values: UsageLimitConfig = {
         searchDailyFree: getConfigValue(byKey, APP_CONFIG_KEYS.searchDailyFree),

@@ -17,7 +17,12 @@ const DEFAULTS: Record<string, boolean> = {
     // Emergency kill-switch for Firebase push notifications. When ON,
     // pushToUser() and broadcastPush() short-circuit before any FCM call.
     // Does NOT touch in-app notifications (DB rows, WS delivery).
-    'notifications.disabled': false
+    'notifications.disabled': false,
+    // Master switch for in-app advertising. When OFF, the mobile client
+    // never preloads or shows interstitials, regardless of premium status
+    // or configured ad unit IDs. Useful for emergency cuts (bad ad unit,
+    // policy review, etc.).
+    'ads.enabled': true
 };
 
 export type FeatureFlagKey = keyof typeof DEFAULTS;

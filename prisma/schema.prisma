@@ -500,12 +500,15 @@ model FeatureFlag {
     @@map("feature_flags")
 }
 
-/// Global numeric settings for runtime-tunable app behavior.
-/// Keys are human-readable strings (for example: "counter.swipe.daily.free").
+/// Global runtime-tunable app settings. Polymorphic: exactly one of
+/// `valueInt` / `valueString` must be non-null per key (enforced in code,
+/// not at the DB level). Numeric keys (quotas, counters) use `valueInt`;
+/// string keys (ad unit IDs, opaque tokens) use `valueString`.
 model AppConfig {
-    key       String   @id
-    valueInt  Int
-    updatedAt DateTime @updatedAt
+    key         String   @id
+    valueInt    Int?
+    valueString String?
+    updatedAt   DateTime @updatedAt
 
     @@map("app_config")
 }

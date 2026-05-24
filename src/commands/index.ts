@@ -43,6 +43,7 @@ import './account/delete-account';
 import './subscription/get-subscription';
 import './subscription/validate-receipt';
 import './search/get-search-quota';
+import './ads/get-ads-config';
 import './tokens/search-with-token';
 import './tokens/preview-search';
 import './boost/purchase-boost';

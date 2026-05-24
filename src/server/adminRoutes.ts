@@ -17,6 +17,7 @@ import {
     type FeatureFlagKey
 } from '@/services/featureFlagService';
 import { invalidateAllPipelineSetup } from '@/services/pipelineSetupCache';
+import { invalidateAdsConfigCache } from '@/services/adsConfigService';
 import { getConnectedClients } from '@/server/Server';
 import { getDatabase } from '@/services/database';
 import { broadcastPush } from '@/services/pushService';
@@ -38,8 +39,17 @@ import {
     resetUserProfileToInitialState
 } from '@/services/adminProfileResetService';
 
-const FEATURE_FLAG_KEYS = ['mapbox', 'stresstest.bot_user_mixing', 'notifications.disabled'] as const;
+const FEATURE_FLAG_KEYS = ['mapbox', 'stresstest.bot_user_mixing', 'notifications.disabled', 'ads.enabled'] as const;
 const featureFlagKeySchema = z.enum(FEATURE_FLAG_KEYS);
+
+// String-valued AppConfig keys editable via /admin/app-config/string/:key.
+// Numeric quotas are edited through a different endpoint (saveUsageLimits in
+// the console, which writes directly via Prisma).
+const APP_CONFIG_STRING_KEYS = ['ads.interstitial.android.unit_id', 'ads.interstitial.ios.unit_id'] as const;
+const appConfigStringKeySchema = z.enum(APP_CONFIG_STRING_KEYS);
+
+// AdMob unit ID format: ca-app-pub-<publisher>/<unit>. Empty allowed (disable platform).
+const AD_UNIT_ID_REGEX = /^(ca-app-pub-\d+\/\d+)?$/;
 
 // ─── HMAC verification middleware ────────────────────────────────────
 
@@ -342,10 +352,56 @@ export function createAdminRouter(): Router {
                 const wiped = await invalidateAllPipelineSetup();
                 logger.info(`[AdminAPI] Pipeline setup cache invalidated (${wiped} entries)`);
             }
+            if (parsedKey.data === 'ads.enabled') {
+                invalidateAdsConfigCache();
+            }
             res.json({ key: parsedKey.data, enabled: parsedBody.data.enabled });
         } catch (err) {
             logger.error('[AdminAPI] feature-flag set failed', err);
             res.status(500).json({ error: 'feature_flag_failed' });
+        }
+    });
+
+    // ─── App config (string-valued keys) ──────────────────────────────
+    router.get('/app-config/string/:key', async (req, res) => {
+        const parsedKey = appConfigStringKeySchema.safeParse(req.params.key);
+        if (!parsedKey.success) {
+            res.status(400).json({ error: 'unknown_app_config_key' });
+            return;
+        }
+        try {
+            const row = await getDatabase().appConfig.findUnique({ where: { key: parsedKey.data } });
+            res.json({ key: parsedKey.data, value: row?.valueString ?? '' });
+        } catch (err) {
+            logger.error('[AdminAPI] app-config string get failed', err);
+            res.status(500).json({ error: 'app_config_failed' });
+        }
+    });
+
+    const appConfigStringBodySchema = z.object({ value: z.string().max(200).regex(AD_UNIT_ID_REGEX) });
+    router.post('/app-config/string/:key', async (req, res) => {
+        const parsedKey = appConfigStringKeySchema.safeParse(req.params.key);
+        if (!parsedKey.success) {
+            res.status(400).json({ error: 'unknown_app_config_key' });
+            return;
+        }
+        const parsedBody = appConfigStringBodySchema.safeParse(getJson(req));
+        if (!parsedBody.success) {
+            res.status(400).json({ error: 'invalid_payload' });
+            return;
+        }
+        try {
+            await getDatabase().appConfig.upsert({
+                where: { key: parsedKey.data },
+                update: { valueString: parsedBody.data.value, valueInt: null },
+                create: { key: parsedKey.data, valueString: parsedBody.data.value, valueInt: null }
+            });
+            invalidateAdsConfigCache();
+            logger.info(`[AdminAPI] App config "${parsedKey.data}" set to "${parsedBody.data.value}"`);
+            res.json({ key: parsedKey.data, value: parsedBody.data.value });
+        } catch (err) {
+            logger.error('[AdminAPI] app-config string set failed', err);
+            res.status(500).json({ error: 'app_config_failed' });
         }
     });
 
