@@ -46,7 +46,7 @@ const NOTIF_TYPE_TO_SETTING: Record<NotifType, string> = {
 export async function pushToUser(userId: string, payload: PushPayload, notifType?: NotifType): Promise<void> {
     if (isUserConnected(userId)) return;
     if (await isFeatureEnabled('notifications.disabled')) {
-        logger.info(`[Push] Globally disabled (kill-switch), skipping push to user ${userId}`);
+        logger.debug(`[Push] Globally disabled (kill-switch), skipping push to user ${userId}`);
         return;
     }
     if (!ensureInitialized()) return;
@@ -143,7 +143,7 @@ export async function broadcastPush(
     payload: PushPayload & { userIds?: string[] }
 ): Promise<{ success: number; failure: number; total: number }> {
     if (await isFeatureEnabled('notifications.disabled')) {
-        logger.info('[Push] Globally disabled (kill-switch), skipping broadcastPush');
+        logger.debug('[Push] Globally disabled (kill-switch), skipping broadcastPush');
         return { success: 0, failure: 0, total: 0 };
     }
     if (!ensureInitialized()) return { success: 0, failure: 0, total: 0 };

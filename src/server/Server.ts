@@ -181,7 +181,7 @@ function onConnection(ws: WebSocket, req: http.IncomingMessage): void {
         .update({ where: { id: deviceId }, data: { lastIp: ip, lastSeenAt: new Date() } })
         .catch((err) => logger.warn('[Server] Failed to update device IP', err));
 
-    logger.info(`[Server] Client connected: ${id} (${ip}) — Total: ${getConnectedClientsRegistry().size}`);
+    logger.debug(`[Server] Client connected: ${id} (${ip}) — Total: ${getConnectedClientsRegistry().size}`);
 
     let invalidMessageCount = 0;
 
@@ -238,7 +238,7 @@ function onConnection(ws: WebSocket, req: http.IncomingMessage): void {
     ws.on('close', () => {
         clearInterval(heartbeat);
         unregisterConnectedClient(client);
-        logger.info(`[Server] Client disconnected: ${id} — Total: ${getConnectedClientsRegistry().size}`);
+        logger.debug(`[Server] Client disconnected: ${id} — Total: ${getConnectedClientsRegistry().size}`);
     });
 
     ws.on('error', (error) => {

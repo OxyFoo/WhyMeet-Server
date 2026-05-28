@@ -25,7 +25,6 @@ registerCommand<WSRequest_GetCandidateCounts>(
                 return countQualifiedByIntentionCategory(qualified, INTENTION_CATEGORY_KEYS);
             });
 
-            logger.debug(`[Discovery] Counts for ${client.userId}: ${JSON.stringify(counts)}`);
             return { command: 'get-candidate-counts', payload: { counts } };
         } catch (error) {
             logger.error('[Discovery] Get candidate counts error', error);

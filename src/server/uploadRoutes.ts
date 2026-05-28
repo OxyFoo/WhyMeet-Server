@@ -136,7 +136,7 @@ uploadRouter.post('/photo', uploadLimiter, upload.single('photo'), async (req, r
             }
         });
 
-        logger.info(`[Upload] Photo added for user ${userId} (position ${count})`);
+        logger.debug(`[Upload] Photo added for user ${userId} (position ${count})`);
         invalidateProfilePhotoCaches(userId);
         res.json({ photo: { id: photo.id, key: photo.key, description: photo.description, position: photo.position } });
     } catch (error) {
@@ -186,7 +186,7 @@ uploadRouter.delete('/photo/:id', uploadLimiter, async (req, res) => {
             }
         }
 
-        logger.info(`[Upload] Photo ${photo.id} deleted for user ${userId}`);
+        logger.debug(`[Upload] Photo ${photo.id} deleted for user ${userId}`);
         invalidateProfilePhotoCaches(userId);
         res.json({ success: true });
     } catch (error) {
@@ -240,7 +240,7 @@ uploadRouter.post('/reorder-photos', uploadLimiter, async (req, res) => {
             });
         }
 
-        logger.info(`[Upload] Photos reordered for user ${userId}`);
+        logger.debug(`[Upload] Photos reordered for user ${userId}`);
         invalidateProfilePhotoCaches(userId);
         res.json({ success: true });
     } catch (error) {
@@ -277,7 +277,7 @@ uploadRouter.patch('/photo/:id', uploadLimiter, async (req, res) => {
             data: { description: description.slice(0, 128) }
         });
 
-        logger.info(`[Upload] Photo ${photo.id} description updated for user ${userId}`);
+        logger.debug(`[Upload] Photo ${photo.id} description updated for user ${userId}`);
         invalidateProfilePhotoCaches(userId);
         res.json({
             photo: { id: updated.id, key: updated.key, description: updated.description, position: updated.position }
@@ -343,7 +343,7 @@ uploadRouter.post('/activity-photo', uploadLimiter, upload.single('photo'), asyn
             }
         });
 
-        logger.info(`[Upload] Activity photo added for activity ${activityId} by user ${userId}`);
+        logger.debug(`[Upload] Activity photo added for activity ${activityId} by user ${userId}`);
         invalidateActivityCatalogCache().catch(() => {});
         res.json({ photo: { id: photo.id, key: photo.key, position: photo.position } });
     } catch (error) {
@@ -397,7 +397,7 @@ uploadRouter.delete('/activity-photo/:id', uploadLimiter, async (req, res) => {
             }
         }
 
-        logger.info(`[Upload] Activity photo ${photo.id} deleted for activity ${activityId} by user ${userId}`);
+        logger.debug(`[Upload] Activity photo ${photo.id} deleted for activity ${activityId} by user ${userId}`);
         invalidateActivityCatalogCache().catch(() => {});
         res.json({ success: true });
     } catch (error) {
@@ -457,7 +457,7 @@ uploadRouter.post('/reorder-activity-photos', uploadLimiter, async (req, res) =>
             });
         }
 
-        logger.info(`[Upload] Activity photos reordered for activity ${activityId} by user ${userId}`);
+        logger.debug(`[Upload] Activity photos reordered for activity ${activityId} by user ${userId}`);
         invalidateActivityCatalogCache().catch(() => {});
         res.json({ success: true });
     } catch (error) {

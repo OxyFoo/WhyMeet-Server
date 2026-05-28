@@ -179,7 +179,7 @@ registerCommand<WSRequest_UpdatePreferences>(
                 remoteMode: updated.visibilityRemoteMode
             };
 
-            logger.info(`[Settings] Updated preferences for user: ${client.userId}`);
+            logger.debug(`[Settings] Updated preferences for user: ${client.userId}`);
             await Promise.allSettled([
                 invalidatePipelineSetup(client.userId),
                 invalidateDiscoveryCounts(client.userId),

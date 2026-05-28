@@ -93,7 +93,6 @@ registerCommand<WSRequest_GetProfilePopularTags>(
                     const cached = await getRedis().get(CACHE_KEY);
                     if (cached) {
                         const parsed = JSON.parse(cached) as { interests: string[]; skills: string[] };
-                        logger.debug('[Profile] Popular tags served from cache');
                         return { command: 'get-profile-popular-tags', payload: parsed };
                     }
                 } catch {

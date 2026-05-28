@@ -67,7 +67,7 @@ registerCommand<WSRequest_UpdateSettings>(
                 }
             });
 
-            logger.info(`[Settings] Updated settings for user: ${client.userId}`);
+            logger.debug(`[Settings] Updated settings for user: ${client.userId}`);
             return {
                 command: 'update-settings',
                 payload: {

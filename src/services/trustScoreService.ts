@@ -74,7 +74,7 @@ export async function recalculateTrustScore(userId: string): Promise<number> {
         data: { trustScore }
     });
 
-    logger.info(
+    logger.debug(
         `[TrustScore] User ${userId}: score=${trustScore} (base=${baseScore}, att=${attendanceScore.toFixed(1)}, rep=-${reportPenalty}, cancel=-${cancellationPenalty})`
     );
 
@@ -245,6 +245,6 @@ export async function checkActivityCompletion(activityId: string): Promise<void>
             }
         }
 
-        logger.info(`[TrustScore] Activity ${activityId} marked as completed`);
+        logger.debug(`[TrustScore] Activity ${activityId} marked as completed`);
     }
 }

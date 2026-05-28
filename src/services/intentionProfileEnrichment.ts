@@ -119,10 +119,10 @@ export async function enrichProfileIntentionFromLike(userId: string, intentionKe
         });
 
         if (!intentionAlreadyPresent) {
-            logger.info(`[Profile] Intention "${intentionKey}" added from like for user ${userId}`);
+            logger.debug(`[Profile] Intention "${intentionKey}" added from like for user ${userId}`);
         }
         if (parentCategory && !categoryAlreadyPresent) {
-            logger.info(
+            logger.debug(
                 `[Profile] Category "${parentCategory}" auto-added for user ${userId} (from intention "${intentionKey}")`
             );
         }

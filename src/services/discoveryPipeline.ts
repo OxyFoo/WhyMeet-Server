@@ -252,9 +252,6 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
             getExcludeIds(client.userId),
             getIncomingLikerIds(client.userId, getDatabase())
         ]);
-        logger.debug(
-            `[Pipeline] Setup cache hit for ${client.userId} (${excludeIds.length} excluded, ${incomingLikerIds.length} likers)`
-        );
         return { ...cached, excludeIds, incomingLikerIds };
     }
 
@@ -303,10 +300,6 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
         getExcludeIds(client.userId),
         getIncomingLikerIds(client.userId, db)
     ]);
-
-    logger.debug(
-        `[Pipeline] Setup for ${client.userId}: ${myIntentionKeys.length} intentions, ${excludeIds.length} excluded, ${incomingLikerIds.length} likers, profileComplete=${myProfileComplete}`
-    );
 
     const setup: PipelineSetup = {
         myIntentionKeys,
@@ -558,10 +551,6 @@ export async function runPipelineQuery(
     // Step 4: reconstruct ordered list
     const users = ids.map((id) => cachedMap.get(id)).filter(Boolean) as unknown as CandidateUser[];
 
-    logger.debug(
-        `[Pipeline] Candidates: ${ids.length} IDs, ${missIds.length} DB misses, ${ids.length - missIds.length} cache hits`
-    );
-
     // ── Score & post-filter ──────────────────────────────────────
     const scoringCtx: ScoringContext = {
         myIntentionKeys: setup.myIntentionKeys,
@@ -637,11 +626,6 @@ export async function runPipelineQuery(
         .filter((s) => s.score >= MIN_SCORE_THRESHOLD);
 
     qualified.sort((a, b) => b.score - a.score);
-
-    const queryScope = prefIntentionKeys.length > 0 ? prefIntentionKeys.join(',') : (filters?.categoryKey ?? 'all');
-    logger.debug(
-        `[Pipeline] Query(${queryScope}): ${users.length} fetched → ${qualified.length} qualified (limit=${fetchLimit})`
-    );
 
     return {
         qualified,
