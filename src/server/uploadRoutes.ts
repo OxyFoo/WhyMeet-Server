@@ -241,7 +241,7 @@ uploadRouter.post('/reorder-photos', uploadLimiter, async (req, res) => {
         }
 
         logger.info(`[Upload] Photos reordered for user ${userId}`);
-        invalidateCandidate(userId).catch(() => {});
+        invalidateProfilePhotoCaches(userId);
         res.json({ success: true });
     } catch (error) {
         logger.error('[Upload] Reorder error', error);
@@ -278,7 +278,7 @@ uploadRouter.patch('/photo/:id', uploadLimiter, async (req, res) => {
         });
 
         logger.info(`[Upload] Photo ${photo.id} description updated for user ${userId}`);
-        invalidateCandidate(userId).catch(() => {});
+        invalidateProfilePhotoCaches(userId);
         res.json({
             photo: { id: updated.id, key: updated.key, description: updated.description, position: updated.position }
         });
