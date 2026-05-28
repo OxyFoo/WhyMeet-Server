@@ -8,7 +8,7 @@ import type {
 import { Prisma } from '@prisma/client';
 import { getDatabase } from '@/services/database';
 import { getDistanceKm, geoBoundingBox, computeAge } from '@/services/userMapper';
-import { isFeatureEnabled } from '@/services/featureFlagService';
+import { loadBotIsolationAccess } from '@/services/botIsolationService';
 import { getRedis, isRedisAvailable } from '@/services/redisService';
 import { INTEREST_CATEGORY_KEYS } from '@oxyfoo/whymeet-types';
 import { isProfileComplete, loadUserForCompletion } from '@/services/profileCompletion';
@@ -36,8 +36,8 @@ interface ViewerContext {
     myProfileComplete: boolean;
     /** Synthetic stresstest account flag — bots only see other bots' activities. */
     isBot: boolean;
-    /** When true, the bot/user isolation is broken (stresstest.bot_user_mixing). */
-    mixBots: boolean;
+    /** Whether this viewer can bypass bot/user isolation for activity discovery. */
+    canBypassBotIsolation: boolean;
     activityGenders: string[];
     activityMaxDistance: number;
     activityRemoteMode: boolean;
@@ -175,16 +175,22 @@ export async function invalidateActivityCatalogCache(): Promise<void> {
     }
 }
 
+export async function invalidateAllActivityDiscoveryCache(): Promise<void> {
+    viewerContextCache.clear();
+    await invalidateActivityCatalogCache();
+}
+
 async function loadViewerContext(userId: string): Promise<ViewerContext> {
     const cached = viewerContextCache.get(userId);
     if (cached && Date.now() < cached.expiresAt) return cached.value;
 
     const db = getDatabase();
-    const [user, settings, mixBots] = await Promise.all([
+    const [user, settings] = await Promise.all([
         loadUserForCompletion(userId),
-        db.settings.findUnique({ where: { userId } }),
-        isFeatureEnabled('stresstest.bot_user_mixing')
+        db.settings.findUnique({ where: { userId } })
     ]);
+    const isBot = user?.bot ?? false;
+    const botIsolationAccess = await loadBotIsolationAccess(userId, isBot, db);
 
     const context: ViewerContext = {
         latitude: user?.profile?.latitude ?? null,
@@ -192,8 +198,8 @@ async function loadViewerContext(userId: string): Promise<ViewerContext> {
         gender: user?.gender ?? null,
         birthDate: user?.birthDate ?? null,
         myProfileComplete: user ? isProfileComplete(user) : false,
-        isBot: user?.bot ?? false,
-        mixBots,
+        isBot,
+        canBypassBotIsolation: botIsolationAccess.canBypassBotIsolation,
         activityGenders: settings?.activityGenders ?? [],
         activityMaxDistance: settings?.activityMaxDistance ?? 50,
         activityRemoteMode: settings?.activityRemoteMode ?? false,
@@ -245,7 +251,7 @@ function buildActivityDiscoveryWhere(
         )`
     ];
 
-    if (!viewer.mixBots) {
+    if (!viewer.canBypassBotIsolation) {
         clauses.push(Prisma.sql`host.bot = ${viewer.isBot}`);
     }
 

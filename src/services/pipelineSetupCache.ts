@@ -7,7 +7,7 @@ import type { InterestCategoryKey } from '@oxyfoo/whymeet-types';
 const KEY_PREFIX = 'pipeline:setup:';
 // Bump this when the serialized shape changes so that in-flight Redis entries
 // are ignored (rather than deserialised with a stale shape).
-const CACHE_VERSION = 4;
+const CACHE_VERSION = 5;
 
 function key(userId: string): string {
     return `${KEY_PREFIX}v${CACHE_VERSION}:${userId}`;

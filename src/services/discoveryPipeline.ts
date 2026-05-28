@@ -30,7 +30,7 @@ import { isProfileComplete } from '@/services/profileCompletion';
 import { getExcludeIds } from '@/services/excludeCache';
 import { getCandidates, setCandidates } from '@/services/candidateCache';
 import { getPipelineSetup, setPipelineSetup } from '@/services/pipelineSetupCache';
-import { isFeatureEnabled } from '@/services/featureFlagService';
+import { loadBotIsolationAccess } from '@/services/botIsolationService';
 import { resolveDomain } from '@/services/tagDomain';
 import { logger } from '@/config/logger';
 import { normalizeActiveIntentionCategoryKeys, normalizeActiveIntentionKeys } from '@/services/intentionKeys';
@@ -134,12 +134,8 @@ export interface PipelineSetup {
      * the client.
      */
     myIsBot: boolean;
-    /**
-     * When true, the bot/user isolation is broken: bots see real users and
-     * real users see bots. Driven by the `stresstest.bot_user_mixing` feature
-     * flag — false in production. Loaded once per setup build and cached.
-     */
-    mixBots: boolean;
+    /** Whether this viewer can bypass bot/user isolation for discovery. */
+    canBypassBotIsolation: boolean;
     prefAgeMin: number;
     prefAgeMax: number;
     prefGenders: string[];
@@ -265,7 +261,8 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
         db.settings.findUnique({ where: { userId: client.userId } })
     ]);
 
-    const mixBots = await isFeatureEnabled('stresstest.bot_user_mixing');
+    const myIsBot = currentUser?.bot ?? false;
+    const botIsolationAccess = await loadBotIsolationAccess(client.userId, myIsBot, db);
 
     const myIntentionKeys = normalizeActiveIntentionKeys(currentUser?.profile?.intentionKeys ?? []);
     const myIntentionCategoryKeys = normalizeActiveIntentionCategoryKeys(
@@ -314,8 +311,8 @@ export async function buildPipelineContext(client: Client): Promise<PipelineSetu
         myPreferredPeriod,
         mySocialVibe,
         myProfileComplete,
-        myIsBot: currentUser?.bot ?? false,
-        mixBots,
+        myIsBot,
+        canBypassBotIsolation: botIsolationAccess.canBypassBotIsolation,
         prefAgeMin,
         prefAgeMax,
         prefGenders,
@@ -351,9 +348,8 @@ function buildPipelineWhere(
         deleted: false,
         underageDeclared: false,
         // Synthetic stresstest accounts only see other synthetic accounts;
-        // real accounts never see bots. Bypassed when `stresstest.bot_user_mixing`
-        // is enabled (driven by the global feature flag).
-        ...(setup.mixBots ? {} : { bot: setup.myIsBot }),
+        // real accounts never see bots unless explicitly allowed for tests.
+        ...(setup.canBypassBotIsolation ? {} : { bot: setup.myIsBot }),
         birthDate: { not: null },
         photos: { some: {} },
         name: { not: '' },

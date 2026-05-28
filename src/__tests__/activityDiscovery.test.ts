@@ -1,6 +1,11 @@
 jest.mock('@/services/database', () => ({ getDatabase: jest.fn() }));
 jest.mock('@/services/swipeQuotaService', () => ({ getSwipeQuota: jest.fn() }));
 
+const mockLoadBotIsolationAccess = jest.fn();
+jest.mock('@/services/botIsolationService', () => ({
+    loadBotIsolationAccess: (...args: unknown[]) => mockLoadBotIsolationAccess(...args)
+}));
+
 import { INTEREST_CATEGORY_KEYS, SOCIAL_VIBES, type InterestCategoryKey } from '@oxyfoo/whymeet-types';
 import { getDatabase } from '@/services/database';
 import { getSwipeQuota } from '@/services/swipeQuotaService';
@@ -157,6 +162,12 @@ describe('activity discovery queries', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         mockedGetSwipeQuota.mockResolvedValue({ remaining: 20, dailyLimit: 20 });
+        mockLoadBotIsolationAccess.mockResolvedValue({
+            allowlistMixingEnabled: false,
+            globalMixingEnabled: false,
+            viewerAllowlisted: false,
+            canBypassBotIsolation: false
+        });
     });
 
     it('loads the first exact SQL page and preserves SQL ordering', async () => {
@@ -224,6 +235,37 @@ describe('activity discovery queries', () => {
         expect(query).toContain('ORDER BY count DESC');
         expect(query).toContain('6371 * acos');
         expect(query).toContain('targetAgeRange');
+    });
+
+    it('keeps host bot isolation in activity SQL by default', async () => {
+        const category = INTEREST_CATEGORY_KEYS[0] as InterestCategoryKey;
+        const db = makeActivityDiscoveryDb();
+        db.$queryRaw.mockResolvedValue([{ category, count: 1n }]);
+        mockedGetDatabase.mockReturnValue(db as never);
+
+        await getActivityCounts('viewer-bot-filter-default');
+
+        const query = sqlText(db.$queryRaw.mock.calls[0][0]);
+        expect(query).toContain('host.bot =');
+        expect(mockLoadBotIsolationAccess).toHaveBeenCalledWith('viewer-bot-filter-default', false, expect.anything());
+    });
+
+    it('removes host bot isolation in activity SQL for bypassed viewers', async () => {
+        const category = INTEREST_CATEGORY_KEYS[0] as InterestCategoryKey;
+        const db = makeActivityDiscoveryDb();
+        db.$queryRaw.mockResolvedValue([{ category, count: 1n }]);
+        mockLoadBotIsolationAccess.mockResolvedValue({
+            allowlistMixingEnabled: true,
+            globalMixingEnabled: false,
+            viewerAllowlisted: true,
+            canBypassBotIsolation: true
+        });
+        mockedGetDatabase.mockReturnValue(db as never);
+
+        await getActivityCounts('viewer-bot-filter-bypass');
+
+        const query = sqlText(db.$queryRaw.mock.calls[0][0]);
+        expect(query).not.toContain('host.bot =');
     });
 
     it('obfuscates activity cards when the viewer profile is incomplete', async () => {

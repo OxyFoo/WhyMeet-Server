@@ -16,7 +16,7 @@ import {
     setFeatureEnabled,
     type FeatureFlagKey
 } from '@/services/featureFlagService';
-import { invalidateAllPipelineSetup } from '@/services/pipelineSetupCache';
+import { invalidateAllPipelineSetup, invalidatePipelineSetup } from '@/services/pipelineSetupCache';
 import { invalidateAdsConfigCache } from '@/services/adsConfigService';
 import { getConnectedClients } from '@/server/Server';
 import { getDatabase } from '@/services/database';
@@ -35,11 +35,21 @@ import { safeDecryptText } from '@/services/messageEncryption';
 import { getStorageStats } from '@/services/storageService';
 import { deleteImagePair } from '@/services/photoStorageService';
 import {
+    invalidateActivityDiscoveryCache,
+    invalidateAllActivityDiscoveryCache
+} from '@/services/activityDiscoveryService';
+import {
     AdminProfileResetUserNotFoundError,
     resetUserProfileToInitialState
 } from '@/services/adminProfileResetService';
 
-const FEATURE_FLAG_KEYS = ['mapbox', 'stresstest.bot_user_mixing', 'notifications.disabled', 'ads.enabled'] as const;
+const FEATURE_FLAG_KEYS = [
+    'mapbox',
+    'stresstest.bot_user_mixing',
+    'stresstest.bot_user_mixing_global',
+    'notifications.disabled',
+    'ads.enabled'
+] as const;
 const featureFlagKeySchema = z.enum(FEATURE_FLAG_KEYS);
 
 // String-valued AppConfig keys editable via /admin/app-config/string/:key.
@@ -344,13 +354,13 @@ export function createAdminRouter(): Router {
         try {
             await setFeatureEnabled(parsedKey.data as FeatureFlagKey, parsedBody.data.enabled);
             logger.info(`[AdminAPI] Feature flag "${parsedKey.data}" set to ${parsedBody.data.enabled}`);
-            // Some flags affect cached PipelineSetup (e.g. bot/user mixing).
-            // Wipe every cached setup so the next discovery query rebuilds
-            // with the new flag value — otherwise users see stale results
-            // for up to ~60s.
-            if (parsedKey.data === 'stresstest.bot_user_mixing') {
+            if (
+                parsedKey.data === 'stresstest.bot_user_mixing' ||
+                parsedKey.data === 'stresstest.bot_user_mixing_global'
+            ) {
                 const wiped = await invalidateAllPipelineSetup();
-                logger.info(`[AdminAPI] Pipeline setup cache invalidated (${wiped} entries)`);
+                await invalidateAllActivityDiscoveryCache();
+                logger.info(`[AdminAPI] Bot isolation caches invalidated (${wiped} pipeline entries)`);
             }
             if (parsedKey.data === 'ads.enabled') {
                 invalidateAdsConfigCache();
@@ -921,6 +931,164 @@ export function createAdminRouter(): Router {
     });
 
     // ─── Stresstest (synthetic accounts) ──────────────────────────────
+    type BotIsolationBypassRow = {
+        id: string;
+        userId: string;
+        createdByAdminId: string | null;
+        createdAt: Date;
+        user: {
+            id: string;
+            email: string;
+            name: string;
+            deleted: boolean;
+            banned: boolean;
+            suspended: boolean;
+            bot: boolean;
+        };
+    };
+
+    function serializeBotIsolationBypass(row: BotIsolationBypassRow) {
+        return {
+            id: row.id,
+            userId: row.userId,
+            createdByAdminId: row.createdByAdminId,
+            createdAt: row.createdAt.toISOString(),
+            user: row.user
+        };
+    }
+
+    const botIsolationBypassSchema = z.object({
+        userIdOrEmail: z.string().trim().min(1).max(320),
+        createdByAdminId: z.string().trim().min(1).max(200).optional()
+    });
+
+    router.get('/stresstest/bot-isolation-bypass', async (_req, res) => {
+        try {
+            const rows = await getDatabase().botIsolationBypassUser.findMany({
+                orderBy: { createdAt: 'desc' },
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            email: true,
+                            name: true,
+                            deleted: true,
+                            banned: true,
+                            suspended: true,
+                            bot: true
+                        }
+                    }
+                }
+            });
+            res.json({ entries: rows.map(serializeBotIsolationBypass) });
+        } catch (err) {
+            logger.error('[AdminAPI] bot-isolation-bypass list failed', err);
+            res.status(500).json({ error: 'bot_isolation_bypass_failed' });
+        }
+    });
+
+    router.post('/stresstest/bot-isolation-bypass', async (req, res) => {
+        const parsed = botIsolationBypassSchema.safeParse(getJson(req));
+        if (!parsed.success) {
+            res.status(400).json({ error: 'invalid_payload' });
+            return;
+        }
+
+        const db = getDatabase();
+        const userIdOrEmail = parsed.data.userIdOrEmail;
+        try {
+            const target = await db.user.findFirst({
+                where: {
+                    OR: [{ id: userIdOrEmail }, { email: { equals: userIdOrEmail, mode: 'insensitive' } }]
+                },
+                select: {
+                    id: true,
+                    email: true,
+                    name: true,
+                    deleted: true,
+                    banned: true,
+                    suspended: true,
+                    bot: true
+                }
+            });
+
+            if (!target) {
+                res.status(404).json({ error: 'user_not_found' });
+                return;
+            }
+            if (target.deleted) {
+                res.status(409).json({ error: 'user_deleted' });
+                return;
+            }
+            if (target.bot) {
+                res.status(409).json({ error: 'user_is_bot' });
+                return;
+            }
+
+            const existing = await db.botIsolationBypassUser.findUnique({
+                where: { userId: target.id },
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            email: true,
+                            name: true,
+                            deleted: true,
+                            banned: true,
+                            suspended: true,
+                            bot: true
+                        }
+                    }
+                }
+            });
+
+            const row =
+                existing ??
+                (await db.botIsolationBypassUser.create({
+                    data: { userId: target.id, createdByAdminId: parsed.data.createdByAdminId ?? null },
+                    include: {
+                        user: {
+                            select: {
+                                id: true,
+                                email: true,
+                                name: true,
+                                deleted: true,
+                                banned: true,
+                                suspended: true,
+                                bot: true
+                            }
+                        }
+                    }
+                }));
+
+            await Promise.all([invalidatePipelineSetup(target.id), invalidateActivityDiscoveryCache(target.id)]);
+            res.json({ entry: serializeBotIsolationBypass(row) });
+        } catch (err) {
+            logger.error('[AdminAPI] bot-isolation-bypass add failed', err);
+            res.status(500).json({ error: 'bot_isolation_bypass_failed' });
+        }
+    });
+
+    router.delete('/stresstest/bot-isolation-bypass/:userId', async (req, res) => {
+        const userId = String(req.params.userId ?? '').trim();
+        if (!userId) {
+            res.status(400).json({ error: 'invalid_user_id' });
+            return;
+        }
+
+        try {
+            const row = await getDatabase().botIsolationBypassUser.findUnique({ where: { userId } });
+            if (row) {
+                await getDatabase().botIsolationBypassUser.delete({ where: { userId } });
+            }
+            await Promise.all([invalidatePipelineSetup(userId), invalidateActivityDiscoveryCache(userId)]);
+            res.json({ deleted: true, userId });
+        } catch (err) {
+            logger.error('[AdminAPI] bot-isolation-bypass remove failed', err);
+            res.status(500).json({ error: 'bot_isolation_bypass_failed' });
+        }
+    });
+
     const spawnBotSchema = z.object({
         completeProfile: z.boolean().default(true)
     });

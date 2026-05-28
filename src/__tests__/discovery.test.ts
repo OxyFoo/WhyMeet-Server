@@ -28,6 +28,11 @@ jest.mock('@/services/intentionProfileEnrichment', () => ({
     enrichProfileIntentionsFromFilters: (...args: unknown[]) => mockEnrichProfileIntentionsFromFilters(...args)
 }));
 
+const mockLoadBotIsolationAccess = jest.fn();
+jest.mock('@/services/botIsolationService', () => ({
+    loadBotIsolationAccess: (...args: unknown[]) => mockLoadBotIsolationAccess(...args)
+}));
+
 const mockUserFindUnique = jest.fn();
 const mockUserFindMany = jest.fn();
 const mockMatchFindMany = jest.fn();
@@ -98,6 +103,7 @@ function prismaUser(
         verified: true,
         suspended: false,
         banned: false,
+        bot: false,
         preferredPeriod: 'any',
         profile: {
             bio: 'Une bio assez longue',
@@ -141,6 +147,12 @@ describe('get-candidates command', () => {
         mockBlockFindMany.mockResolvedValue([]);
         mockSettingsFindUnique.mockResolvedValue(null);
         mockReportFindMany.mockResolvedValue([]);
+        mockLoadBotIsolationAccess.mockResolvedValue({
+            allowlistMixingEnabled: false,
+            globalMixingEnabled: false,
+            viewerAllowlisted: false,
+            canBypassBotIsolation: false
+        });
     });
 
     it('excludes current user and already-seen users', async () => {
@@ -157,6 +169,41 @@ describe('get-candidates command', () => {
         expect(where.id.notIn).toContain('me');
         expect(where.id.notIn).toContain('seen-1');
         expect(where.id.notIn).toContain('seen-2');
+    });
+
+    it('keeps bot isolation in the discovery WHERE clause by default', async () => {
+        mockUserFindUnique.mockResolvedValue(prismaUser('me', ['meet_simple_first_date'], ['Yoga']));
+        mockMatchFindMany.mockResolvedValue([]);
+        mockUserFindMany.mockResolvedValue([]);
+
+        await routeCommand(fakeClient('me'), {
+            command: 'get-candidates',
+            payload: { filters: {} }
+        } as never);
+
+        const where = mockUserFindMany.mock.calls[0][0].where;
+        expect(where.bot).toBe(false);
+        expect(mockLoadBotIsolationAccess).toHaveBeenCalledWith('me', false, expect.anything());
+    });
+
+    it('removes the bot filter for viewers allowed to bypass bot isolation', async () => {
+        mockLoadBotIsolationAccess.mockResolvedValue({
+            allowlistMixingEnabled: true,
+            globalMixingEnabled: false,
+            viewerAllowlisted: true,
+            canBypassBotIsolation: true
+        });
+        mockUserFindUnique.mockResolvedValue(prismaUser('me', ['meet_simple_first_date'], ['Yoga']));
+        mockMatchFindMany.mockResolvedValue([]);
+        mockUserFindMany.mockResolvedValue([]);
+
+        await routeCommand(fakeClient('me'), {
+            command: 'get-candidates',
+            payload: { filters: {} }
+        } as never);
+
+        const where = mockUserFindMany.mock.calls[0][0].where;
+        expect(where).not.toHaveProperty('bot');
     });
 
     it('scores candidates using weighted scoring and sorts by total score', async () => {

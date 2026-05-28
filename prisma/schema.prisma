@@ -64,6 +64,7 @@ model User {
     auditLogs              AuditLog[]
     feedbacks              Feedback[]
     suspiciousActivity     SuspiciousActivity?
+    botIsolationBypass     BotIsolationBypassUser?
 
     @@index([bot])
     @@index([underageDeclared])
@@ -523,6 +524,21 @@ model LoginBypassEmail {
 
     @@index([createdAt])
     @@map("login_bypass_emails")
+}
+
+/// Real test accounts allowed to see synthetic bot profiles when the safe
+/// stresstest allowlist flag is enabled. Bots remain hidden from every other
+/// real user unless the explicit global mixing flag is enabled.
+model BotIsolationBypassUser {
+    id               String   @id @default(cuid())
+    userId           String   @unique
+    createdByAdminId String?
+    createdAt        DateTime @default(now())
+
+    user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@index([createdAt])
+    @@map("bot_isolation_bypass_users")
 }
 
 // ─── Email tracking ───────────────────────────────────────────────
