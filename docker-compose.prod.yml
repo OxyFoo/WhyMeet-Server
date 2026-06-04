@@ -20,7 +20,7 @@ services:
     restart: unless-stopped
 
   whymeet-pgbouncer-prod:
-    image: edoburu/pgbouncer:1.25.1-p0
+    image: edoburu/pgbouncer:v1.25.1-p0
     environment:
       DB_HOST: whymeet-db-prod
       DB_PORT: "5432"
