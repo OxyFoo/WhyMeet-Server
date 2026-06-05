@@ -59,7 +59,7 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=dokploy-network
-      - traefik.http.routers.whymeet-minio.rule=Host(`${MINIO_PUBLIC_HOST}`)
+      - traefik.http.routers.whymeet-minio.rule=Host(`${SERVER_PUBLIC_HOST}`) && PathPrefix(`/${S3_BUCKET}`)
       - traefik.http.routers.whymeet-minio.entrypoints=websecure
       - traefik.http.routers.whymeet-minio.tls.certresolver=letsencrypt
       - traefik.http.services.whymeet-minio.loadbalancer.server.port=9000
