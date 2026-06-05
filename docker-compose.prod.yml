@@ -15,6 +15,7 @@ services:
       AUTH_TYPE: scram-sha-256
     networks:
       - oxyfoo-network
+      - dokploy-network
     restart: unless-stopped
 
   whymeet-redis-prod:
@@ -35,6 +36,7 @@ services:
       DATABASE_URL: ${DATABASE_DIRECT_URL}
     networks:
       - oxyfoo-network
+      - dokploy-network
     restart: "no"
 
   # [TEMPORAIRE - MVP] MinIO self-hosted. À remplacer par S3/B2/R2 avant prod sérieuse.
