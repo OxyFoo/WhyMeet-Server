@@ -7,6 +7,7 @@ const envSchema = z.object({
     ENVIRONMENT: z.enum(['dev', 'prod']).default('dev'),
     LISTEN_PORT_WS: z.coerce.number().int().positive().default(4600),
     PUBLIC_APP_URL: z.string().default('localhost'),
+    TRUST_PROXY_HOPS: z.coerce.number().int().min(0).default(0),
 
     LOG_LEVEL: z.enum(['minimal', 'normal', 'all']).default('normal'),
     LOG_PATH: z.string().default('./logs'),

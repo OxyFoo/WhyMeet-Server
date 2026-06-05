@@ -66,6 +66,10 @@ const HEARTBEAT_INTERVAL_MS = 25_000;
 
 function createHttpServer(): http.Server | https.Server {
     const app = express();
+    if (env.TRUST_PROXY_HOPS > 0) {
+        app.set('trust proxy', env.TRUST_PROXY_HOPS);
+    }
+
     app.use(helmet());
     app.use(cors());
 
