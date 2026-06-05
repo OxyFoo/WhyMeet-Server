@@ -1,29 +1,11 @@
 ## Compose de production destiné à Dokploy.
 
 services:
-  whymeet-db-prod:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_USER: ${POSTGRESQL_USERNAME}
-      POSTGRES_PASSWORD: ${POSTGRESQL_PASSWORD}
-      POSTGRES_DB: ${POSTGRESQL_DATABASE}
-    networks:
-      - oxyfoo-network
-    volumes:
-      - whymeet-db-prod-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRESQL_USERNAME} -d ${POSTGRESQL_DATABASE}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
-    restart: unless-stopped
-
   whymeet-pgbouncer-prod:
     image: edoburu/pgbouncer:v1.25.1-p0
     environment:
-      DB_HOST: whymeet-db-prod
-      DB_PORT: "5432"
+      DB_HOST: ${POSTGRESQL_HOST}
+      DB_PORT: ${POSTGRESQL_PORT:-5432}
       DB_USER: ${POSTGRESQL_USERNAME}
       DB_PASSWORD: ${POSTGRESQL_PASSWORD}
       DB_NAME: ${POSTGRESQL_DATABASE}
@@ -33,9 +15,6 @@ services:
       AUTH_TYPE: scram-sha-256
     networks:
       - oxyfoo-network
-    depends_on:
-      whymeet-db-prod:
-        condition: service_healthy
     restart: unless-stopped
 
   whymeet-redis-prod:
@@ -53,13 +32,9 @@ services:
     command: npm run db:deploy
     env_file: .env
     environment:
-      # Connexion directe à Postgres (Prisma migrate n'aime pas pgbouncer en pooling)
-      DATABASE_URL: postgresql://${POSTGRESQL_USERNAME}:${POSTGRESQL_PASSWORD}@whymeet-db-prod:5432/${POSTGRESQL_DATABASE}?schema=public
+      DATABASE_URL: ${DATABASE_DIRECT_URL}
     networks:
       - oxyfoo-network
-    depends_on:
-      whymeet-db-prod:
-        condition: service_healthy
     restart: "no"
 
   # [TEMPORAIRE - MVP] MinIO self-hosted. À remplacer par S3/B2/R2 avant prod sérieuse.
@@ -96,16 +71,13 @@ services:
     env_file: .env
     environment:
       NODE_ENV: production
-      # Override pour utiliser les hostnames internes du compose
-      DATABASE_URL: postgresql://${POSTGRESQL_USERNAME}:${POSTGRESQL_PASSWORD}@whymeet-pgbouncer-prod:5432/${POSTGRESQL_DATABASE}?schema=public
+      DATABASE_URL: ${DATABASE_POOLER_URL}
       REDIS_URL: redis://whymeet-redis-prod:6379
     networks:
       - oxyfoo-network
       - dokploy-network
     user: node
     depends_on:
-      whymeet-db-prod:
-        condition: service_started
       whymeet-pgbouncer-prod:
         condition: service_started
       whymeet-redis-prod:
@@ -126,7 +98,6 @@ services:
       - traefik.http.services.whymeet-server.loadbalancer.server.port=7600
 
 volumes:
-  whymeet-db-prod-data:
   whymeet-minio-prod-data:
   whymeet-server-logs:
 
