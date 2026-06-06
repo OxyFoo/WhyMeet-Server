@@ -871,3 +871,38 @@ model AnalyticsDailyMetric {
     @@index([name, date])
     @@map("analytics_daily_metrics")
 }
+
+// ─── Polls (sondages) ───────────────────────────────────────────────
+//
+// Lightweight in-app feedback questions authored from the Console. Each user
+// can cast a single thumbs up/down vote per question (overwritten on change).
+// Questions are never hard-deleted: archiving hides them from the app while
+// keeping historical results readable from the Console.
+
+model Poll {
+    id          String   @id @default(cuid())
+    question    String   @db.VarChar(280)
+    shopVisible Boolean  @default(false)
+    archived    Boolean  @default(false)
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+
+    votes PollVote[]
+
+    @@index([archived])
+    @@map("polls")
+}
+
+model PollVote {
+    id      String   @id @default(cuid())
+    pollId  String
+    userId  String
+    vote    String // "up" | "down"
+    votedAt DateTime @default(now())
+
+    poll Poll @relation(fields: [pollId], references: [id], onDelete: Cascade)
+
+    @@unique([pollId, userId])
+    @@index([pollId, vote])
+    @@map("poll_votes")
+}

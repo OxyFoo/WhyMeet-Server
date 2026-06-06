@@ -61,7 +61,8 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=dokploy-network
-      - traefik.http.routers.whymeet-minio.rule=Host(`${SERVER_PUBLIC_HOST}`) && PathPrefix(`/${S3_BUCKET}`)
+      - traefik.http.routers.whymeet-minio.rule=Host(`${PUBLIC_SERVER_DOMAIN}`) && PathPrefix(`/${S3_BUCKET}`)
+      - traefik.http.routers.whymeet-minio.priority=100
       - traefik.http.routers.whymeet-minio.entrypoints=websecure
       - traefik.http.routers.whymeet-minio.tls.certresolver=letsencrypt
       - traefik.http.services.whymeet-minio.loadbalancer.server.port=9000
@@ -94,7 +95,8 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=dokploy-network
-      - traefik.http.routers.whymeet-server.rule=Host(`${SERVER_PUBLIC_HOST}`)
+      - traefik.http.routers.whymeet-server.rule=Host(`${PUBLIC_SERVER_DOMAIN}`)
+      - traefik.http.routers.whymeet-server.priority=10
       - traefik.http.routers.whymeet-server.entrypoints=websecure
       - traefik.http.routers.whymeet-server.tls.certresolver=letsencrypt
       - traefik.http.services.whymeet-server.loadbalancer.server.port=7600

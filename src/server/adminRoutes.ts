@@ -42,6 +42,7 @@ import {
     AdminProfileResetUserNotFoundError,
     resetUserProfileToInitialState
 } from '@/services/adminProfileResetService';
+import { listPollsForAdmin, createPoll, updatePoll, archivePoll } from '@/services/pollService';
 
 const FEATURE_FLAG_KEYS = [
     'mapbox',
@@ -1463,6 +1464,86 @@ export function createAdminRouter(): Router {
             }
             logger.error('[AdminAPI] suspicious resolve failed', err);
             res.status(500).json({ error: 'resolve_failed' });
+        }
+    });
+
+    // ─── Polls (sondages) ─────────────────────────────────────────────
+    router.get('/polls', async (req, res) => {
+        const includeArchived = String(req.query.includeArchived ?? '') === 'true';
+        try {
+            const polls = await listPollsForAdmin(includeArchived);
+            res.json({ polls });
+        } catch (err) {
+            logger.error('[AdminAPI] polls list failed', err);
+            res.status(500).json({ error: 'polls_list_failed' });
+        }
+    });
+
+    const createPollSchema = z.object({
+        question: z.string().trim().min(1).max(280),
+        shopVisible: z.boolean().optional()
+    });
+    router.post('/polls', async (req, res) => {
+        const parsed = createPollSchema.safeParse(getJson(req));
+        if (!parsed.success) {
+            res.status(400).json({ error: 'invalid_payload' });
+            return;
+        }
+        try {
+            const poll = await createPoll(parsed.data.question, parsed.data.shopVisible ?? false);
+            res.json({ poll });
+        } catch (err) {
+            logger.error('[AdminAPI] poll create failed', err);
+            res.status(500).json({ error: 'poll_create_failed' });
+        }
+    });
+
+    const updatePollSchema = z
+        .object({
+            question: z.string().trim().min(1).max(280).optional(),
+            shopVisible: z.boolean().optional()
+        })
+        .refine((d) => d.question !== undefined || d.shopVisible !== undefined, { message: 'empty_update' });
+    router.patch('/polls/:id', async (req, res) => {
+        const id = String(req.params.id ?? '');
+        if (!id) {
+            res.status(400).json({ error: 'invalid_request' });
+            return;
+        }
+        const parsed = updatePollSchema.safeParse(getJson(req));
+        if (!parsed.success) {
+            res.status(400).json({ error: 'invalid_payload' });
+            return;
+        }
+        try {
+            const poll = await updatePoll(id, parsed.data);
+            if (!poll) {
+                res.status(404).json({ error: 'not_found' });
+                return;
+            }
+            res.json({ poll });
+        } catch (err) {
+            logger.error('[AdminAPI] poll update failed', err);
+            res.status(500).json({ error: 'poll_update_failed' });
+        }
+    });
+
+    router.delete('/polls/:id', async (req, res) => {
+        const id = String(req.params.id ?? '');
+        if (!id) {
+            res.status(400).json({ error: 'invalid_request' });
+            return;
+        }
+        try {
+            const poll = await archivePoll(id);
+            if (!poll) {
+                res.status(404).json({ error: 'not_found' });
+                return;
+            }
+            res.json({ poll });
+        } catch (err) {
+            logger.error('[AdminAPI] poll archive failed', err);
+            res.status(500).json({ error: 'poll_archive_failed' });
         }
     });
 
